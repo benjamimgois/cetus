@@ -1,0 +1,5 @@
+#!/bin/bash
+# Script wrapper para executar o Serial Terminal GUI
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/serial_gui.py" "$@"
