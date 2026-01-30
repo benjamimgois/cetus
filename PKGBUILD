@@ -22,7 +22,7 @@ package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
 
     # Install main script
-    install -Dm755 serial_gui.py "${pkgdir}/usr/lib/${pkgname}/serial_gui.py"
+    install -Dm755 serialcom "${pkgdir}/usr/lib/${pkgname}/serialcom"
 
     # Install executable wrapper
     install -Dm755 serialcom "${pkgdir}/usr/bin/serialcom"

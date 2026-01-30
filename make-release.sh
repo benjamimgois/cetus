@@ -23,7 +23,7 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 
 # Copy necessary files
 echo "Copying files..."
-cp serial_gui.py "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp serialcom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp serialcom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp serialcom.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"

@@ -21,7 +21,7 @@ cd /home/benjamim/Documentos
 
 # Create a versioned directory
 mkdir serialcom-1.0
-cp serialcom/{serial_gui.py,serialcom,serialcom.desktop,README.md,INTERFACE.md,LICENSE} serialcom-1.0/
+cp serialcom/{serialcom,serialcom.desktop,README.md,INTERFACE.md,LICENSE} serialcom-1.0/
 
 # Create tarball
 tar -czf serialcom-1.0.tar.gz serialcom-1.0/

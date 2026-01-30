@@ -46,7 +46,7 @@ sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom
 
 2. Make scripts executable:
 ```bash
-chmod +x serial_gui.py serialcom
+chmod +x serialcom
 ```
 
 3. (Optional) Install system-wide:
@@ -62,10 +62,10 @@ Run the application:
 ./serialcom
 
 # Directly
-./serial_gui.py
+./serialcom
 
 # Or via Python
-python3 serial_gui.py
+python3 serialcom
 ```
 
 ### Configuration
