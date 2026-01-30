@@ -6,6 +6,9 @@
 
 Modern and elegant graphical interface for serial communication via picocom.
 
+<img width="549" height="626" alt="image" src="https://github.com/user-attachments/assets/d39b5111-4605-486e-8078-24ca070819bf" />
+
+
 ## Features
 
 - Modern graphical interface with PyQt6
