@@ -68,6 +68,24 @@ chmod +x make-deb.sh
 sudo dpkg -i ../serialcom_1.0-1_all.deb
 ```
 
+### Arch Linux / Manjaro (from AUR)
+
+Install using an AUR helper:
+```bash
+yay -S serialcom
+# or
+paru -S serialcom
+```
+
+### Arch Linux / Manjaro (from package file)
+
+1. Download the latest `.pkg.tar.zst` package from [releases](https://github.com/benjamimgois/serialcom/releases)
+
+2. Install the package:
+```bash
+sudo pacman -U serialcom-1.0-1-any.pkg.tar.zst
+```
+
 ### Other Linux Distributions
 
 1. Install dependencies (if not already installed):
