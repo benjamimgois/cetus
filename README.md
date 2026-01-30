@@ -32,6 +32,41 @@ Modern and elegant graphical interface for serial communication via picocom.
 
 ## Installation
 
+### Debian / Ubuntu (from .deb package)
+
+1. Download the latest .deb package from [releases](https://github.com/benjamimgois/serialcom/releases)
+
+2. Install the package:
+```bash
+sudo dpkg -i serialcom_1.0-1_all.deb
+sudo apt-get install -f  # Fix any missing dependencies
+```
+
+3. Launch from application menu or terminal:
+```bash
+serialcom
+```
+
+### Debian / Ubuntu (build from source)
+
+1. Install build dependencies:
+```bash
+sudo apt install debhelper dpkg-dev python3-pyqt6 picocom
+```
+
+2. Build the package:
+```bash
+chmod +x make-deb.sh
+./make-deb.sh
+```
+
+3. Install the generated package:
+```bash
+sudo dpkg -i ../serialcom_1.0-1_all.deb
+```
+
+### Other Linux Distributions
+
 1. Install dependencies (if not already installed):
 ```bash
 # Arch Linux / Manjaro
@@ -40,7 +75,7 @@ sudo pacman -S python-pyqt6 qt6-serialport picocom
 # Fedora / RHEL
 sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom
 
-# Debian / Ubuntu
+# Debian / Ubuntu (manual installation)
 sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom
 ```
 

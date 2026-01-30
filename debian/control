@@ -1,0 +1,21 @@
+Source: serialcom
+Section: utils
+Priority: optional
+Maintainer: Benjamim Gois <benjamimgois@example.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.5.0
+Homepage: https://github.com/benjamimgois/serialcom
+
+Package: serialcom
+Architecture: all
+Depends: python3 (>= 3.10), python3-pyqt6, picocom, ${misc:Depends}
+Description: Modern graphical interface for serial communication
+ SerialCom is a modern and elegant graphical interface for serial
+ communication via picocom. It provides an easy-to-use interface for
+ configuring serial port parameters and establishing connections.
+ .
+ Features:
+  - Automatic serial port detection
+  - Support for serial ports and USB adapters
+  - Complete serial parameter configuration
+  - Modern PyQt6 interface

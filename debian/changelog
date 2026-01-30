@@ -1,0 +1,9 @@
+serialcom (1.0-1) jammy; urgency=medium
+
+  * Initial release
+  * Modern PyQt6 interface for serial communication
+  * Automatic port detection
+  * Complete serial parameter configuration
+  * Custom application icon
+
+ -- Benjamim Gois <benjamimgois@example.com>  Thu, 30 Jan 2026 10:58:00 -0300

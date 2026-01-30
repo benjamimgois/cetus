@@ -1,0 +1,26 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	# Install main script
+	install -Dm755 serialcom debian/serialcom/usr/bin/serialcom
+	
+	# Install icon
+	install -Dm644 serialcom.png debian/serialcom/usr/share/pixmaps/serialcom.png
+	
+	# Install SVG arrow icon
+	install -Dm644 arrow_down.svg debian/serialcom/usr/share/serialcom/arrow_down.svg
+	
+	# Install desktop file
+	install -Dm644 serialcom.desktop debian/serialcom/usr/share/applications/serialcom.desktop
+	
+	# Fix paths in desktop file
+	sed -i 's|/home/benjamim/Documentos/serialcom/serialcom|/usr/bin/serialcom|' debian/serialcom/usr/share/applications/serialcom.desktop
+	sed -i 's|/home/benjamim/Documentos/serialcom/serialcom.png|/usr/share/pixmaps/serialcom.png|' debian/serialcom/usr/share/applications/serialcom.desktop
+	
+	# Install documentation
+	install -Dm644 README.md debian/serialcom/usr/share/doc/serialcom/README.md
+	install -Dm644 INTERFACE.md debian/serialcom/usr/share/doc/serialcom/INTERFACE.md
+	install -Dm644 LICENSE debian/serialcom/usr/share/doc/serialcom/copyright
