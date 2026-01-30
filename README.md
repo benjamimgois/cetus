@@ -92,49 +92,6 @@ chmod +x serialcom
 ./install.sh
 ```
 
-### AppImage (Universal Linux Package)
-
-AppImage is a portable format that works on any Linux distribution without installation.
-
-1. Download the latest AppImage from [releases](https://github.com/benjamimgois/serialcom/releases)
-
-2. Make it executable and run:
-```bash
-chmod +x SerialCom-x86_64.AppImage
-./SerialCom-x86_64.AppImage
-```
-
-3. (Optional) Integrate with desktop:
-```bash
-./SerialCom-x86_64.AppImage --appimage-integrate
-```
-
-**System Requirements**: 
-- Python 3
-- PyQt6 (`python3-pyqt6`)
-- picocom
-
-Install requirements:
-```bash
-# Arch Linux
-sudo pacman -S python-pyqt6 picocom
-
-# Debian/Ubuntu
-sudo apt install python3-pyqt6 picocom
-
-# Fedora
-sudo dnf install python3-pyqt6 picocom
-```
-
-### Build AppImage from source
-
-```bash
-chmod +x make-appimage.sh
-./make-appimage.sh
-```
-
-> **Note:** The AppImage requires Python 3, PyQt6, and picocom to be installed on the target system. For a fully self-contained package on Ubuntu/Debian systems, use the `.deb` package instead.
-
 ## Usage
 
 Run the application:
