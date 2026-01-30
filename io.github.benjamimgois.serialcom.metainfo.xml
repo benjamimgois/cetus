@@ -35,13 +35,12 @@
     <color type="primary" scheme_preference="dark">#1a5fb4</color>
   </branding>
 
-  <!-- TODO: Add screenshot with minimum 624px width -->
-  <!-- <screenshots>
+  <screenshots>
     <screenshot type="default">
       <caption>SerialCom main window</caption>
-      <image>https://github.com/user-attachments/assets/YOUR_SCREENSHOT_URL</image>
+      <image>https://raw.githubusercontent.com/benjamimgois/serialcom/main/data/screenshots/screenshot.jpeg</image>
     </screenshot>
-  </screenshots> -->
+  </screenshots>
 
   <url type="homepage">https://github.com/benjamimgois/serialcom</url>
   <url type="bugtracker">https://github.com/benjamimgois/serialcom/issues</url>
@@ -81,18 +80,4 @@
   <requires>
     <display_length compare="ge">360</display_length>
   </requires>
-
-  <categories>
-    <category>System</category>
-    <category>Utility</category>
-  </categories>
-
-  <keywords>
-    <keyword>serial</keyword>
-    <keyword>communication</keyword>
-    <keyword>picocom</keyword>
-    <keyword>tty</keyword>
-    <keyword>uart</keyword>
-    <keyword>rs232</keyword>
-  </keywords>
 </component>

@@ -1,22 +1,20 @@
 app-id: io.github.benjamimgois.serialcom
 runtime: org.kde.Platform
-runtime-version: '6.8'
+runtime-version: '6.10'
 sdk: org.kde.Sdk
 base: com.riverbankcomputing.PyQt.BaseApp
-base-version: '6.8'
+base-version: '6.10'
 command: serialcom
-cleanup-commands:
-  - /app/cleanup-BaseApp.sh
 
 finish-args:
-  # X11 + Wayland
   - --share=ipc
   - --socket=fallback-x11
   - --socket=wayland
-  # Access to serial devices
   - --device=all
-  # Access to host terminal emulators via Flatpak portal
   - --talk-name=org.freedesktop.Flatpak
+
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
 
 modules:
   - name: picocom
@@ -28,28 +26,30 @@ modules:
       - type: archive
         url: https://github.com/npat-efault/picocom/archive/refs/tags/3.1.tar.gz
         sha256: e6761ca932ffc6d09bd6b11ff018bdaf70b287ce518b3282d29e0270e88420bb
+        x-checker-data:
+          type: anitya
+          project-id: 11061
+          url-template: https://github.com/npat-efault/picocom/archive/refs/tags/$version.tar.gz
 
   - name: serialcom
     buildsystem: simple
     build-commands:
-      # Install main script
       - install -Dm755 serialcom ${FLATPAK_DEST}/bin/serialcom
-      # Install icons (multiple sizes)
-      - install -Dm644 serialcom.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/io.github.benjamimgois.serialcom.png
-      - install -Dm644 icons/serialcom-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/io.github.benjamimgois.serialcom.png
-      - install -Dm644 icons/serialcom-128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/io.github.benjamimgois.serialcom.png
-      - install -Dm644 icons/serialcom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/io.github.benjamimgois.serialcom.png
-      - install -Dm644 icons/serialcom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/io.github.benjamimgois.serialcom.png
-      - install -Dm644 icons/serialcom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/io.github.benjamimgois.serialcom.png
-      # Install arrow icon
-      - install -Dm644 arrow_down.svg ${FLATPAK_DEST}/share/serialcom/arrow_down.svg
-      # Install desktop file
-      - install -Dm644 io.github.benjamimgois.serialcom.desktop ${FLATPAK_DEST}/share/applications/io.github.benjamimgois.serialcom.desktop
-      # Install metainfo
-      - install -Dm644 io.github.benjamimgois.serialcom.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.benjamimgois.serialcom.metainfo.xml
-      # Install license
-      - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/io.github.benjamimgois.serialcom/LICENSE
+      - install -Dm644 serialcom.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
+      - install -Dm644 icons/serialcom-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 icons/serialcom-128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 icons/serialcom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 icons/serialcom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
+      - install -Dm644 icons/serialcom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
+      - install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE
     sources:
       - type: archive
         url: https://github.com/benjamimgois/serialcom/archive/refs/tags/1.1.tar.gz
         sha256: 8d0544fa2cf21e8492bc5ae19d49cde382b5212889505bcd8f634becdc242f10
+        x-checker-data:
+          type: anitya
+          project-id: 381498
+          url-template: https://github.com/benjamimgois/serialcom/archive/refs/tags/$version.tar.gz
