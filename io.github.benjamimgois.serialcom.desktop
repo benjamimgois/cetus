@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SerialCom
+GenericName=Serial Communication
+Comment=Modern graphical interface for serial communication via picocom
+Exec=serialcom
+Icon=io.github.benjamimgois.serialcom
+Terminal=false
+Categories=System;Utility;
+Keywords=serial;communication;picocom;tty;uart;rs232;
+StartupNotify=true
