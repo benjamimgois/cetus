@@ -1,9 +1,10 @@
+#!/usr/bin/env xdg-open
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=SerialCom
 Comment=Interface gráfica para comunicação serial
 Exec=python3 /home/benjamim/Documentos/serialcom/serialcom
-Icon=utilities-terminal
+Icon=/home/benjamim/Documentos/serialcom/serialcom.png
 Terminal=false
 Categories=System;Utility;

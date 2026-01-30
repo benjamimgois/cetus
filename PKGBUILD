@@ -26,6 +26,9 @@ package() {
 
     # Install executable wrapper
     install -Dm755 serialcom "${pkgdir}/usr/bin/serialcom"
+    
+    # Install icon
+    install -Dm644 serialcom.png "${pkgdir}/usr/share/pixmaps/serialcom.png"
 
     # Fix path in wrapper
     sed -i "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"/usr/lib/${pkgname}\"|" "${pkgdir}/usr/bin/serialcom"
@@ -35,6 +38,9 @@ package() {
 
     # Fix Exec path in desktop file
     sed -i "s|Exec=.*|Exec=/usr/bin/serialcom|" "${pkgdir}/usr/share/applications/serialcom.desktop"
+    
+    # Fix Icon path in desktop file
+    sed -i "s|Icon=.*|Icon=/usr/share/pixmaps/serialcom.png|" "${pkgdir}/usr/share/applications/serialcom.desktop"
 
     # Install documentation
     install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
