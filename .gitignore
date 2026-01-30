@@ -1,0 +1,20 @@
+# Build artifacts
+pkg/
+src/
+*.pkg.tar.zst
+*.pkg.tar.xz
+
+# Debian build
+debian/serialcom/
+*.deb
+*.buildinfo
+*.changes
+
+# AppImage build
+AppDir/
+AppDir-full/
+*.AppImage
+
+# Python
+__pycache__/
+*.pyc

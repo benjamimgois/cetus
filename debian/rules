@@ -15,10 +15,6 @@ override_dh_auto_install:
 
 	# Install desktop file
 	install -Dm644 serialcom.desktop debian/serialcom/usr/share/applications/serialcom.desktop
-
-	# Fix paths in desktop file (use icon name without path for theme lookup)
-	sed -i 's|/home/benjamim/Documentos/serialcom/serialcom|/usr/bin/serialcom|' debian/serialcom/usr/share/applications/serialcom.desktop
-	sed -i 's|Icon=/home/benjamim/Documentos/serialcom/serialcom.png|Icon=serialcom|' debian/serialcom/usr/share/applications/serialcom.desktop
 	
 	# Install documentation
 	install -Dm644 README.md debian/serialcom/usr/share/doc/serialcom/README.md

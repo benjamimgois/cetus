@@ -1,4 +1,4 @@
-# Maintainer: Benjamim Gois <your.email@example.com>
+# Maintainer: Benjamim Gois <benjamimgois@gmail.com>
 pkgname=serialcom
 pkgver=1.0
 pkgrel=1
@@ -7,7 +7,7 @@ arch=('any')
 url="https://github.com/benjamimgois/serialcom"
 license=('MIT')
 depends=('python' 'python-pyqt6' 'qt6-serialport' 'picocom' 'sudo')
-makedepends=()
+makedepends=('imagemagick')
 optdepends=(
     'gnome-terminal: default terminal emulator'
     'konsole: KDE terminal emulator'
@@ -15,32 +15,29 @@ optdepends=(
     'kitty: fast GPU-based terminal emulator'
     'alacritty: cross-platform GPU-accelerated terminal emulator'
 )
-source=("https://github.com/benjamimgois/serialcom/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz")
-sha256sums=('7481ee224a0a1a7e2838098444011879990b2da1914220dc6164280904fe7042')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/serialcom/archive/refs/tags/${pkgver}.tar.gz")
+sha256sums=('SKIP')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
 
     # Install main script
-    install -Dm755 serialcom "${pkgdir}/usr/lib/${pkgname}/serialcom"
-
-    # Install executable wrapper
     install -Dm755 serialcom "${pkgdir}/usr/bin/serialcom"
-    
-    # Install icon
-    install -Dm644 serialcom.png "${pkgdir}/usr/share/pixmaps/serialcom.png"
 
-    # Fix path in wrapper
-    sed -i "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"/usr/lib/${pkgname}\"|" "${pkgdir}/usr/bin/serialcom"
+    # Install icon in hicolor theme (FreeDesktop.org standard) - multiple sizes
+    install -Dm644 serialcom.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/serialcom.png"
+
+    # Create scaled versions for better compatibility
+    for size in 256 128 64 48 32 16; do
+        install -dm755 "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps"
+        magick serialcom.png -resize ${size}x${size} "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/serialcom.png"
+    done
+
+    # Install SVG arrow icon
+    install -Dm644 arrow_down.svg "${pkgdir}/usr/share/serialcom/arrow_down.svg"
 
     # Install desktop file
     install -Dm644 serialcom.desktop "${pkgdir}/usr/share/applications/serialcom.desktop"
-
-    # Fix Exec path in desktop file
-    sed -i "s|Exec=.*|Exec=/usr/bin/serialcom|" "${pkgdir}/usr/share/applications/serialcom.desktop"
-    
-    # Fix Icon path in desktop file
-    sed -i "s|Icon=.*|Icon=/usr/share/pixmaps/serialcom.png|" "${pkgdir}/usr/share/applications/serialcom.desktop"
 
     # Install documentation
     install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
