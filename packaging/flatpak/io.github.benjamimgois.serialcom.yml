@@ -48,7 +48,7 @@ modules:
     sources:
       - type: archive
         url: https://github.com/benjamimgois/serialcom/archive/refs/tags/1.1.tar.gz
-        sha256: 3265ae9c68fc392f7f47968634722c90d52cdd29bf09d8ce17a5a5667dcc0f2b
+        sha256: 31f05c4523f4efecd7b8476fd3e370891ad4831149f5efc1a2ad2c98351625f8
         x-checker-data:
           type: anitya
           project-id: 381498
