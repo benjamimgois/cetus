@@ -3,6 +3,8 @@ pkg/
 src/
 *.pkg.tar.zst
 *.pkg.tar.xz
+build-dir/
+.flatpak-builder/
 
 # Debian build
 debian/serialcom/
@@ -14,7 +16,13 @@ debian/serialcom/
 AppDir/
 AppDir-full/
 *.AppImage
+appimagetool*
 
 # Python
 __pycache__/
 *.pyc
+
+# Editor
+*.swp
+*.swo
+*~
