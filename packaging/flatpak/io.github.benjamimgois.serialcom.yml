@@ -35,15 +35,15 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 serialcom ${FLATPAK_DEST}/bin/serialcom
-      - install -Dm644 serialcom.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
-      - install -Dm644 icons/serialcom-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
-      - install -Dm644 icons/serialcom-128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
-      - install -Dm644 icons/serialcom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
-      - install -Dm644 icons/serialcom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
-      - install -Dm644 icons/serialcom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
-      - install -Dm644 arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
-      - install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
-      - install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 assets/serialcom.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/icons/serialcom-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/icons/serialcom-128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/icons/serialcom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/icons/serialcom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/icons/serialcom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE
     sources:
       - type: archive

@@ -8,15 +8,15 @@ override_dh_auto_install:
 	install -Dm755 serialcom debian/serialcom/usr/bin/serialcom
 
 	# Install icon in hicolor theme (FreeDesktop.org standard)
-	install -Dm644 serialcom.png debian/serialcom/usr/share/icons/hicolor/512x512/apps/serialcom.png
+	install -Dm644 assets/serialcom.png debian/serialcom/usr/share/icons/hicolor/512x512/apps/serialcom.png
 
 	# Install SVG arrow icon
-	install -Dm644 arrow_down.svg debian/serialcom/usr/share/serialcom/arrow_down.svg
+	install -Dm644 assets/arrow_down.svg debian/serialcom/usr/share/serialcom/arrow_down.svg
 
 	# Install desktop file
 	install -Dm644 serialcom.desktop debian/serialcom/usr/share/applications/serialcom.desktop
-	
+
 	# Install documentation
 	install -Dm644 README.md debian/serialcom/usr/share/doc/serialcom/README.md
-	install -Dm644 INTERFACE.md debian/serialcom/usr/share/doc/serialcom/INTERFACE.md
+	install -Dm644 docs/INTERFACE.md debian/serialcom/usr/share/doc/serialcom/INTERFACE.md
 	install -Dm644 LICENSE debian/serialcom/usr/share/doc/serialcom/copyright
