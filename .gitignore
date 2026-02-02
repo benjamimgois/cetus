@@ -5,6 +5,8 @@ src/
 *.pkg.tar.xz
 build-dir/
 .flatpak-builder/
+repo/
+*.flatpak
 
 # Debian build
 debian/serialcom/

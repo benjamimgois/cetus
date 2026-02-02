@@ -11,7 +11,6 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=all
-  - --talk-name=org.freedesktop.Flatpak
 
 cleanup-commands:
   - /app/cleanup-BaseApp.sh
@@ -46,10 +45,5 @@ modules:
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE
     sources:
-      - type: archive
-        url: https://github.com/benjamimgois/serialcom/archive/refs/tags/1.1.tar.gz
-        sha256: 31f05c4523f4efecd7b8476fd3e370891ad4831149f5efc1a2ad2c98351625f8
-        x-checker-data:
-          type: anitya
-          project-id: 381498
-          url-template: https://github.com/benjamimgois/serialcom/archive/refs/tags/$version.tar.gz
+      - type: dir
+        path: ../..

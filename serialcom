@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SerialCom - Graphical interface for serial communication via picocom
-Version: 1.0
+Version: 1.1
 """
 
 import sys
@@ -10,13 +10,14 @@ import subprocess
 import glob
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox
+    QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
+    QTextEdit, QDialog
 )
-from PyQt6.QtCore import Qt, QSize, QRect, QPoint
-from PyQt6.QtGui import QFont, QPalette, QColor, QPixmap, QIcon, QPainter, QPolygon
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent
 
 # Application version
-VERSION = "1.0"
+VERSION = "1.1"
 
 try:
     from PyQt6.QtSerialPort import QSerialPortInfo
@@ -25,11 +26,217 @@ except ImportError:
     SERIAL_PORT_AVAILABLE = False
 
 
+class TerminalWidget(QTextEdit):
+    """Custom terminal widget for displaying picocom output and handling input"""
+    
+    send_input = pyqtSignal(str)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(False)
+        self.setFont(QFont("Monospace", 10))
+        self.input_buffer = ""
+        self.command_start_pos = 0
+        
+        # Apply terminal styling
+        self.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: none;
+                padding: 10px;
+            }
+        """)
+        
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handle key press events for terminal input"""
+        # Get the key
+        key = event.key()
+        text = event.text()
+        
+        # Handle special keys
+        if key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            # Send newline
+            self.send_input.emit('\n')
+            super().keyPressEvent(event)
+        elif key == Qt.Key.Key_Backspace:
+            # Allow backspace
+            super().keyPressEvent(event)
+        elif key == Qt.Key.Key_Tab:
+            # Send tab
+            self.send_input.emit('\t')
+            super().keyPressEvent(event)
+        elif event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Handle Ctrl+A and other control sequences
+            if key == Qt.Key.Key_A:
+                self.send_input.emit('\x01')  # Ctrl+A
+            elif key == Qt.Key.Key_X:
+                self.send_input.emit('\x18')  # Ctrl+X
+            elif key == Qt.Key.Key_C:
+                self.send_input.emit('\x03')  # Ctrl+C
+            elif key == Qt.Key.Key_D:
+                self.send_input.emit('\x04')  # Ctrl+D
+            elif key == Qt.Key.Key_H:
+                self.send_input.emit('\x08')  # Ctrl+H
+            else:
+                super().keyPressEvent(event)
+        elif text:
+            # Send regular character
+            self.send_input.emit(text)
+            super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+    
+    def append_output(self, text):
+        """Append output text to the terminal"""
+        self.moveCursor(QTextCursor.MoveOperation.End)
+        self.insertPlainText(text)
+        self.moveCursor(QTextCursor.MoveOperation.End)
+
+
+class TerminalDialog(QDialog):
+    """Dialog window containing the embedded terminal"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("SerialCom Terminal")
+        self.setMinimumSize(800, 600)
+        self.process = None
+        self.sudo_process = None
+        
+        self.init_ui()
+        
+    def init_ui(self):
+        """Initialize the terminal dialog UI"""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Terminal widget
+        self.terminal = TerminalWidget()
+        self.terminal.send_input.connect(self.send_to_process)
+        layout.addWidget(self.terminal)
+        
+        # Control buttons
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(10, 5, 10, 10)
+        
+        self.disconnect_btn = QPushButton("DISCONNECT")
+        self.disconnect_btn.setMinimumHeight(35)
+        self.disconnect_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        self.disconnect_btn.clicked.connect(self.disconnect)
+        self.disconnect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f38ba8;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #f26d8f;
+            }
+            QPushButton:pressed {
+                background-color: #d95a7a;
+            }
+        """)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.disconnect_btn)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+        
+    def start_picocom(self, cmd):
+        """Start picocom process with sudo"""
+        # Create the process
+        self.process = QProcess(self)
+        self.process.readyReadStandardOutput.connect(self.handle_stdout)
+        self.process.readyReadStandardError.connect(self.handle_stderr)
+        self.process.finished.connect(self.process_finished)
+        
+        # Build sudo command
+        picocom_cmd = ' '.join(cmd)
+        full_cmd = ['sudo', '-S'] + cmd
+        
+        # Start process
+        self.terminal.append_output(f"Starting: {picocom_cmd}\n")
+        self.terminal.append_output("Enter sudo password if prompted...\n\n")
+        
+        self.process.start(full_cmd[0], full_cmd[1:])
+        
+        if not self.process.waitForStarted(3000):
+            self.terminal.append_output("\n[ERROR] Failed to start picocom\n")
+            return False
+        
+        return True
+    
+    def send_to_process(self, text):
+        """Send input to the picocom process"""
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
+            self.process.write(text.encode())
+    
+    def handle_stdout(self):
+        """Handle standard output from picocom"""
+        if self.process:
+            data = self.process.readAllStandardOutput()
+            text = bytes(data).decode('utf-8', errors='replace')
+            self.terminal.append_output(text)
+    
+    def handle_stderr(self):
+        """Handle standard error from picocom"""
+        if self.process:
+            data = self.process.readAllStandardError()
+            text = bytes(data).decode('utf-8', errors='replace')
+            self.terminal.append_output(text)
+    
+    def process_finished(self, exit_code, exit_status):
+        """Handle process termination"""
+        self.terminal.append_output(f"\n\n[Process terminated with exit code {exit_code}]\n")
+        self.terminal.append_output("You can close this window.\n")
+        self.disconnect_btn.setText("CLOSE")
+    
+    def disconnect(self):
+        """Disconnect from serial port"""
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
+            # Send Ctrl+A Ctrl+X to exit picocom gracefully
+            self.process.write(b'\x01\x18')
+            
+            # Wait a bit for graceful exit
+            if not self.process.waitForFinished(2000):
+                # Force terminate if needed
+                self.process.terminate()
+                if not self.process.waitForFinished(1000):
+                    self.process.kill()
+        
+        self.close()
+    
+    def closeEvent(self, event):
+        """Handle window close event"""
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
+            reply = QMessageBox.question(
+                self,
+                'Confirm Exit',
+                'Connection is still active. Disconnect and close?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.disconnect()
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
+
+
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"SerialCom v{VERSION}")
         self.setFixedSize(550, 600)
+        self.terminal_dialog = None
         self.init_ui()
         self.apply_styles()
 
@@ -128,6 +335,28 @@ class SerialTerminalGUI(QMainWindow):
         # Update port list
         self.update_port_list()
 
+    def get_arrow_icon_path(self):
+        """Get the path to arrow_down.svg for different installation types"""
+        # Check for Flatpak
+        if os.path.exists('/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'):
+            return '/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'
+        # Check for AppImage
+        elif os.environ.get('APPDIR'):
+            appdir = os.environ.get('APPDIR')
+            return os.path.join(appdir, 'usr/share/serialcom/arrow_down.svg')
+        # Local installation or development
+        else:
+            # Try current directory first
+            local_path = os.path.join(os.path.dirname(__file__), 'arrow_down.svg')
+            if os.path.exists(local_path):
+                return local_path
+            # Try assets directory
+            assets_path = os.path.join(os.path.dirname(__file__), 'assets/arrow_down.svg')
+            if os.path.exists(assets_path):
+                return assets_path
+            # Fallback
+            return local_path
+
     def apply_styles(self):
         """Apply modern light theme to the application"""
         self.setStyleSheet("""
@@ -168,7 +397,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: transparent;
             }
             QComboBox::down-arrow {
-                image: url(""" + (os.path.join(os.environ.get('APPDIR', os.path.dirname(__file__)), 'usr/share/serialcom' if os.environ.get('APPDIR') else '', "arrow_down.svg") if os.environ.get('APPDIR') else os.path.join(os.path.dirname(__file__), "arrow_down.svg")) + """);
+                image: url(""" + self.get_arrow_icon_path() + """);
                 width: 12px;
                 height: 12px;
             }
@@ -208,6 +437,24 @@ class SerialTerminalGUI(QMainWindow):
             }
             QFormLayout QLabel {
                 color: #4a4a4a;
+            }
+            QMessageBox {
+                background-color: #ffffff;
+            }
+            QMessageBox QLabel {
+                color: #2c2c2c;
+                font-size: 10pt;
+            }
+            QMessageBox QPushButton {
+                background-color: #4caf50;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                min-width: 80px;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #45a049;
             }
         """)
 
@@ -289,7 +536,7 @@ class SerialTerminalGUI(QMainWindow):
         return cmd
 
     def connect(self):
-        """Connect to the serial port using picocom"""
+        """Connect to the serial port using embedded terminal"""
         # Check if picocom is installed
         try:
             subprocess.run(['which', 'picocom'], check=True, capture_output=True)
@@ -313,79 +560,23 @@ class SerialTerminalGUI(QMainWindow):
             )
             return
 
-        self.status_label.setText("Connecting...")
+        self.status_label.setText("Opening terminal...")
         self.status_label.setStyleSheet("color: #fab387; font-size: 10pt; padding: 5px;")
         QApplication.processEvents()
 
-        # Determine default terminal
-        terminals = [
-            'gnome-terminal',
-            'konsole',
-            'xfce4-terminal',
-            'kitty',
-            'alacritty',
-            'xterm'
-        ]
-
-        terminal_cmd = None
-        for term in terminals:
-            try:
-                subprocess.run(['which', term], check=True, capture_output=True)
-                terminal_cmd = term
-                break
-            except subprocess.CalledProcessError:
-                continue
-
-        if not terminal_cmd:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "No terminal found on the system.\n\n"
-                "Install a terminal like:\n"
-                "sudo pacman -S gnome-terminal"
-            )
-            self.status_label.setText("Error: terminal not found")
-            self.status_label.setStyleSheet("color: #f38ba8; font-size: 10pt; padding: 5px;")
-            return
-
-        # Build full command with sudo
-        picocom_cmd_str = ' '.join(cmd)
-
-        # Terminal-specific commands
-        if terminal_cmd == 'gnome-terminal':
-            full_cmd = [terminal_cmd, '--', 'bash', '-c',
-                       f'sudo {picocom_cmd_str}; echo "\nPress Enter to close..."; read']
-        elif terminal_cmd == 'konsole':
-            full_cmd = [terminal_cmd, '-e', 'bash', '-c',
-                       f'sudo {picocom_cmd_str}; echo "\nPress Enter to close..."; read']
-        elif terminal_cmd in ['xfce4-terminal', 'xterm']:
-            full_cmd = [terminal_cmd, '-e', 'bash', '-c',
-                       f'sudo {picocom_cmd_str}; echo "\nPress Enter to close..."; read']
-        else:  # kitty, alacritty
-            full_cmd = [terminal_cmd, 'bash', '-c',
-                       f'sudo {picocom_cmd_str}; echo "\nPress Enter to close..."; read']
-
-        try:
-            subprocess.Popen(full_cmd)
-            self.status_label.setText("Terminal opened - enter root password")
-            self.status_label.setStyleSheet("color: #89b4fa; font-size: 10pt; padding: 5px;")
-
-            # Show connection information
-            QMessageBox.information(
-                self,
-                "Connection Started",
-                f"Picocom terminal opened.\n\n"
-                f"Port: {self.port.currentText()}\n"
-                f"Baud Rate: {self.baudrate.currentText()} baud\n"
-                f"Configuration: {self.databits.currentText()}{self.parity.currentText()[0]}{self.stopbits.currentText()}\n\n"
-                f"Use Ctrl+A Ctrl+X to exit picocom"
-            )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Error opening terminal:\n{str(e)}"
-            )
+        # Create and show terminal dialog
+        self.terminal_dialog = TerminalDialog(self)
+        
+        # Start picocom
+        if self.terminal_dialog.start_picocom(cmd):
+            self.status_label.setText("Connected - Terminal opened")
+            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
+            self.terminal_dialog.exec()
+            
+            # Reset status after terminal closes
+            self.status_label.setText("Ready to connect")
+            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
+        else:
             self.status_label.setText("Connection error")
             self.status_label.setStyleSheet("color: #f38ba8; font-size: 10pt; padding: 5px;")
 

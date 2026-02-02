@@ -1,7 +1,7 @@
-# SerialCom 1.0
+# SerialCom 1.1
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fserialcom-blue?logo=github)](https://github.com/benjamimgois/serialcom)
-[![Version](https://img.shields.io/badge/version-1.0-green)](https://github.com/benjamimgois/serialcom/releases)
+[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/serialcom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Modern and elegant graphical interface for serial communication via picocom.
@@ -12,6 +12,7 @@ Modern and elegant graphical interface for serial communication via picocom.
 ## Features
 
 - Modern graphical interface with PyQt6
+- **Embedded terminal** - No external terminal required
 - Elegant and responsive design
 - Automatic serial port detection with QSerialPortInfo
 - Support for serial ports (/dev/ttyS*) and USB adapters (/dev/ttyUSB*)
@@ -23,7 +24,8 @@ Modern and elegant graphical interface for serial communication via picocom.
   - Flow control (None, Hardware, Software)
 - Automatic detection of available ports
 - Root password request via sudo
-- Opens in system default terminal
+- Real-time bidirectional communication
+- Support for picocom control sequences (Ctrl+A, Ctrl+X, etc.)
 
 ## Requirements
 
@@ -41,7 +43,7 @@ Modern and elegant graphical interface for serial communication via picocom.
 
 2. Install the package:
 ```bash
-sudo dpkg -i serialcom_1.0-1_all.deb
+sudo dpkg -i serialcom_1.1-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -65,7 +67,7 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../serialcom_1.0-1_all.deb
+sudo dpkg -i ../serialcom_1.1-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -83,7 +85,7 @@ paru -S serialcom
 
 2. Install the package:
 ```bash
-sudo pacman -U serialcom-1.0-1-any.pkg.tar.zst
+sudo pacman -U serialcom-1.1-1-any.pkg.tar.zst
 ```
 
 ### Other Linux Distributions
@@ -131,14 +133,16 @@ python3 serialcom
 3. Configure communication speed (main field)
 4. Adjust other parameters as needed
 5. Click "CONNECT"
-6. Enter root password when prompted
-7. picocom terminal will open in a new window
+6. Enter root password when prompted in the embedded terminal
+7. The integrated terminal window will open with picocom running
 
 ### picocom Commands
 
-In the picocom terminal, use:
+In the embedded terminal, use:
 - `Ctrl+A` `Ctrl+X` - Exit picocom
 - `Ctrl+A` `Ctrl+H` - Help with all commands
+
+You can also click the "DISCONNECT" button to close the connection.
 
 ## Permissions
 
@@ -160,10 +164,6 @@ After this, logout and login again to apply changes.
 - Make sure you're using sudo
 - Check if your user has sudo permissions
 - Or add your user to dialout group (see above)
-
-### Terminal doesn't open
-- Check if you have a terminal installed (gnome-terminal, konsole, xterm, etc.)
-- Install a terminal if needed: `sudo pacman -S gnome-terminal`
 
 ## Links
 
