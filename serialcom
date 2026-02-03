@@ -8,13 +8,14 @@ import sys
 import os
 import subprocess
 import glob
+import pyte
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
-    QTextEdit, QDialog
+    QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit
 )
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat
 
 # Application version
 VERSION = "1.1"
@@ -27,17 +28,28 @@ except ImportError:
 
 
 class TerminalWidget(QTextEdit):
-    """Custom terminal widget for displaying picocom output and handling input"""
-    
+    """Terminal widget using pyte for proper VT100/ANSI emulation"""
+
     send_input = pyqtSignal(str)
-    
-    def __init__(self, parent=None):
+
+    def __init__(self, parent=None, columns=120, lines=40):
         super().__init__(parent)
-        self.setReadOnly(False)
+        self.setReadOnly(True)  # Terminal handles all input
         self.setFont(QFont("Monospace", 10))
-        self.input_buffer = ""
-        self.command_start_pos = 0
-        
+
+        # Prevent Tab from being used for focus navigation
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setTabChangesFocus(False)
+
+        # Initialize pyte terminal emulator
+        self.screen = pyte.Screen(columns, lines)
+        self.stream = pyte.Stream(self.screen)
+
+        # Refresh timer for rendering
+        self.refresh_timer = QTimer()
+        self.refresh_timer.timeout.connect(self.render_screen)
+        self.refresh_timer.start(50)  # Refresh every 50ms
+
         # Apply terminal styling
         self.setStyleSheet("""
             QTextEdit {
@@ -47,51 +59,106 @@ class TerminalWidget(QTextEdit):
                 padding: 10px;
             }
         """)
-        
+
+    def event(self, event):
+        """Intercept Tab key before focus handling"""
+        if event.type() == event.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Tab:
+                # Handle Tab directly here, don't let it propagate
+                self.send_input.emit('\t')
+                event.accept()
+                return True
+        return super().event(event)
+
     def keyPressEvent(self, event: QKeyEvent):
-        """Handle key press events for terminal input"""
-        # Get the key
+        """Handle key press and send to picocom"""
         key = event.key()
+        modifiers = event.modifiers()
         text = event.text()
-        
-        # Handle special keys
-        if key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
-            # Send newline
-            self.send_input.emit('\n')
-            super().keyPressEvent(event)
-        elif key == Qt.Key.Key_Backspace:
-            # Allow backspace
-            super().keyPressEvent(event)
-        elif key == Qt.Key.Key_Tab:
-            # Send tab
-            self.send_input.emit('\t')
-            super().keyPressEvent(event)
-        elif event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            # Handle Ctrl+A and other control sequences
+
+        # Build key sequence to send
+        sequence = ""
+
+        # Handle Ctrl combinations
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
             if key == Qt.Key.Key_A:
-                self.send_input.emit('\x01')  # Ctrl+A
-            elif key == Qt.Key.Key_X:
-                self.send_input.emit('\x18')  # Ctrl+X
+                sequence = '\x01'
             elif key == Qt.Key.Key_C:
-                self.send_input.emit('\x03')  # Ctrl+C
+                sequence = '\x03'
             elif key == Qt.Key.Key_D:
-                self.send_input.emit('\x04')  # Ctrl+D
+                sequence = '\x04'
             elif key == Qt.Key.Key_H:
-                self.send_input.emit('\x08')  # Ctrl+H
-            else:
-                super().keyPressEvent(event)
+                sequence = '\x08'
+            elif key == Qt.Key.Key_L:
+                sequence = '\x0c'
+            elif key == Qt.Key.Key_U:
+                sequence = '\x15'
+            elif key == Qt.Key.Key_X:
+                sequence = '\x18'
+            elif key == Qt.Key.Key_Z:
+                sequence = '\x1a'
+
+        # Handle special keys
+        elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            sequence = '\r'
+        elif key == Qt.Key.Key_Backspace:
+            sequence = '\x7f'
+        elif key == Qt.Key.Key_Tab:
+            sequence = '\t'
+        elif key == Qt.Key.Key_Up:
+            sequence = '\x1b[A'
+        elif key == Qt.Key.Key_Down:
+            sequence = '\x1b[B'
+        elif key == Qt.Key.Key_Right:
+            sequence = '\x1b[C'
+        elif key == Qt.Key.Key_Left:
+            sequence = '\x1b[D'
+        elif key == Qt.Key.Key_Home:
+            sequence = '\x1b[H'
+        elif key == Qt.Key.Key_End:
+            sequence = '\x1b[F'
+        elif key == Qt.Key.Key_Delete:
+            sequence = '\x1b[3~'
+        elif key == Qt.Key.Key_PageUp:
+            sequence = '\x1b[5~'
+        elif key == Qt.Key.Key_PageDown:
+            sequence = '\x1b[6~'
         elif text:
-            # Send regular character
-            self.send_input.emit(text)
-            super().keyPressEvent(event)
-        else:
-            super().keyPressEvent(event)
-    
+            sequence = text
+
+        # Send sequence to picocom
+        if sequence:
+            self.send_input.emit(sequence)
+
     def append_output(self, text):
-        """Append output text to the terminal"""
-        self.moveCursor(QTextCursor.MoveOperation.End)
-        self.insertPlainText(text)
-        self.moveCursor(QTextCursor.MoveOperation.End)
+        """Feed text to pyte terminal emulator"""
+        self.stream.feed(text)
+
+    def render_screen(self):
+        """Render pyte screen buffer to QTextEdit"""
+        # Build text from screen buffer
+        lines = []
+        for y in range(self.screen.lines):
+            line = ""
+            for x in range(self.screen.columns):
+                char = self.screen.buffer[y][x]
+                line += char.data
+            lines.append(line.rstrip())
+
+        # Update QTextEdit content (always update, don't check for changes)
+        new_text = "\n".join(lines)
+
+        # Save scroll position
+        scrollbar = self.verticalScrollBar()
+        at_bottom = scrollbar.value() == scrollbar.maximum()
+
+        # Update text
+        self.setPlainText(new_text)
+
+        # Restore scroll position or scroll to bottom
+        if at_bottom:
+            self.moveCursor(QTextCursor.MoveOperation.End)
+            scrollbar.setValue(scrollbar.maximum())
 
 
 class TerminalDialog(QDialog):
@@ -100,7 +167,7 @@ class TerminalDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("SerialCom Terminal")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1200, 700)
         self.process = None
         self.sudo_process = None
         
@@ -149,26 +216,43 @@ class TerminalDialog(QDialog):
         
     def start_picocom(self, cmd):
         """Start picocom process with sudo"""
+        # Ask for sudo password using graphical dialog
+        password, ok = QInputDialog.getText(
+            self,
+            "Sudo Password Required",
+            "Please enter your sudo password to access serial port:",
+            QLineEdit.EchoMode.Password
+        )
+
+        if not ok or not password:
+            self.terminal.append_output("[CANCELLED] Password not provided\n")
+            return False
+
         # Create the process
         self.process = QProcess(self)
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.finished.connect(self.process_finished)
-        
+
         # Build sudo command
         picocom_cmd = ' '.join(cmd)
         full_cmd = ['sudo', '-S'] + cmd
-        
+
         # Start process
         self.terminal.append_output(f"Starting: {picocom_cmd}\n")
-        self.terminal.append_output("Enter sudo password if prompted...\n\n")
-        
+
         self.process.start(full_cmd[0], full_cmd[1:])
-        
+
         if not self.process.waitForStarted(3000):
             self.terminal.append_output("\n[ERROR] Failed to start picocom\n")
             return False
-        
+
+        # Send password to sudo
+        self.process.write((password + '\n').encode())
+        password = None  # Clear password from memory
+
+        self.terminal.append_output("Connecting...\n\n")
+
         return True
     
     def send_to_process(self, text):
