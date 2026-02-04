@@ -188,8 +188,11 @@ class TFTPServer:
 
     def _serve(self):
         """Serve requests until stopped"""
-        while self.running:
-            self.server.handle_request()
+        try:
+            self.server.serve_forever()
+        except Exception as e:
+            print(f"[TFTP] Server error: {e}")
+            self.running = False
 
     def stop(self):
         """Stop the TFTP server"""
@@ -198,8 +201,13 @@ class TFTPServer:
 
         self.running = False
         if self.server:
-            self.server.shutdown()
-            self.server = None
+            try:
+                self.server.shutdown()
+                self.server.server_close()
+            except Exception as e:
+                print(f"[TFTP] Error stopping server: {e}")
+            finally:
+                self.server = None
         print("[TFTP] Server stopped")
 
     def is_running(self):
@@ -1136,6 +1144,7 @@ class SerialTerminalGUI(QMainWindow):
         self.setWindowTitle(f"SerialCom v{VERSION}")
         self.setFixedSize(550, 880)
         self.terminal_dialog = None
+        self.tftp_process = None
         self.config = ConfigManager()
         self.init_ui()
         self.apply_styles()
@@ -1626,9 +1635,11 @@ class SerialTerminalGUI(QMainWindow):
 
     def toggle_tftp_server(self):
         """Start or stop the TFTP server"""
-        if self.tftp_server and self.tftp_server.is_running():
+        if self.tftp_process is not None:
             # Stop server
-            self.tftp_server.stop()
+            self.tftp_process.terminate()
+            self.tftp_process.wait()
+            self.tftp_process = None
             self.tftp_btn.setText("Start TFTP")
             self.tftp_btn.setStyleSheet("""
                 QPushButton {
@@ -1637,6 +1648,7 @@ class SerialTerminalGUI(QMainWindow):
                     border: none;
                     border-radius: 6px;
                     font-weight: bold;
+                    padding: 4px 16px;
                 }
                 QPushButton:hover {
                     background-color: #1976D2;
@@ -1657,36 +1669,138 @@ class SerialTerminalGUI(QMainWindow):
                 QMessageBox.warning(self, "Warning", "Invalid TFTP directory")
                 return
 
-            # Start server (port 69 requires root, use 6969 as alternative)
-            self.tftp_server = TFTPServer(host=ip, port=69, root_dir=directory)
+            # Ask for sudo password with custom dialog (to ensure light theme)
+            password_dialog = QDialog(self)
+            password_dialog.setWindowTitle("Sudo Password Required")
+            password_dialog.setModal(True)
+            password_dialog.setFixedSize(400, 150)
+            
+            # Apply light theme styling to dialog
+            password_dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #ffffff;
+                }
+                QLabel {
+                    color: #2c2c2c;
+                    font-size: 10pt;
+                }
+                QLineEdit {
+                    background-color: #fafafa;
+                    color: #2c2c2c;
+                    border: 1px solid #d0d0d0;
+                    border-radius: 6px;
+                    padding: 8px;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4caf50;
+                }
+                QPushButton {
+                    background-color: #4caf50;
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                    min-width: 80px;
+                }
+                QPushButton:hover {
+                    background-color: #43a047;
+                }
+                QPushButton#cancelButton {
+                    background-color: #9e9e9e;
+                }
+                QPushButton#cancelButton:hover {
+                    background-color: #757575;
+                }
+            """)
+            
+            layout = QVBoxLayout()
+            
+            label = QLabel("TFTP port 69 requires root privileges.\nPlease enter your sudo password:")
+            layout.addWidget(label)
+            
+            password_input = QLineEdit()
+            password_input.setEchoMode(QLineEdit.EchoMode.Password)
+            layout.addWidget(password_input)
+            
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            
+            ok_button = QPushButton("OK")
+            ok_button.clicked.connect(password_dialog.accept)
+            button_layout.addWidget(ok_button)
+            
+            cancel_button = QPushButton("Cancel")
+            cancel_button.setObjectName("cancelButton")
+            cancel_button.clicked.connect(password_dialog.reject)
+            button_layout.addWidget(cancel_button)
+            
+            layout.addLayout(button_layout)
+            password_dialog.setLayout(layout)
+            
+            # Show dialog and get result
+            if password_dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            
+            password = password_input.text()
+            if not password:
+                return
 
-            if not self.tftp_server.start():
-                # Try alternative port
-                self.tftp_server = TFTPServer(host=ip, port=6969, root_dir=directory)
-                if not self.tftp_server.start():
+            # Build command to run TFTP server with sudo
+            script_path = os.path.abspath(__file__)
+            cmd = ['sudo', '-S', sys.executable, script_path, '--tftp-server', ip, '69', directory]
+
+            try:
+                # Redirect TFTP server output to terminal for debugging
+                print(f"[SerialCom] Starting TFTP server on {ip}:69")
+                print(f"[SerialCom] Directory: {directory}")
+                
+                self.tftp_process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=None,  # Inherit parent's stdout (terminal)
+                    stderr=None,  # Inherit parent's stderr (terminal)
+                    text=False
+                )
+                # Send password
+                self.tftp_process.stdin.write((password + '\n').encode())
+                self.tftp_process.stdin.flush()
+                self.tftp_process.stdin.close()  # Close stdin after sending password
+                password = None  # Clear from memory
+
+                # Wait a moment to check if server started
+                import time
+                time.sleep(2.0)  # Increased timeout to allow server to start
+
+                if self.tftp_process.poll() is not None:
+                    # Process ended, probably failed
                     QMessageBox.critical(
                         self,
                         "Error",
-                        "Failed to start TFTP server.\n\n"
-                        "Port 69 requires root privileges.\n"
-                        "Try running with sudo or use a different port."
+                        f"Failed to start TFTP server.\n\nCheck terminal output for error details."
                     )
+                    self.tftp_process = None
                     return
-                else:
-                    QMessageBox.information(
-                        self,
-                        "TFTP Server",
-                        f"TFTP server started on {ip}:6969\n"
-                        f"(Port 69 requires root, using alternative port)\n\n"
-                        f"Directory: {directory}"
-                    )
-            else:
+
+                print(f"[SerialCom] TFTP server started successfully")
+                
                 QMessageBox.information(
                     self,
                     "TFTP Server",
                     f"TFTP server started on {ip}:69\n\n"
-                    f"Directory: {directory}"
+                    f"Directory: {directory}\n\n"
+                    f"Check terminal for debug messages."
                 )
+
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to start TFTP server.\n\n{str(e)}"
+                )
+                self.tftp_process = None
+                return
 
             self.tftp_btn.setText("Stop TFTP")
             self.tftp_btn.setStyleSheet("""
@@ -1696,6 +1810,7 @@ class SerialTerminalGUI(QMainWindow):
                     border: none;
                     border-radius: 6px;
                     font-weight: bold;
+                    padding: 4px 16px;
                 }
                 QPushButton:hover {
                     background-color: #d32f2f;
@@ -1818,7 +1933,42 @@ class SerialTerminalGUI(QMainWindow):
             self.status_led.setStyleSheet("color: #f38ba8; font-size: 14px;")
 
 
+def run_tftp_server_standalone(host, port, directory):
+    """Run TFTP server in standalone mode (for sudo execution)"""
+    import signal
+
+    server = TFTPServer(host=host, port=port, root_dir=directory)
+
+    def signal_handler(signum, frame):
+        print("\n[TFTP] Stopping server...")
+        server.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    if server.start():
+        print(f"[TFTP] Server running on {host}:{port}")
+        print(f"[TFTP] Directory: {directory}")
+        print("[TFTP] Press Ctrl+C to stop")
+        # Keep running until signal
+        while server.is_running():
+            import time
+            time.sleep(1)
+    else:
+        print("[TFTP] Failed to start server")
+        sys.exit(1)
+
+
 def main():
+    # Check for TFTP server mode (used with sudo)
+    if len(sys.argv) >= 5 and sys.argv[1] == '--tftp-server':
+        host = sys.argv[2]
+        port = int(sys.argv[3])
+        directory = sys.argv[4]
+        run_tftp_server_standalone(host, port, directory)
+        return
+
     app = QApplication(sys.argv)
 
     # Set default font
