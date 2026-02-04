@@ -1142,7 +1142,7 @@ class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"SerialCom v{VERSION}")
-        self.setFixedSize(550, 880)
+        self.setFixedSize(550, 780)
         self.terminal_dialog = None
         self.tftp_process = None
         self.config = ConfigManager()
@@ -1448,9 +1448,9 @@ class SerialTerminalGUI(QMainWindow):
             QComboBox {
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
-                padding: 6px 28px 6px 10px;
+                padding: 4px 28px 4px 10px;
                 background-color: #fafafa;
-                min-height: 28px;
+                min-height: 24px;
                 color: #2c2c2c;
                 font-size: 10pt;
             }
