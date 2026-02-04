@@ -9,13 +9,16 @@ import os
 import subprocess
 import glob
 import json
+import socket
+import threading
+import socketserver
 from pathlib import Path
 import pyte
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
-    QGraphicsDropShadowEffect, QCheckBox
+    QGraphicsDropShadowEffect, QCheckBox, QFileDialog
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor
@@ -28,6 +31,208 @@ try:
     SERIAL_PORT_AVAILABLE = True
 except ImportError:
     SERIAL_PORT_AVAILABLE = False
+
+
+class TFTPHandler(socketserver.BaseRequestHandler):
+    """Simple TFTP request handler supporting RRQ (read) operations"""
+
+    TFTP_OPCODES = {
+        1: 'RRQ',   # Read request
+        2: 'WRQ',   # Write request
+        3: 'DATA',  # Data
+        4: 'ACK',   # Acknowledgment
+        5: 'ERROR'  # Error
+    }
+
+    def handle(self):
+        data, sock = self.request
+        opcode = int.from_bytes(data[0:2], 'big')
+
+        if opcode == 1:  # RRQ - Read Request
+            self.handle_rrq(data, sock)
+        elif opcode == 2:  # WRQ - Write Request
+            self.handle_wrq(data, sock)
+
+    def handle_rrq(self, data, sock):
+        """Handle read request - send file to client"""
+        # Parse filename from request
+        parts = data[2:].split(b'\x00')
+        filename = parts[0].decode('utf-8')
+
+        # Get the file path from server's root directory
+        filepath = os.path.join(self.server.tftp_root, filename)
+
+        if not os.path.exists(filepath):
+            # Send error: File not found
+            error_packet = b'\x00\x05\x00\x01File not found\x00'
+            sock.sendto(error_packet, self.client_address)
+            print(f"[TFTP] File not found: {filename}")
+            return
+
+        try:
+            with open(filepath, 'rb') as f:
+                block_num = 1
+                while True:
+                    file_data = f.read(512)
+                    # Build DATA packet: opcode (2 bytes) + block# (2 bytes) + data
+                    data_packet = b'\x00\x03' + block_num.to_bytes(2, 'big') + file_data
+                    sock.sendto(data_packet, self.client_address)
+
+                    # Wait for ACK
+                    sock.settimeout(5.0)
+                    try:
+                        ack_data, _ = sock.recvfrom(516)
+                        ack_opcode = int.from_bytes(ack_data[0:2], 'big')
+                        ack_block = int.from_bytes(ack_data[2:4], 'big')
+
+                        if ack_opcode != 4 or ack_block != block_num:
+                            print(f"[TFTP] Unexpected ACK: opcode={ack_opcode}, block={ack_block}")
+                            break
+                    except socket.timeout:
+                        print(f"[TFTP] Timeout waiting for ACK block {block_num}")
+                        break
+
+                    if len(file_data) < 512:
+                        # Last block sent
+                        print(f"[TFTP] Transfer complete: {filename}")
+                        break
+
+                    block_num += 1
+
+        except Exception as e:
+            error_packet = b'\x00\x05\x00\x00' + str(e).encode() + b'\x00'
+            sock.sendto(error_packet, self.client_address)
+            print(f"[TFTP] Error reading file: {e}")
+
+    def handle_wrq(self, data, sock):
+        """Handle write request - receive file from client"""
+        # Parse filename from request
+        parts = data[2:].split(b'\x00')
+        filename = parts[0].decode('utf-8')
+
+        # Get the file path in server's root directory
+        filepath = os.path.join(self.server.tftp_root, filename)
+
+        try:
+            # Send ACK for block 0 to start transfer
+            ack_packet = b'\x00\x04\x00\x00'
+            sock.sendto(ack_packet, self.client_address)
+
+            with open(filepath, 'wb') as f:
+                block_num = 1
+                while True:
+                    sock.settimeout(5.0)
+                    try:
+                        data_packet, _ = sock.recvfrom(516)
+                        opcode = int.from_bytes(data_packet[0:2], 'big')
+                        recv_block = int.from_bytes(data_packet[2:4], 'big')
+
+                        if opcode != 3 or recv_block != block_num:
+                            print(f"[TFTP] Unexpected DATA: opcode={opcode}, block={recv_block}")
+                            break
+
+                        file_data = data_packet[4:]
+                        f.write(file_data)
+
+                        # Send ACK
+                        ack_packet = b'\x00\x04' + block_num.to_bytes(2, 'big')
+                        sock.sendto(ack_packet, self.client_address)
+
+                        if len(file_data) < 512:
+                            print(f"[TFTP] Receive complete: {filename}")
+                            break
+
+                        block_num += 1
+
+                    except socket.timeout:
+                        print(f"[TFTP] Timeout waiting for DATA block {block_num}")
+                        break
+
+        except Exception as e:
+            error_packet = b'\x00\x05\x00\x00' + str(e).encode() + b'\x00'
+            sock.sendto(error_packet, self.client_address)
+            print(f"[TFTP] Error writing file: {e}")
+
+
+class TFTPServer:
+    """Simple TFTP Server"""
+
+    def __init__(self, host='0.0.0.0', port=69, root_dir=None):
+        self.host = host
+        self.port = port
+        self.root_dir = root_dir or os.path.expanduser('~')
+        self.server = None
+        self.thread = None
+        self.running = False
+
+    def start(self):
+        """Start the TFTP server in a background thread"""
+        if self.running:
+            return False
+
+        try:
+            self.server = socketserver.UDPServer((self.host, self.port), TFTPHandler)
+            self.server.tftp_root = self.root_dir
+            self.thread = threading.Thread(target=self._serve, daemon=True)
+            self.thread.start()
+            self.running = True
+            print(f"[TFTP] Server started on {self.host}:{self.port}, root: {self.root_dir}")
+            return True
+        except PermissionError:
+            print(f"[TFTP] Permission denied for port {self.port}. Try running with sudo or use port > 1024")
+            return False
+        except Exception as e:
+            print(f"[TFTP] Failed to start server: {e}")
+            return False
+
+    def _serve(self):
+        """Serve requests until stopped"""
+        while self.running:
+            self.server.handle_request()
+
+    def stop(self):
+        """Stop the TFTP server"""
+        if not self.running:
+            return
+
+        self.running = False
+        if self.server:
+            self.server.shutdown()
+            self.server = None
+        print("[TFTP] Server stopped")
+
+    def is_running(self):
+        return self.running
+
+
+def get_network_interfaces():
+    """Get list of network interfaces with their IP addresses"""
+    interfaces = []
+
+    try:
+        # Use ip command to get interface information
+        result = subprocess.run(['ip', '-4', 'addr', 'show'], capture_output=True, text=True)
+
+        current_iface = None
+        for line in result.stdout.split('\n'):
+            # Match interface line (e.g., "2: eth0: <BROADCAST...")
+            if ': ' in line and not line.startswith(' '):
+                parts = line.split(': ')
+                if len(parts) >= 2:
+                    current_iface = parts[1].split('@')[0]
+
+            # Match inet line (e.g., "    inet 192.168.1.100/24...")
+            elif 'inet ' in line and current_iface:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    ip_with_mask = parts[1]
+                    ip = ip_with_mask.split('/')[0]
+                    if ip != '127.0.0.1':  # Skip loopback
+                        interfaces.append((current_iface, ip))
+    except Exception as e:
+        print(f"Error getting interfaces: {e}")
+
+    return interfaces
 
 
 class ConfigManager:
@@ -928,7 +1133,7 @@ class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"SerialCom v{VERSION}")
-        self.setFixedSize(550, 680)
+        self.setFixedSize(550, 880)
         self.terminal_dialog = None
         self.config = ConfigManager()
         self.init_ui()
@@ -1061,6 +1266,81 @@ class SerialTerminalGUI(QMainWindow):
         comm_group.setGraphicsEffect(shadow2)
 
         main_layout.addWidget(comm_group)
+
+        # TFTP Server group
+        tftp_group = QGroupBox("TFTP Server")
+        tftp_layout = QFormLayout()
+        tftp_layout.setVerticalSpacing(12)
+        tftp_layout.setContentsMargins(15, 15, 15, 15)
+        tftp_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        tftp_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        # Network interface selector
+        self.tftp_interface = QComboBox()
+        self.tftp_interface.setFixedWidth(combo_width)
+        self.tftp_interface.setToolTip("Select network interface for TFTP server")
+        self.update_network_interfaces()
+        tftp_layout.addRow("Interface:", self.tftp_interface)
+
+        # TFTP directory with browse button and start button
+        tftp_dir_layout = QHBoxLayout()
+        tftp_dir_layout.setContentsMargins(0, 0, 0, 0)
+        tftp_dir_layout.setSpacing(2)
+
+        self.tftp_directory = QLineEdit()
+        self.tftp_directory.setFixedWidth(combo_width)
+        self.tftp_directory.setText(os.path.expanduser('~'))
+        self.tftp_directory.setToolTip("Directory containing firmware files")
+
+        self.tftp_browse_btn = QPushButton()
+        self.tftp_browse_btn.setFixedSize(28, 28)
+        self.tftp_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
+        self.tftp_browse_btn.setToolTip("Browse for directory")
+        self.tftp_browse_btn.clicked.connect(self.browse_tftp_directory)
+
+        self.tftp_btn = QPushButton("Start TFTP")
+        self.tftp_btn.setFixedHeight(28)
+        self.tftp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tftp_btn.clicked.connect(self.toggle_tftp_server)
+        self.tftp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                padding: 4px 16px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+
+        tftp_dir_layout.addWidget(self.tftp_directory)
+        tftp_dir_layout.addWidget(self.tftp_browse_btn)
+        tftp_dir_layout.addSpacing(8)
+        tftp_dir_layout.addWidget(self.tftp_btn)
+        tftp_dir_layout.addStretch()
+
+        tftp_dir_widget = QWidget()
+        tftp_dir_widget.setContentsMargins(0, 0, 0, 0)
+        tftp_dir_widget.setLayout(tftp_dir_layout)
+        tftp_layout.addRow("Directory:", tftp_dir_widget)
+
+        tftp_group.setLayout(tftp_layout)
+
+        # Add shadow effect to tftp group
+        shadow3 = QGraphicsDropShadowEffect()
+        shadow3.setBlurRadius(15)
+        shadow3.setXOffset(0)
+        shadow3.setYOffset(2)
+        shadow3.setColor(QColor(0, 0, 0, 30))
+        tftp_group.setGraphicsEffect(shadow3)
+
+        main_layout.addWidget(tftp_group)
+
+        # Initialize TFTP server instance
+        self.tftp_server = None
 
         # Debug mode checkbox
         self.debug_checkbox = QCheckBox("Debug Mode (simulate Cisco router)")
@@ -1308,6 +1588,108 @@ class SerialTerminalGUI(QMainWindow):
             self.status_label.setText("No serial ports available")
             self.status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
             self.status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
+
+    def update_network_interfaces(self):
+        """Update the list of network interfaces"""
+        self.tftp_interface.clear()
+        interfaces = get_network_interfaces()
+
+        if interfaces:
+            for iface, ip in interfaces:
+                self.tftp_interface.addItem(f"{iface} ({ip})", ip)
+        else:
+            self.tftp_interface.addItem("No interfaces found", "")
+
+    def browse_tftp_directory(self):
+        """Open dialog to select TFTP directory"""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select TFTP Directory",
+            self.tftp_directory.text()
+        )
+        if directory:
+            self.tftp_directory.setText(directory)
+
+    def toggle_tftp_server(self):
+        """Start or stop the TFTP server"""
+        if self.tftp_server and self.tftp_server.is_running():
+            # Stop server
+            self.tftp_server.stop()
+            self.tftp_btn.setText("Start TFTP")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1976D2;
+                }
+            """)
+            self.tftp_interface.setEnabled(True)
+            self.tftp_directory.setEnabled(True)
+            self.tftp_browse_btn.setEnabled(True)
+        else:
+            # Get selected interface IP
+            ip = self.tftp_interface.currentData()
+            if not ip:
+                QMessageBox.warning(self, "Warning", "No network interface selected")
+                return
+
+            directory = self.tftp_directory.text()
+            if not os.path.isdir(directory):
+                QMessageBox.warning(self, "Warning", "Invalid TFTP directory")
+                return
+
+            # Start server (port 69 requires root, use 6969 as alternative)
+            self.tftp_server = TFTPServer(host=ip, port=69, root_dir=directory)
+
+            if not self.tftp_server.start():
+                # Try alternative port
+                self.tftp_server = TFTPServer(host=ip, port=6969, root_dir=directory)
+                if not self.tftp_server.start():
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Failed to start TFTP server.\n\n"
+                        "Port 69 requires root privileges.\n"
+                        "Try running with sudo or use a different port."
+                    )
+                    return
+                else:
+                    QMessageBox.information(
+                        self,
+                        "TFTP Server",
+                        f"TFTP server started on {ip}:6969\n"
+                        f"(Port 69 requires root, using alternative port)\n\n"
+                        f"Directory: {directory}"
+                    )
+            else:
+                QMessageBox.information(
+                    self,
+                    "TFTP Server",
+                    f"TFTP server started on {ip}:69\n\n"
+                    f"Directory: {directory}"
+                )
+
+            self.tftp_btn.setText("Stop TFTP")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #d32f2f;
+                }
+            """)
+            self.tftp_interface.setEnabled(False)
+            self.tftp_directory.setEnabled(False)
+            self.tftp_browse_btn.setEnabled(False)
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
