@@ -13,6 +13,17 @@ override_dh_auto_install:
 	# Install SVG arrow icon
 	install -Dm644 assets/arrow_down.svg debian/serialcom/usr/share/serialcom/arrow_down.svg
 
+	# Install vendor icons
+	install -Dm644 assets/vendors/generic.svg debian/serialcom/usr/share/serialcom/vendors/generic.svg
+	install -Dm644 assets/vendors/cisco.svg debian/serialcom/usr/share/serialcom/vendors/cisco.svg
+	install -Dm644 assets/vendors/huawei.svg debian/serialcom/usr/share/serialcom/vendors/huawei.svg
+	install -Dm644 assets/vendors/juniper.svg debian/serialcom/usr/share/serialcom/vendors/juniper.svg
+	install -Dm644 assets/vendors/fortinet.svg debian/serialcom/usr/share/serialcom/vendors/fortinet.svg
+	install -Dm644 assets/vendors/dlink.svg debian/serialcom/usr/share/serialcom/vendors/dlink.svg
+	install -Dm644 assets/vendors/h3c.svg debian/serialcom/usr/share/serialcom/vendors/h3c.svg
+	install -Dm644 assets/vendors/brocade.svg debian/serialcom/usr/share/serialcom/vendors/brocade.svg
+	install -Dm644 assets/vendors/datacom.svg debian/serialcom/usr/share/serialcom/vendors/datacom.svg
+
 	# Install desktop file
 	install -Dm644 serialcom.desktop debian/serialcom/usr/share/applications/serialcom.desktop
 

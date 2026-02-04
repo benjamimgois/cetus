@@ -782,14 +782,19 @@ class TerminalDialog(QDialog):
         elif os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
             return os.path.join(appdir, f'usr/share/serialcom/vendors/{vendor_file}')
+        # Check for system-wide installation (Debian/Arch packages)
+        system_path = f'/usr/share/serialcom/vendors/{vendor_file}'
+        if os.path.exists(system_path):
+            return system_path
         # Local installation or development
-        else:
-            # Try assets/vendors directory
-            assets_path = os.path.join(os.path.dirname(__file__), f'assets/vendors/{vendor_file}')
-            if os.path.exists(assets_path):
-                return assets_path
-            # Fallback to generic
-            return os.path.join(os.path.dirname(__file__), 'assets/vendors/generic.svg')
+        assets_path = os.path.join(os.path.dirname(__file__), f'assets/vendors/{vendor_file}')
+        if os.path.exists(assets_path):
+            return assets_path
+        # Fallback to generic
+        generic_system = '/usr/share/serialcom/vendors/generic.svg'
+        if os.path.exists(generic_system):
+            return generic_system
+        return os.path.join(os.path.dirname(__file__), 'assets/vendors/generic.svg')
 
     def init_ui(self):
         """Initialize the terminal dialog UI"""

@@ -1,3 +1,14 @@
+serialcom (1.1-1) jammy; urgency=medium
+
+  * Add manufacturer SVG icons (Cisco, Huawei, Juniper, Fortinet, D-Link,
+    H3C, Brocade, Datacom)
+  * Display vendor icon next to equipment selector in terminal window
+  * Update UI styling with grey/blue color palette
+  * Improve TFTP interface combobox styling
+  * Add python-pyte dependency for terminal emulation
+
+ -- Benjamim Gois <benjamimgois@example.com>  Tue, 04 Feb 2026 14:30:00 -0300
+
 serialcom (1.0-1) jammy; urgency=medium
 
   * Initial release
