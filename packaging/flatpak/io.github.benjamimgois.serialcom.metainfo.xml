@@ -49,13 +49,15 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="1.1" date="2026-01-30">
+    <release version="1.1" date="2026-02-04">
       <description>
-        <p>Add Flatpak support</p>
+        <p>Add vendor icons and UI improvements</p>
         <ul>
-          <li>Add Flatpak/Flathub manifest</li>
-          <li>Add AppStream metadata</li>
-          <li>Fix icon installation paths</li>
+          <li>Add manufacturer SVG icons (Cisco, Huawei, Juniper, Fortinet, D-Link, H3C, Brocade, Datacom)</li>
+          <li>Display vendor icon next to equipment selector in terminal window</li>
+          <li>Update UI styling with grey/blue color palette</li>
+          <li>Improve TFTP interface combobox styling</li>
+          <li>Add Flatpak/Flathub support</li>
         </ul>
       </description>
     </release>

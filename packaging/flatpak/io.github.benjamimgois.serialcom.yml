@@ -23,11 +23,11 @@ modules:
         --prefix=${FLATPAK_DEST} "pyte" --no-build-isolation
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/cf/81/82693467c9399c6bef9d1ce3e23c5a92ac6dcf496f67b4aea8e1be4acbf6/wcwidth-0.2.13-py2.py3-none-any.whl
-        sha256: 3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859
+        url: https://files.pythonhosted.org/packages/3c/c1/d73f12f8cdb1891334a2ccf7389eed244d3941e74d80dd220badb937f3fb/wcwidth-0.5.3-py3-none-any.whl
+        sha256: d584eff31cd4753e1e5ff6c12e1edfdb324c995713f75d26c29807bb84bf649e
       - type: file
-        url: https://files.pythonhosted.org/packages/d7/32/f2bcfa6eddc70a854ce9baa13db11ea39b96b1c8ab26eeae0c27c99d0ad8/pyte-0.8.2-py3-none-any.whl
-        sha256: c0ca6a3e2c1d2f6b51e68ddd8d7f83098e3e05bf8f0cebcf51c20e04bfbc77e2
+        url: https://files.pythonhosted.org/packages/59/d0/bb522283b90853afbf506cd5b71c650cf708829914efd0003d615cf426cd/pyte-0.8.2-py3-none-any.whl
+        sha256: 85db42a35798a5aafa96ac4d8da78b090b2c933248819157fc0e6f78876a0135
 
   - name: picocom
     buildsystem: simple
@@ -54,6 +54,15 @@ modules:
       - install -Dm644 assets/icons/serialcom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/serialcom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
+      - install -Dm644 assets/vendors/generic.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/generic.svg
+      - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
+      - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
+      - install -Dm644 assets/vendors/juniper.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/juniper.svg
+      - install -Dm644 assets/vendors/fortinet.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/fortinet.svg
+      - install -Dm644 assets/vendors/dlink.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/dlink.svg
+      - install -Dm644 assets/vendors/h3c.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/h3c.svg
+      - install -Dm644 assets/vendors/brocade.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/brocade.svg
+      - install -Dm644 assets/vendors/datacom.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/datacom.svg
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE
