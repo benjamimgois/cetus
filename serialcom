@@ -14,10 +14,11 @@ import pyte
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
-    QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit
+    QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
+    QGraphicsDropShadowEffect
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor
 
 # Application version
 VERSION = "1.1"
@@ -893,22 +894,66 @@ class SerialTerminalGUI(QMainWindow):
         port_layout = QFormLayout()
         port_layout.setVerticalSpacing(15)
         port_layout.setContentsMargins(15, 15, 15, 15)
-        port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        port_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # Port type
         self.port_type = QComboBox()
         self.port_type.addItems(['USB', 'Serial'])
         self.port_type.setCurrentIndex(0)
         self.port_type.setFixedWidth(combo_width)
+        self.port_type.setToolTip("Select the type of serial port")
         self.port_type.currentIndexChanged.connect(self.update_port_list)
         port_layout.addRow("Type:", self.port_type)
 
-        # Specific port
+        # Port with refresh button
+        port_row = QHBoxLayout()
+        port_row.setContentsMargins(0, 0, 0, 0)
+        port_row.setSpacing(8)
         self.port = QComboBox()
         self.port.setFixedWidth(combo_width)
-        port_layout.addRow("Port:", self.port)
+        self.port.setToolTip("Select the serial port to connect")
+
+        self.refresh_btn = QPushButton("R")
+        self.refresh_btn.setFixedSize(32, 32)
+        self.refresh_btn.setToolTip("Refresh port list")
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.clicked.connect(self.update_port_list)
+        self.refresh_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #505050;
+                border: 1px solid #c0c0c0;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d0d0d0;
+                border: 1px solid #a0a0a0;
+            }
+            QPushButton:pressed {
+                background-color: #c0c0c0;
+            }
+        """)
+
+        port_row.addWidget(self.port)
+        port_row.addWidget(self.refresh_btn)
+
+        port_row_widget = QWidget()
+        port_row_widget.setLayout(port_row)
+        port_layout.addRow("Port:", port_row_widget)
 
         port_group.setLayout(port_layout)
+
+        # Add shadow effect to port group
+        shadow1 = QGraphicsDropShadowEffect()
+        shadow1.setBlurRadius(15)
+        shadow1.setXOffset(0)
+        shadow1.setYOffset(2)
+        shadow1.setColor(QColor(0, 0, 0, 30))
+        port_group.setGraphicsEffect(shadow1)
+
         main_layout.addWidget(port_group)
 
         # Communication parameters group
@@ -916,12 +961,14 @@ class SerialTerminalGUI(QMainWindow):
         comm_layout = QFormLayout()
         comm_layout.setVerticalSpacing(15)
         comm_layout.setContentsMargins(15, 15, 15, 15)
-        comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        comm_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        # Baud Rate - MAIN FIELD
+        # Baud Rate - MAIN FIELD (highlighted)
         velocity_label = QLabel("Baud Rate:")
         velocity_font = QFont("Sans Serif", 10, QFont.Weight.Bold)
         velocity_label.setFont(velocity_font)
+        velocity_label.setStyleSheet("color: #2e7d32;")
 
         self.baudrate = QComboBox()
         self.baudrate.addItems([
@@ -930,6 +977,17 @@ class SerialTerminalGUI(QMainWindow):
         ])
         self.baudrate.setCurrentText('9600')
         self.baudrate.setFixedWidth(combo_width)
+        self.baudrate.setToolTip("Communication speed in bits per second")
+        self.baudrate.setStyleSheet("""
+            QComboBox {
+                border: 2px solid #4caf50;
+                background-color: #f1f8e9;
+            }
+            QComboBox:hover {
+                border: 2px solid #2e7d32;
+                background-color: #e8f5e9;
+            }
+        """)
         comm_layout.addRow(velocity_label, self.baudrate)
 
         # Data bits
@@ -937,6 +995,7 @@ class SerialTerminalGUI(QMainWindow):
         self.databits.addItems(['5', '6', '7', '8'])
         self.databits.setCurrentText('8')
         self.databits.setFixedWidth(combo_width)
+        self.databits.setToolTip("Number of data bits per character (usually 8)")
         comm_layout.addRow("Data Bits:", self.databits)
 
         # Parity
@@ -944,6 +1003,7 @@ class SerialTerminalGUI(QMainWindow):
         self.parity.addItems(['None', 'Even', 'Odd'])
         self.parity.setCurrentText('None')
         self.parity.setFixedWidth(combo_width)
+        self.parity.setToolTip("Error detection method (usually None)")
         comm_layout.addRow("Parity:", self.parity)
 
         # Stop bits
@@ -951,6 +1011,7 @@ class SerialTerminalGUI(QMainWindow):
         self.stopbits.addItems(['1', '2'])
         self.stopbits.setCurrentText('1')
         self.stopbits.setFixedWidth(combo_width)
+        self.stopbits.setToolTip("Number of stop bits (usually 1)")
         comm_layout.addRow("Stop Bits:", self.stopbits)
 
         # Flow control
@@ -958,23 +1019,46 @@ class SerialTerminalGUI(QMainWindow):
         self.flow.addItems(['None', 'Hardware (RTS/CTS)', 'Software (XON/XOFF)'])
         self.flow.setCurrentText('None')
         self.flow.setFixedWidth(combo_width)
+        self.flow.setToolTip("Flow control method (usually None)")
         comm_layout.addRow("Flow Control:", self.flow)
 
         comm_group.setLayout(comm_layout)
+
+        # Add shadow effect to comm group
+        shadow2 = QGraphicsDropShadowEffect()
+        shadow2.setBlurRadius(15)
+        shadow2.setXOffset(0)
+        shadow2.setYOffset(2)
+        shadow2.setColor(QColor(0, 0, 0, 30))
+        comm_group.setGraphicsEffect(shadow2)
+
         main_layout.addWidget(comm_group)
 
         # Connect button
         self.connect_btn = QPushButton("CONNECT")
         self.connect_btn.setMinimumHeight(45)
         self.connect_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connect_btn.clicked.connect(self.connect)
         main_layout.addWidget(self.connect_btn)
 
-        # Status
+        # Status with LED indicator
+        status_layout = QHBoxLayout()
+        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_layout.setSpacing(8)
+
+        self.status_led = QLabel("●")
+        self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+
         self.status_label = QLabel("Ready to connect")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
-        main_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+
+        status_layout.addWidget(self.status_led)
+        status_layout.addWidget(self.status_label)
+
+        status_widget = QWidget()
+        status_widget.setLayout(status_layout)
+        main_layout.addWidget(status_widget)
 
         central_widget.setLayout(main_layout)
 
@@ -1007,28 +1091,28 @@ class SerialTerminalGUI(QMainWindow):
         """Apply modern light theme to the application"""
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #f5f5f5;
+                background-color: #f0f0f0;
             }
             QGroupBox {
                 font-weight: bold;
-                border: 2px solid #d0d0d0;
-                border-radius: 8px;
-                margin-top: 10px;
+                border: 1px solid #e0e0e0;
+                border-radius: 10px;
+                margin-top: 12px;
                 padding-top: 15px;
                 background-color: #ffffff;
                 color: #2c2c2c;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #5a5a5a;
+                left: 12px;
+                padding: 0 8px;
+                color: #606060;
             }
             QComboBox {
-                border: 2px solid #d0d0d0;
+                border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 padding: 6px 28px 6px 10px;
-                background-color: #ffffff;
+                background-color: #fafafa;
                 min-height: 28px;
                 color: #2c2c2c;
                 font-size: 10pt;
@@ -1048,20 +1132,28 @@ class SerialTerminalGUI(QMainWindow):
                 height: 12px;
             }
             QComboBox:hover {
-                border: 2px solid #a0a0a0;
-                background-color: #fafafa;
+                border: 1px solid #a0a0a0;
+                background-color: #ffffff;
             }
             QComboBox:focus {
-                border: 2px solid #808080;
+                border: 2px solid #4caf50;
             }
             QComboBox QAbstractItemView {
-                border: 2px solid #d0d0d0;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
                 background-color: #ffffff;
-                selection-background-color: #e0e0e0;
+                selection-background-color: #e8f5e9;
                 selection-color: #2c2c2c;
                 color: #2c2c2c;
                 padding: 4px;
                 outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 6px;
+                min-height: 24px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #f5f5f5;
             }
             QPushButton {
                 background-color: #4caf50;
@@ -1073,10 +1165,10 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #43a047;
             }
             QPushButton:pressed {
-                background-color: #3d8b40;
+                background-color: #388e3c;
             }
             QLabel {
                 color: #2c2c2c;
@@ -1100,7 +1192,15 @@ class SerialTerminalGUI(QMainWindow):
                 min-width: 80px;
             }
             QMessageBox QPushButton:hover {
-                background-color: #45a049;
+                background-color: #43a047;
+            }
+            QToolTip {
+                background-color: #424242;
+                color: #ffffff;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 8px;
+                font-size: 9pt;
             }
         """)
 
@@ -1167,11 +1267,13 @@ class SerialTerminalGUI(QMainWindow):
         if ports:
             self.port.addItems(ports)
             self.status_label.setText(f"{len(ports)} port(s) found")
-            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
+            self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
         else:
             self.port.addItem("No ports found")
             self.status_label.setText("No serial ports available")
-            self.status_label.setStyleSheet("color: #fab387; font-size: 10pt; padding: 5px;")
+            self.status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
