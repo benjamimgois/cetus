@@ -47,7 +47,7 @@ class ConfigManager:
 
         # Default settings
         self.defaults = {
-            'port_type': 'USB (/dev/ttyUSB*)',
+            'port_type': 'USB',
             'baudrate': '9600',
             'databits': '8',
             'parity': 'None',
@@ -885,21 +885,27 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.setSpacing(15)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
+        # Standard width for all comboboxes
+        combo_width = 200
+
         # Port configuration group
         port_group = QGroupBox("Port Configuration")
         port_layout = QFormLayout()
         port_layout.setVerticalSpacing(15)
-        port_layout.setContentsMargins(10, 15, 10, 10)
+        port_layout.setContentsMargins(15, 15, 15, 15)
+        port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         # Port type
         self.port_type = QComboBox()
-        self.port_type.addItems(['Serial (/dev/ttyS*)', 'USB (/dev/ttyUSB*)', 'All Ports'])
-        self.port_type.setCurrentIndex(1)
+        self.port_type.addItems(['USB', 'Serial'])
+        self.port_type.setCurrentIndex(0)
+        self.port_type.setFixedWidth(combo_width)
         self.port_type.currentIndexChanged.connect(self.update_port_list)
-        port_layout.addRow("Port Type:", self.port_type)
+        port_layout.addRow("Type:", self.port_type)
 
         # Specific port
         self.port = QComboBox()
+        self.port.setFixedWidth(combo_width)
         port_layout.addRow("Port:", self.port)
 
         port_group.setLayout(port_layout)
@@ -909,7 +915,8 @@ class SerialTerminalGUI(QMainWindow):
         comm_group = QGroupBox("Communication Parameters")
         comm_layout = QFormLayout()
         comm_layout.setVerticalSpacing(15)
-        comm_layout.setContentsMargins(10, 15, 10, 10)
+        comm_layout.setContentsMargins(15, 15, 15, 15)
+        comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         # Baud Rate - MAIN FIELD
         velocity_label = QLabel("Baud Rate:")
@@ -922,30 +929,35 @@ class SerialTerminalGUI(QMainWindow):
             '38400', '57600', '115200', '230400', '460800', '921600'
         ])
         self.baudrate.setCurrentText('9600')
+        self.baudrate.setFixedWidth(combo_width)
         comm_layout.addRow(velocity_label, self.baudrate)
 
         # Data bits
         self.databits = QComboBox()
         self.databits.addItems(['5', '6', '7', '8'])
         self.databits.setCurrentText('8')
+        self.databits.setFixedWidth(combo_width)
         comm_layout.addRow("Data Bits:", self.databits)
 
         # Parity
         self.parity = QComboBox()
         self.parity.addItems(['None', 'Even', 'Odd'])
         self.parity.setCurrentText('None')
+        self.parity.setFixedWidth(combo_width)
         comm_layout.addRow("Parity:", self.parity)
 
         # Stop bits
         self.stopbits = QComboBox()
         self.stopbits.addItems(['1', '2'])
         self.stopbits.setCurrentText('1')
+        self.stopbits.setFixedWidth(combo_width)
         comm_layout.addRow("Stop Bits:", self.stopbits)
 
         # Flow control
         self.flow = QComboBox()
         self.flow.addItems(['None', 'Hardware (RTS/CTS)', 'Software (XON/XOFF)'])
         self.flow.setCurrentText('None')
+        self.flow.setFixedWidth(combo_width)
         comm_layout.addRow("Flow Control:", self.flow)
 
         comm_group.setLayout(comm_layout)
@@ -1143,26 +1155,14 @@ class SerialTerminalGUI(QMainWindow):
         self.port.clear()
 
         port_type = self.port_type.currentText()
-        ports = []
 
-        if SERIAL_PORT_AVAILABLE and 'All' in port_type:
-            # Use QSerialPortInfo to detect all ports
-            available_ports = QSerialPortInfo.availablePorts()
-            ports = [port.portName() for port in available_ports]
-            ports = [f"/dev/{p}" for p in ports]
-        else:
-            # Use glob to search for ports
-            if 'Serial' in port_type:
-                pattern = '/dev/ttyS*'
-            elif 'USB' in port_type:
-                pattern = '/dev/ttyUSB*'
-            else:  # All
-                ports_s = sorted(glob.glob('/dev/ttyS*'))
-                ports_usb = sorted(glob.glob('/dev/ttyUSB*'))
-                ports = ports_s + ports_usb
+        # Use glob to search for ports based on type
+        if port_type == 'Serial':
+            pattern = '/dev/ttyS*'
+        else:  # USB
+            pattern = '/dev/ttyUSB*'
 
-            if not ports:
-                ports = sorted(glob.glob(pattern))
+        ports = sorted(glob.glob(pattern))
 
         if ports:
             self.port.addItems(ports)
