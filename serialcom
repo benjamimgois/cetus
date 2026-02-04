@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
-    QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect, QCheckBox
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor
@@ -435,7 +435,7 @@ class TerminalWidget(QTextEdit):
         return default_bg if is_background else default_fg
 
     def render_screen(self):
-        """Render pyte screen buffer to QTextEdit with ANSI color support and syntax highlighting"""
+        """Render pyte screen buffer to QTextEdit with ANSI color support"""
         # Get cursor position from pyte
         cursor_x = self.screen.cursor.x
         cursor_y = self.screen.cursor.y
@@ -445,80 +445,46 @@ class TerminalWidget(QTextEdit):
         html_lines.append('<pre style="margin: 0; padding: 0; line-height: 1.2;">')
 
         for y in range(self.screen.lines):
-            # First, build plain text line to check if it needs syntax highlighting
-            plain_line = ""
-            has_ansi_colors = False
-
+            # Render character by character to preserve spacing
+            line = ""
             for x in range(self.screen.columns):
                 char = self.screen.buffer[y][x]
-                plain_line += char.data
-                # Check if line has any ANSI colors
-                if char.fg != 'default' or char.bg != 'default':
-                    has_ansi_colors = True
+                char_data = char.data
 
-            # Apply syntax highlighting if no ANSI colors present
-            if not has_ansi_colors and plain_line.strip():
-                highlighted_line = self.apply_syntax_highlighting(plain_line.rstrip())
+                # Escape HTML special characters and preserve spaces
+                char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(' ', '&nbsp;')
 
-                # Handle cursor on syntax-highlighted line
-                if y == cursor_y:
-                    # Insert cursor at correct position
-                    # This is approximate - for exact positioning would need more complex logic
-                    highlighted_line = highlighted_line.replace('&nbsp;', ' ')
-                    if cursor_x < len(plain_line):
-                        # Add cursor marker
-                        before = plain_line[:cursor_x]
-                        at_cursor = plain_line[cursor_x] if cursor_x < len(plain_line) else ' '
-                        after = plain_line[cursor_x+1:] if cursor_x+1 < len(plain_line) else ''
+                # Get ANSI colors from character attributes
+                fg_color = self.get_ansi_color(char.fg, is_background=False)
+                bg_color = self.get_ansi_color(char.bg, is_background=True)
 
-                        # Re-highlight with cursor
-                        highlighted_line = self.apply_syntax_highlighting(before.rstrip())
-                        highlighted_line += f'<span style="color: #0a0a0a; background-color: #e0e0e0;">{at_cursor if at_cursor.strip() else "█"}</span>'
-                        if after:
-                            highlighted_line += self.apply_syntax_highlighting(after.rstrip())
+                # Build style string
+                styles = [f'color: {fg_color}']
+                if bg_color != 'transparent':
+                    styles.append(f'background-color: {bg_color}')
+                if char.bold:
+                    styles.append('font-weight: bold')
+                if char.italics:
+                    styles.append('font-style: italic')
+                if char.underscore:
+                    styles.append('text-decoration: underline')
+                if char.reverse:
+                    # Swap foreground and background
+                    styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
+                             f'background-color: {fg_color}']
 
-                html_lines.append(highlighted_line)
-            else:
-                # Use ANSI colors from pyte
-                line = ""
-                for x in range(self.screen.columns):
-                    char = self.screen.buffer[y][x]
-                    char_data = char.data
+                # Highlight cursor position (override colors)
+                if y == cursor_y and x == cursor_x:
+                    if char_data == '&nbsp;' or char_data == '':
+                        char_data = '█'
+                        styles = ['color: #e0e0e0', 'background-color: transparent']
+                    else:
+                        styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
 
-                    # Escape HTML special characters
-                    char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(' ', '&nbsp;')
+                style_str = '; '.join(styles)
+                line += f'<span style="{style_str}">{char_data}</span>'
 
-                    # Get ANSI colors from character attributes
-                    fg_color = self.get_ansi_color(char.fg, is_background=False)
-                    bg_color = self.get_ansi_color(char.bg, is_background=True)
-
-                    # Build style string
-                    styles = [f'color: {fg_color}']
-                    if bg_color != 'transparent':
-                        styles.append(f'background-color: {bg_color}')
-                    if char.bold:
-                        styles.append('font-weight: bold')
-                    if char.italics:
-                        styles.append('font-style: italic')
-                    if char.underscore:
-                        styles.append('text-decoration: underline')
-                    if char.reverse:
-                        # Swap foreground and background
-                        styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
-                                 f'background-color: {fg_color}']
-
-                    # Highlight cursor position (override colors)
-                    if y == cursor_y and x == cursor_x:
-                        if char_data == '&nbsp;' or char_data == '':
-                            char_data = '█'
-                            styles = ['color: #e0e0e0', 'background-color: transparent']
-                        else:
-                            styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
-
-                    style_str = '; '.join(styles)
-                    line += f'<span style="{style_str}">{char_data}</span>'
-
-                html_lines.append(line.rstrip())
+            html_lines.append(line)
 
         html_lines.append('</pre>')
         new_html = '\n'.join(html_lines)
@@ -803,7 +769,101 @@ class TerminalDialog(QDialog):
         self.terminal.append_output("Connecting...\n\n")
 
         return True
-    
+
+    def start_debug_mode(self):
+        """Start terminal in debug mode with simulated Cisco router output"""
+        self.setWindowTitle("SerialCom Terminal [DEBUG MODE]")
+
+        # Simulated Cisco router configuration
+        cisco_output = """\r
+\r
+Router>\x1b[33menable\x1b[0m\r
+Password: \r
+Router#\x1b[33mshow running-config\x1b[0m\r
+Building configuration...\r
+\r
+Current configuration : 1584 bytes\r
+!\r
+! Last configuration change at 14:32:15 UTC Mon Jan 15 2024\r
+!\r
+version 15.1\r
+service timestamps debug datetime msec\r
+service timestamps log datetime msec\r
+no service password-encryption\r
+!\r
+hostname \x1b[36mRouter\x1b[0m\r
+!\r
+boot-start-marker\r
+boot-end-marker\r
+!\r
+enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0\r
+!\r
+no aaa new-model\r
+!\r
+interface \x1b[36mGigabitEthernet0/0\x1b[0m\r
+ description \x1b[32mWAN Connection to ISP\x1b[0m\r
+ ip address \x1b[33m203.0.113.1\x1b[0m \x1b[33m255.255.255.252\x1b[0m\r
+ duplex auto\r
+ speed auto\r
+!\r
+interface \x1b[36mGigabitEthernet0/1\x1b[0m\r
+ description \x1b[32mLAN Network\x1b[0m\r
+ ip address \x1b[33m192.168.1.1\x1b[0m \x1b[33m255.255.255.0\x1b[0m\r
+ duplex auto\r
+ speed auto\r
+!\r
+interface \x1b[36mGigabitEthernet0/2\x1b[0m\r
+ description \x1b[32mDMZ Network\x1b[0m\r
+ ip address \x1b[33m10.0.0.1\x1b[0m \x1b[33m255.255.255.0\x1b[0m\r
+ duplex auto\r
+ speed auto\r
+!\r
+ip route \x1b[33m0.0.0.0\x1b[0m \x1b[33m0.0.0.0\x1b[0m \x1b[33m203.0.113.2\x1b[0m\r
+!\r
+ip access-list extended \x1b[36mINBOUND_ACL\x1b[0m\r
+ \x1b[32mpermit\x1b[0m tcp any any eq \x1b[33m22\x1b[0m\r
+ \x1b[32mpermit\x1b[0m tcp any any eq \x1b[33m80\x1b[0m\r
+ \x1b[32mpermit\x1b[0m tcp any any eq \x1b[33m443\x1b[0m\r
+ \x1b[31mdeny\x1b[0m ip any any log\r
+!\r
+line con 0\r
+ logging synchronous\r
+line aux 0\r
+line vty 0 4\r
+ login local\r
+ transport input ssh\r
+!\r
+end\r
+\r
+Router#\x1b[33mshow ip interface brief\x1b[0m\r
+Interface              IP-Address      OK? Method Status                Protocol\r
+GigabitEthernet0/0     \x1b[33m203.0.113.1\x1b[0m     YES NVRAM  \x1b[32mup\x1b[0m                    \x1b[32mup\x1b[0m\r
+GigabitEthernet0/1     \x1b[33m192.168.1.1\x1b[0m     YES NVRAM  \x1b[32mup\x1b[0m                    \x1b[32mup\x1b[0m\r
+GigabitEthernet0/2     \x1b[33m10.0.0.1\x1b[0m        YES NVRAM  \x1b[32mup\x1b[0m                    \x1b[32mup\x1b[0m\r
+\r
+Router#\x1b[33mshow version\x1b[0m\r
+Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4\r
+Technical Support: http://www.cisco.com/techsupport\r
+Copyright (c) 1986-2012 by Cisco Systems, Inc.\r
+\r
+ROM: System Bootstrap, Version 15.0(1r)M9\r
+\r
+Router uptime is \x1b[33m2 days, 14 hours, 32 minutes\x1b[0m\r
+System returned to ROM by power-on\r
+System image file is "flash:c2900-universalk9-mz.SPA.151-4.M4.bin"\r
+\r
+Cisco CISCO2911/K9 (revision 1.0) with \x1b[33m512000K/62464K\x1b[0m bytes of memory.\r
+Processor board ID FTX1524A0WZ\r
+3 Gigabit Ethernet interfaces\r
+DRAM configuration is 64 bits wide with parity disabled.\r
+256K bytes of non-volatile configuration memory.\r
+\r
+Router#_\r
+"""
+
+        # Feed the simulated output to the terminal
+        self.terminal.append_output(cisco_output)
+
     def send_to_process(self, text):
         """Send input to the picocom process"""
         if self.process and self.process.state() == QProcess.ProcessState.Running:
@@ -868,7 +928,7 @@ class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"SerialCom v{VERSION}")
-        self.setFixedSize(550, 600)
+        self.setFixedSize(550, 680)
         self.terminal_dialog = None
         self.config = ConfigManager()
         self.init_ui()
@@ -906,43 +966,11 @@ class SerialTerminalGUI(QMainWindow):
         self.port_type.currentIndexChanged.connect(self.update_port_list)
         port_layout.addRow("Type:", self.port_type)
 
-        # Port with refresh button
-        port_row = QHBoxLayout()
-        port_row.setContentsMargins(0, 0, 0, 0)
-        port_row.setSpacing(8)
+        # Port
         self.port = QComboBox()
         self.port.setFixedWidth(combo_width)
         self.port.setToolTip("Select the serial port to connect")
-
-        self.refresh_btn = QPushButton("R")
-        self.refresh_btn.setFixedSize(32, 32)
-        self.refresh_btn.setToolTip("Refresh port list")
-        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.refresh_btn.clicked.connect(self.update_port_list)
-        self.refresh_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e0e0e0;
-                color: #505050;
-                border: 1px solid #c0c0c0;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #d0d0d0;
-                border: 1px solid #a0a0a0;
-            }
-            QPushButton:pressed {
-                background-color: #c0c0c0;
-            }
-        """)
-
-        port_row.addWidget(self.port)
-        port_row.addWidget(self.refresh_btn)
-
-        port_row_widget = QWidget()
-        port_row_widget.setLayout(port_row)
-        port_layout.addRow("Port:", port_row_widget)
+        port_layout.addRow("Port:", self.port)
 
         port_group.setLayout(port_layout)
 
@@ -1033,6 +1061,12 @@ class SerialTerminalGUI(QMainWindow):
         comm_group.setGraphicsEffect(shadow2)
 
         main_layout.addWidget(comm_group)
+
+        # Debug mode checkbox
+        self.debug_checkbox = QCheckBox("Debug Mode (simulate Cisco router)")
+        self.debug_checkbox.setToolTip("Enable to test terminal without a real device")
+        self.debug_checkbox.setStyleSheet("color: #606060; font-size: 9pt;")
+        main_layout.addWidget(self.debug_checkbox)
 
         # Connect button
         self.connect_btn = QPushButton("CONNECT")
@@ -1319,6 +1353,27 @@ class SerialTerminalGUI(QMainWindow):
 
     def connect(self):
         """Connect to the serial port using embedded terminal"""
+        # Check if debug mode is enabled
+        if self.debug_checkbox.isChecked():
+            self.status_label.setText("Opening debug terminal...")
+            self.status_label.setStyleSheet("color: #fab387; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #fab387; font-size: 14px;")
+            QApplication.processEvents()
+
+            # Create and show terminal dialog in debug mode
+            self.terminal_dialog = TerminalDialog(self, self.config)
+            self.terminal_dialog.start_debug_mode()
+            self.status_label.setText("Debug Mode - Terminal opened")
+            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #a6e3a1; font-size: 14px;")
+            self.terminal_dialog.exec()
+
+            # Reset status after terminal closes
+            self.status_label.setText("Ready to connect")
+            self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+            return
+
         # Check if picocom is installed
         try:
             subprocess.run(['which', 'picocom'], check=True, capture_output=True)
@@ -1343,24 +1398,28 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         self.status_label.setText("Opening terminal...")
-        self.status_label.setStyleSheet("color: #fab387; font-size: 10pt; padding: 5px;")
+        self.status_label.setStyleSheet("color: #fab387; font-size: 10pt;")
+        self.status_led.setStyleSheet("color: #fab387; font-size: 14px;")
         QApplication.processEvents()
 
         # Create and show terminal dialog
         self.terminal_dialog = TerminalDialog(self, self.config)
-        
+
         # Start picocom
         if self.terminal_dialog.start_picocom(cmd):
             self.status_label.setText("Connected - Terminal opened")
-            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
+            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #a6e3a1; font-size: 14px;")
             self.terminal_dialog.exec()
-            
+
             # Reset status after terminal closes
             self.status_label.setText("Ready to connect")
-            self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; padding: 5px;")
+            self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
         else:
             self.status_label.setText("Connection error")
-            self.status_label.setStyleSheet("color: #f38ba8; font-size: 10pt; padding: 5px;")
+            self.status_label.setStyleSheet("color: #f38ba8; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #f38ba8; font-size: 14px;")
 
 
 def main():
