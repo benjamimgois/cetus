@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon
 
 # Application version
 VERSION = "1.1"
@@ -770,6 +770,27 @@ class TerminalDialog(QDialog):
             # Fallback
             return local_path
 
+    def get_vendor_icon_path(self, vendor):
+        """Get the path to vendor icon SVG for different installation types"""
+        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
+
+        # Check for Flatpak
+        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/vendors/{vendor_file}'
+        if os.path.exists(flatpak_path):
+            return flatpak_path
+        # Check for AppImage
+        elif os.environ.get('APPDIR'):
+            appdir = os.environ.get('APPDIR')
+            return os.path.join(appdir, f'usr/share/serialcom/vendors/{vendor_file}')
+        # Local installation or development
+        else:
+            # Try assets/vendors directory
+            assets_path = os.path.join(os.path.dirname(__file__), f'assets/vendors/{vendor_file}')
+            if os.path.exists(assets_path):
+                return assets_path
+            # Fallback to generic
+            return os.path.join(os.path.dirname(__file__), 'assets/vendors/generic.svg')
+
     def init_ui(self):
         """Initialize the terminal dialog UI"""
         layout = QVBoxLayout()
@@ -924,21 +945,52 @@ class TerminalDialog(QDialog):
             }}
         """)
 
+        # Vendor icon label
+        self.vendor_icon = QLabel()
+        self.vendor_icon.setFixedSize(36, 36)
+        self.vendor_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vendor_icon.setToolTip("Equipment vendor")
+        # Load initial vendor icon
+        initial_vendor = self.vendor_combo.currentText()
+        self.update_vendor_icon(initial_vendor)
+
         button_layout.addWidget(self.font_decrease_btn)
         button_layout.addSpacing(10)  # Add space between font buttons
         button_layout.addWidget(self.font_increase_btn)
         button_layout.addSpacing(20)  # Add space before vendor selector
         button_layout.addWidget(vendor_label)
         button_layout.addWidget(self.vendor_combo)
+        button_layout.addSpacing(8)
+        button_layout.addWidget(self.vendor_icon)
         button_layout.addStretch()
         button_layout.addWidget(self.disconnect_btn)
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
+    def update_vendor_icon(self, vendor):
+        """Update the vendor icon QLabel with the appropriate SVG"""
+        icon_path = self.get_vendor_icon_path(vendor)
+        pixmap = QPixmap(icon_path)
+        if not pixmap.isNull():
+            # Scale pixmap to fit the label
+            scaled_pixmap = pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.vendor_icon.setPixmap(scaled_pixmap)
+        else:
+            # Fallback to generic icon if loading fails
+            fallback_path = self.get_vendor_icon_path('Generic')
+            fallback_pixmap = QPixmap(fallback_path)
+            if not fallback_pixmap.isNull():
+                scaled_pixmap = fallback_pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                self.vendor_icon.setPixmap(scaled_pixmap)
+
     def change_vendor(self, vendor):
         """Change the syntax highlighting vendor"""
         self.terminal.set_vendor(vendor)
+
+        # Update vendor icon based on selection
+        self.update_vendor_icon(vendor)
+
         # Save vendor selection
         if self.config:
             self.config.set('vendor', vendor)
@@ -1499,13 +1551,13 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
             }
             QComboBox:focus {
-                border: 2px solid #546e7a;
+                border: 2px solid #4caf50;
             }
             QComboBox QAbstractItemView {
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 background-color: #ffffff;
-                selection-background-color: #eceff1;
+                selection-background-color: #e8f5e9;
                 selection-color: #2c2c2c;
                 color: #2c2c2c;
                 padding: 4px;
@@ -1519,7 +1571,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #f5f5f5;
             }
             QPushButton {
-                background-color: #546e7a;
+                background-color: #4caf50;
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
@@ -1528,10 +1580,10 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton:hover {
-                background-color: #455a64;
+                background-color: #43a047;
             }
             QPushButton:pressed {
-                background-color: #37474f;
+                background-color: #388e3c;
             }
             QLabel {
                 color: #2c2c2c;
@@ -1547,7 +1599,7 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 10pt;
             }
             QMessageBox QPushButton {
-                background-color: #546e7a;
+                background-color: #4caf50;
                 color: #ffffff;
                 border: none;
                 border-radius: 6px;
@@ -1719,10 +1771,10 @@ class SerialTerminalGUI(QMainWindow):
                     font-size: 10pt;
                 }
                 QLineEdit:focus {
-                    border: 2px solid #546e7a;
+                    border: 2px solid #4caf50;
                 }
                 QPushButton {
-                    background-color: #546e7a;
+                    background-color: #4caf50;
                     color: #ffffff;
                     border: none;
                     border-radius: 6px;
@@ -1731,7 +1783,7 @@ class SerialTerminalGUI(QMainWindow):
                     min-width: 80px;
                 }
                 QPushButton:hover {
-                    background-color: #455a64;
+                    background-color: #43a047;
                 }
                 QPushButton#cancelButton {
                     background-color: #9e9e9e;
