@@ -1289,6 +1289,12 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_interface = QComboBox()
         self.tftp_interface.setFixedWidth(combo_width)
         self.tftp_interface.setToolTip("Select network interface for TFTP server")
+        # Smaller font to fit longer IP addresses
+        self.tftp_interface.setStyleSheet("""
+            QComboBox {
+                font-size: 8pt;
+            }
+        """)
         self.update_network_interfaces()
         tftp_layout.addRow("Interface:", self.tftp_interface)
 
