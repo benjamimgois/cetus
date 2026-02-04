@@ -16,7 +16,7 @@ optdepends=(
     'alacritty: cross-platform GPU-accelerated terminal emulator'
 )
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/serialcom/archive/refs/tags/${pkgver}.tar.gz")
-sha256sums=('387bfd20f9a159988cbdc1c1831efc69e011297cc783f749f72d443286d4e6cf')
+sha256sums=('b48bc914299a7d14da0629063b3f922588a88330f817430f63582bd247231706')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"

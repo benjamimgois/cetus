@@ -18,6 +18,6 @@ pkgbase = serialcom
 	optdepends = kitty: fast GPU-based terminal emulator
 	optdepends = alacritty: cross-platform GPU-accelerated terminal emulator
 	source = serialcom-1.1.tar.gz::https://github.com/benjamimgois/serialcom/archive/refs/tags/1.1.tar.gz
-	sha256sums = 387bfd20f9a159988cbdc1c1831efc69e011297cc783f749f72d443286d4e6cf
+	sha256sums = b48bc914299a7d14da0629063b3f922588a88330f817430f63582bd247231706
 
 pkgname = serialcom
