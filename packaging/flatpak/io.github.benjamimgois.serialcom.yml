@@ -16,6 +16,19 @@ cleanup-commands:
   - /app/cleanup-BaseApp.sh
 
 modules:
+  - name: python3-pyte
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "pyte" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/cf/81/82693467c9399c6bef9d1ce3e23c5a92ac6dcf496f67b4aea8e1be4acbf6/wcwidth-0.2.13-py2.py3-none-any.whl
+        sha256: 3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859
+      - type: file
+        url: https://files.pythonhosted.org/packages/d7/32/f2bcfa6eddc70a854ce9baa13db11ea39b96b1c8ab26eeae0c27c99d0ad8/pyte-0.8.2-py3-none-any.whl
+        sha256: c0ca6a3e2c1d2f6b51e68ddd8d7f83098e3e05bf8f0cebcf51c20e04bfbc77e2
+
   - name: picocom
     buildsystem: simple
     build-commands:

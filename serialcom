@@ -8,6 +8,8 @@ import sys
 import os
 import subprocess
 import glob
+import json
+from pathlib import Path
 import pyte
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -27,6 +29,67 @@ except ImportError:
     SERIAL_PORT_AVAILABLE = False
 
 
+class ConfigManager:
+    """Manage application settings using XDG Base Directory specification"""
+
+    def __init__(self):
+        # Get XDG config directory (defaults to ~/.config)
+        xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
+        if not xdg_config_home:
+            xdg_config_home = os.path.join(Path.home(), '.config')
+
+        # Create serialcom config directory
+        self.config_dir = os.path.join(xdg_config_home, 'serialcom')
+        os.makedirs(self.config_dir, exist_ok=True)
+
+        # Config file path
+        self.config_file = os.path.join(self.config_dir, 'settings.json')
+
+        # Default settings
+        self.defaults = {
+            'port_type': 'USB (/dev/ttyUSB*)',
+            'baudrate': '9600',
+            'databits': '8',
+            'parity': 'None',
+            'stopbits': '1',
+            'flow': 'None',
+            'vendor': 'Generic'
+        }
+
+        # Load settings
+        self.settings = self.load()
+
+    def load(self):
+        """Load settings from file, return defaults if file doesn't exist"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    loaded = json.load(f)
+                    # Merge with defaults (in case new settings were added)
+                    return {**self.defaults, **loaded}
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load settings: {e}")
+                return self.defaults.copy()
+        return self.defaults.copy()
+
+    def save(self):
+        """Save settings to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.settings, f, indent=4)
+        except IOError as e:
+            print(f"Warning: Could not save settings: {e}")
+
+    def set(self, key, value):
+        """Set a setting value and save"""
+        self.settings[key] = value
+        self.save()
+
+    def get(self, key):
+        """Get a setting value"""
+        return self.settings.get(key, self.defaults.get(key))
+
+
 class TerminalWidget(QTextEdit):
     """Terminal widget using pyte for proper VT100/ANSI emulation"""
 
@@ -35,7 +98,9 @@ class TerminalWidget(QTextEdit):
     def __init__(self, parent=None, columns=120, lines=40):
         super().__init__(parent)
         self.setReadOnly(True)  # Terminal handles all input
-        self.setFont(QFont("Monospace", 10))
+        self.font_size = 10  # Default font size
+        self.vendor = "Generic"  # Default vendor for syntax highlighting
+        self.setFont(QFont("Monospace", self.font_size))
 
         # Prevent Tab from being used for focus navigation
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -53,8 +118,8 @@ class TerminalWidget(QTextEdit):
         # Apply terminal styling
         self.setStyleSheet("""
             QTextEdit {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
+                background-color: #0a0a0a;
+                color: #e0e0e0;
                 border: none;
                 padding: 10px;
             }
@@ -134,45 +199,396 @@ class TerminalWidget(QTextEdit):
         """Feed text to pyte terminal emulator"""
         self.stream.feed(text)
 
+    def set_vendor(self, vendor):
+        """Set the vendor for syntax highlighting"""
+        self.vendor = vendor
+
+    def get_vendor_keywords(self):
+        """Get keywords specific to the selected vendor"""
+        # Common keywords for all vendors
+        common = ['vlan', 'ip', 'ipv6', 'address', 'shutdown', 'route', 'static',
+                  'permit', 'deny', 'any', 'host', 'password', 'secret', 'description',
+                  'protocol', 'snmp', 'community', 'version', 'dhcp', 'server', 'pool',
+                  'gateway', 'dns', 'lease', 'ntp', 'authentication', 'key', 'logging']
+
+        # Cisco IOS/IOS-XE specific
+        cisco = common + [
+            'interface', 'no', 'router', 'bgp', 'ospf', 'eigrp', 'rip', 'isis',
+            'access-list', 'line', 'vty', 'console', 'enable', 'service', 'hostname',
+            'banner', 'switchport', 'mode', 'trunk', 'access', 'native', 'allowed',
+            'spanning-tree', 'portfast', 'bpduguard', 'channel-group', 'lacp', 'pagp',
+            'ssh', 'telnet', 'http', 'https', 'aaa', 'radius', 'tacacs',
+            'port-security', 'maximum', 'violation', 'sticky', 'aging', 'time',
+            'show', 'running-config', 'startup-config', 'brief', 'status', 'summary',
+            'detail', 'controllers', 'inventory', 'copy', 'write', 'erase', 'reload',
+            'configure', 'terminal', 'end', 'exit', 'crypto', 'isakmp', 'ipsec'
+        ]
+
+        # Huawei VRP specific
+        huawei = common + [
+            'display', 'system-view', 'quit', 'return', 'save', 'undo', 'sysname',
+            'interface', 'user-interface', 'authentication-mode', 'aaa', 'local-user',
+            'privilege', 'level', 'acl', 'rule', 'source', 'destination', 'basic',
+            'advanced', 'mac-address', 'port-isolate', 'eth-trunk', 'mode', 'lacp',
+            'stp', 'bpdu', 'edged-port', 'ssh', 'telnet', 'client', 'server',
+            'cipher', 'hmac', 'exchange', 'dh-exchange', 'header', 'dot1x', 'vlan',
+            'batch', 'port', 'hybrid', 'trunk', 'access', 'voice-vlan', 'qinq',
+            'current-configuration', 'saved-configuration', 'startup', 'next'
+        ]
+
+        # H3C Comware specific
+        h3c = common + [
+            'display', 'system-view', 'quit', 'return', 'save', 'undo', 'sysname',
+            'interface', 'user-interface', 'authentication-mode', 'local-user',
+            'authorization-mode', 'accounting-mode', 'acl', 'rule', 'basic', 'advanced',
+            'link-aggregation', 'lacp', 'stp', 'bpdu-protection', 'edge-port',
+            'ssh', 'telnet', 'server', 'port-security', 'mac-address', 'port',
+            'hybrid', 'trunk', 'access', 'voice', 'current-configuration', 'lldp'
+        ]
+
+        # Juniper Junos specific
+        juniper = common + [
+            'set', 'delete', 'show', 'commit', 'rollback', 'configure', 'edit',
+            'top', 'up', 'interfaces', 'protocols', 'routing-options', 'firewall',
+            'security', 'zones', 'policies', 'nat', 'chassis', 'system', 'services'
+        ]
+
+        # D-Link specific
+        dlink = common + [
+            'create', 'delete', 'config', 'show', 'enable', 'disable', 'vlan',
+            'ports', 'stp', 'igmp', 'snmp', 'fdb', 'address_binding', 'vlanname',
+            'link_aggregation', 'group', 'master', 'member', 'lacp', 'state',
+            'traffic_control', 'broadcast', 'multicast', 'unicast', 'action',
+            'access_profile', 'access_list', 'packet_content_mask', 'profile_id',
+            'bpdu_tunnel', 'tunnel_mac', 'loopdetect', 'recover_timer', 'interval',
+            'safeguard_engine', 'rising_threshold', 'falling_threshold', 'mode',
+            'download', 'upload', 'save', 'reboot', 'reset', 'factory_default',
+            'ip_source_guard', 'verify_source', 'trust', 'max_dynamic_hosts',
+            'traffic_segmentation', 'forward_list', 'block', 'mirror', 'session',
+            'source', 'destination', 'port_mirror', 'flow_mirror', 'cpu_filter'
+        ]
+
+        # Brocade Fabric OS specific
+        brocade = common + [
+            'switchshow', 'switchname', 'switchdisable', 'switchenable', 'configshow',
+            'configupload', 'configdownload', 'configdefault', 'fabricshow',
+            'portshow', 'portcfgshow', 'portdisable', 'portenable', 'portname',
+            'portcfgpersistentdisable', 'portcfgpersistentenable', 'switchportshow',
+            'aliacreate', 'aliadd', 'aliremove', 'alidelete', 'alishow',
+            'zonecreate', 'zoneadd', 'zoneremove', 'zonedelete', 'zoneshow',
+            'cfgcreate', 'cfgadd', 'cfgremove', 'cfgdelete', 'cfgshow', 'cfgenable',
+            'cfgdisable', 'cfgsave', 'cfgclear', 'defzone', 'nozoning',
+            'firmwareshow', 'firmwaredownload', 'firmwaredownloadstatus', 'version',
+            'licenseshow', 'licenseadd', 'licenseremove', 'licenseport',
+            'ipaddrset', 'ipaddrshow', 'nsshow', 'nsallshow', 'nscamshow',
+            'reboot', 'fastboot', 'hashow', 'failover', 'setcontext',
+            'tsclockserver', 'tstimezone', 'date', 'uptime', 'diagshow', 'supportshow'
+        ]
+
+        # Datacom specific (Brazilian manufacturer)
+        datacom = common + [
+            'show', 'configure', 'interface', 'vlan', 'no', 'router', 'bgp', 'ospf',
+            'eigrp', 'rip', 'access-list', 'line', 'vty', 'console', 'enable',
+            'service', 'hostname', 'banner', 'switchport', 'mode', 'trunk', 'access',
+            'spanning-tree', 'portfast', 'port-channel', 'lacp', 'etherchannel',
+            'ssh', 'telnet', 'http', 'snmp-server', 'ntp', 'clock', 'timezone',
+            'aaa', 'radius', 'tacacs', 'local-user', 'privilege', 'level',
+            'qos', 'class-map', 'policy-map', 'service-policy', 'trust', 'dscp',
+            'write', 'memory', 'reload', 'copy', 'running-config', 'startup-config',
+            'erase', 'boot', 'system', 'flash', 'tftp', 'ftp', 'upload', 'download',
+            'mac', 'mac-address-table', 'aging-time', 'storm-control', 'broadcast',
+            'errdisable', 'recovery', 'cause', 'interval', 'speed', 'duplex', 'mtu',
+            'description', 'default-gateway', 'ip-address', 'subnet-mask', 'vrf'
+        ]
+
+        # Fortinet FortiOS specific (Firewall)
+        fortinet = common + [
+            'config', 'end', 'next', 'edit', 'delete', 'show', 'get', 'set', 'unset',
+            'execute', 'diagnose', 'purge', 'rename', 'clone', 'append', 'clear',
+            'system', 'global', 'interface', 'admin', 'settings', 'ha', 'dns',
+            'firewall', 'policy', 'address', 'addrgrp', 'service', 'custom',
+            'schedule', 'recurring', 'onetime', 'ippool', 'vip', 'central-snat',
+            'router', 'static', 'bgp', 'ospf', 'rip', 'multicast', 'policy-route',
+            'vpn', 'ipsec', 'phase1-interface', 'phase2-interface', 'ssl',
+            'ssl-web-portal', 'tunnel-mode', 'web-mode', 'certificate', 'local',
+            'user', 'local', 'radius', 'ldap', 'group', 'peer', 'peergrp',
+            'antivirus', 'profile', 'webfilter', 'ips', 'sensor', 'application',
+            'list', 'control', 'emailfilter', 'dlp', 'filefilter', 'voip',
+            'waf', 'profile', 'signature', 'protocol-options', 'ssh-filter',
+            'log', 'fortianalyzer', 'forticloud', 'syslogd', 'memory', 'disk',
+            'backup', 'restore', 'reboot', 'shutdown', 'factoryreset', 'revision',
+            'debug', 'flow', 'trace', 'sniffer', 'packet', 'top', 'performance',
+            'status', 'arp', 'session', 'route', 'neighbor', 'hardware', 'nic'
+        ]
+
+        # Generic - combination of all
+        generic = list(set(common + cisco + huawei + h3c + dlink + brocade + datacom + fortinet))
+
+        vendor_keywords = {
+            'Generic': generic,
+            'Cisco': cisco,
+            'Huawei': huawei,
+            'H3C': h3c,
+            'Juniper': juniper,
+            'D-Link': dlink,
+            'Brocade': brocade,
+            'Datacom': datacom,
+            'Fortinet': fortinet
+        }
+
+        return vendor_keywords.get(self.vendor, generic)
+
+    def apply_syntax_highlighting(self, text):
+        """Apply syntax highlighting for network equipment commands"""
+        import re
+
+        # Don't highlight if text is empty or whitespace
+        if not text.strip():
+            return text
+
+        # Escape HTML
+        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # Get keywords for selected vendor
+        keywords = self.get_vendor_keywords()
+
+        # Highlight keywords (cyan - vibrant)
+        for keyword in keywords:
+            # Match whole words only, case insensitive
+            pattern = r'\b(' + re.escape(keyword) + r')\b'
+            text = re.sub(pattern, r'<span style="color: #00ffff; font-weight: bold;">\1</span>', text, flags=re.IGNORECASE)
+
+        # Highlight IP addresses (green - vibrant)
+        ip_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)\b'
+        text = re.sub(ip_pattern, r'<span style="color: #00ff00; font-weight: bold;">\1</span>', text)
+
+        # Highlight MAC addresses (lime green - vibrant)
+        mac_pattern = r'\b([0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\b'
+        text = re.sub(mac_pattern, r'<span style="color: #00ff88; font-weight: bold;">\1</span>', text)
+
+        # Highlight numbers (yellow - vibrant)
+        # Avoid matching numbers already highlighted (in IP/MAC)
+        number_pattern = r'(?<![\d\.])\b(\d+)\b(?![\d\.])'
+        text = re.sub(number_pattern, r'<span style="color: #ffff00;">\1</span>', text)
+
+        # Highlight prompts (magenta - vibrant) - patterns like [SWITCH]#, Router>, etc.
+        prompt_pattern = r'^([\[\<]?[A-Za-z0-9_-]+[\]\>]?[#&gt;])'
+        text = re.sub(prompt_pattern, r'<span style="color: #ff00ff; font-weight: bold;">\1</span>', text, flags=re.MULTILINE)
+
+        return text
+
+    def get_ansi_color(self, color, is_background=False):
+        """Convert pyte color to HTML color code"""
+        # ANSI color palette (standard 16 colors)
+        ansi_colors = {
+            'black': '#000000',
+            'red': '#cd0000',
+            'green': '#00cd00',
+            'brown': '#cdcd00',
+            'blue': '#0000ee',
+            'magenta': '#cd00cd',
+            'cyan': '#00cdcd',
+            'white': '#e5e5e5',
+            # Bright variants
+            'brightblack': '#7f7f7f',
+            'brightred': '#ff0000',
+            'brightgreen': '#00ff00',
+            'brightyellow': '#ffff00',
+            'brightblue': '#5c5cff',
+            'brightmagenta': '#ff00ff',
+            'brightcyan': '#00ffff',
+            'brightwhite': '#ffffff',
+        }
+
+        # Default colors
+        default_fg = '#e0e0e0'
+        default_bg = 'transparent'
+
+        if color == 'default':
+            return default_bg if is_background else default_fg
+
+        # Named color
+        if isinstance(color, str):
+            return ansi_colors.get(color, default_bg if is_background else default_fg)
+
+        # 256-color palette (simplified - using approximations)
+        if isinstance(color, int):
+            if color < 16:
+                # Standard colors
+                color_names = ['black', 'red', 'green', 'brown', 'blue', 'magenta', 'cyan', 'white',
+                              'brightblack', 'brightred', 'brightgreen', 'brightyellow',
+                              'brightblue', 'brightmagenta', 'brightcyan', 'brightwhite']
+                return ansi_colors.get(color_names[color], default_bg if is_background else default_fg)
+            elif color < 232:
+                # 216 color cube (6x6x6)
+                color -= 16
+                r = (color // 36) * 51
+                g = ((color % 36) // 6) * 51
+                b = (color % 6) * 51
+                return f'#{r:02x}{g:02x}{b:02x}'
+            else:
+                # Grayscale
+                gray = 8 + (color - 232) * 10
+                return f'#{gray:02x}{gray:02x}{gray:02x}'
+
+        return default_bg if is_background else default_fg
+
     def render_screen(self):
-        """Render pyte screen buffer to QTextEdit"""
-        # Build text from screen buffer
-        lines = []
+        """Render pyte screen buffer to QTextEdit with ANSI color support and syntax highlighting"""
+        # Get cursor position from pyte
+        cursor_x = self.screen.cursor.x
+        cursor_y = self.screen.cursor.y
+
+        # Build HTML content with cursor highlighting and ANSI colors
+        html_lines = []
+        html_lines.append('<pre style="margin: 0; padding: 0; line-height: 1.2;">')
+
         for y in range(self.screen.lines):
-            line = ""
+            # First, build plain text line to check if it needs syntax highlighting
+            plain_line = ""
+            has_ansi_colors = False
+
             for x in range(self.screen.columns):
                 char = self.screen.buffer[y][x]
-                line += char.data
-            lines.append(line.rstrip())
+                plain_line += char.data
+                # Check if line has any ANSI colors
+                if char.fg != 'default' or char.bg != 'default':
+                    has_ansi_colors = True
 
-        # Update QTextEdit content (always update, don't check for changes)
-        new_text = "\n".join(lines)
+            # Apply syntax highlighting if no ANSI colors present
+            if not has_ansi_colors and plain_line.strip():
+                highlighted_line = self.apply_syntax_highlighting(plain_line.rstrip())
 
-        # Save scroll position
+                # Handle cursor on syntax-highlighted line
+                if y == cursor_y:
+                    # Insert cursor at correct position
+                    # This is approximate - for exact positioning would need more complex logic
+                    highlighted_line = highlighted_line.replace('&nbsp;', ' ')
+                    if cursor_x < len(plain_line):
+                        # Add cursor marker
+                        before = plain_line[:cursor_x]
+                        at_cursor = plain_line[cursor_x] if cursor_x < len(plain_line) else ' '
+                        after = plain_line[cursor_x+1:] if cursor_x+1 < len(plain_line) else ''
+
+                        # Re-highlight with cursor
+                        highlighted_line = self.apply_syntax_highlighting(before.rstrip())
+                        highlighted_line += f'<span style="color: #0a0a0a; background-color: #e0e0e0;">{at_cursor if at_cursor.strip() else "█"}</span>'
+                        if after:
+                            highlighted_line += self.apply_syntax_highlighting(after.rstrip())
+
+                html_lines.append(highlighted_line)
+            else:
+                # Use ANSI colors from pyte
+                line = ""
+                for x in range(self.screen.columns):
+                    char = self.screen.buffer[y][x]
+                    char_data = char.data
+
+                    # Escape HTML special characters
+                    char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(' ', '&nbsp;')
+
+                    # Get ANSI colors from character attributes
+                    fg_color = self.get_ansi_color(char.fg, is_background=False)
+                    bg_color = self.get_ansi_color(char.bg, is_background=True)
+
+                    # Build style string
+                    styles = [f'color: {fg_color}']
+                    if bg_color != 'transparent':
+                        styles.append(f'background-color: {bg_color}')
+                    if char.bold:
+                        styles.append('font-weight: bold')
+                    if char.italics:
+                        styles.append('font-style: italic')
+                    if char.underscore:
+                        styles.append('text-decoration: underline')
+                    if char.reverse:
+                        # Swap foreground and background
+                        styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
+                                 f'background-color: {fg_color}']
+
+                    # Highlight cursor position (override colors)
+                    if y == cursor_y and x == cursor_x:
+                        if char_data == '&nbsp;' or char_data == '':
+                            char_data = '█'
+                            styles = ['color: #e0e0e0', 'background-color: transparent']
+                        else:
+                            styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
+
+                    style_str = '; '.join(styles)
+                    line += f'<span style="{style_str}">{char_data}</span>'
+
+                html_lines.append(line.rstrip())
+
+        html_lines.append('</pre>')
+        new_html = '\n'.join(html_lines)
+
+        # Save scroll position - use tolerance for "at bottom" detection
         scrollbar = self.verticalScrollBar()
-        at_bottom = scrollbar.value() == scrollbar.maximum()
+        # Consider "at bottom" if within 10 pixels of maximum
+        at_bottom = scrollbar.maximum() - scrollbar.value() <= 10
 
-        # Update text
-        self.setPlainText(new_text)
+        # Update text with HTML
+        self.setHtml(new_html)
 
-        # Restore scroll position or scroll to bottom
+        # Auto-scroll to bottom if user was at or near bottom
         if at_bottom:
-            self.moveCursor(QTextCursor.MoveOperation.End)
+            # Move cursor to end
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            self.setTextCursor(cursor)
+            # Ensure cursor is visible
+            self.ensureCursorVisible()
+            # Force scroll to maximum
             scrollbar.setValue(scrollbar.maximum())
+
+    def increase_font_size(self):
+        """Increase terminal font size"""
+        if self.font_size < 24:  # Maximum font size limit
+            self.font_size += 1
+            self.setFont(QFont("Monospace", self.font_size))
+
+    def decrease_font_size(self):
+        """Decrease terminal font size"""
+        if self.font_size > 6:  # Minimum font size limit
+            self.font_size -= 1
+            self.setFont(QFont("Monospace", self.font_size))
 
 
 class TerminalDialog(QDialog):
     """Dialog window containing the embedded terminal"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, config=None):
         super().__init__(parent)
         self.setWindowTitle("SerialCom Terminal")
         self.setMinimumSize(1200, 700)
         self.process = None
         self.sudo_process = None
-        
+        self.config = config
+
         self.init_ui()
-        
+
+    def get_arrow_icon_path(self):
+        """Get the path to arrow_down.svg for different installation types"""
+        # Check for Flatpak
+        if os.path.exists('/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'):
+            return '/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'
+        # Check for AppImage
+        elif os.environ.get('APPDIR'):
+            appdir = os.environ.get('APPDIR')
+            return os.path.join(appdir, 'usr/share/serialcom/arrow_down.svg')
+        # Local installation or development
+        else:
+            # Try current directory first
+            local_path = os.path.join(os.path.dirname(__file__), 'arrow_down.svg')
+            if os.path.exists(local_path):
+                return local_path
+            # Try assets directory
+            assets_path = os.path.join(os.path.dirname(__file__), 'assets/arrow_down.svg')
+            if os.path.exists(assets_path):
+                return assets_path
+            # Fallback
+            return local_path
+
     def init_ui(self):
         """Initialize the terminal dialog UI"""
         layout = QVBoxLayout()
@@ -187,7 +603,50 @@ class TerminalDialog(QDialog):
         # Control buttons
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(10, 5, 10, 10)
-        
+
+        # Font size buttons
+        self.font_decrease_btn = QPushButton("A-")
+        self.font_decrease_btn.setMinimumHeight(35)
+        self.font_decrease_btn.setMaximumWidth(50)
+        self.font_decrease_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        self.font_decrease_btn.clicked.connect(self.terminal.decrease_font_size)
+        self.font_decrease_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #74a0e8;
+            }
+            QPushButton:pressed {
+                background-color: #5f8cd6;
+            }
+        """)
+
+        self.font_increase_btn = QPushButton("A+")
+        self.font_increase_btn.setMinimumHeight(35)
+        self.font_increase_btn.setMaximumWidth(50)
+        self.font_increase_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        self.font_increase_btn.clicked.connect(self.terminal.increase_font_size)
+        self.font_increase_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #74a0e8;
+            }
+            QPushButton:pressed {
+                background-color: #5f8cd6;
+            }
+        """)
+
         self.disconnect_btn = QPushButton("DISCONNECT")
         self.disconnect_btn.setMinimumHeight(35)
         self.disconnect_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
@@ -207,13 +666,102 @@ class TerminalDialog(QDialog):
                 background-color: #d95a7a;
             }
         """)
-        
+
+        # Vendor selector
+        vendor_label = QLabel("Equipment:")
+        vendor_label.setStyleSheet("""
+            QLabel {
+                color: #b0b0b0;
+                font-size: 10pt;
+                padding: 0 8px;
+            }
+        """)
+
+        # Get arrow icon path (same method as main window)
+        arrow_path = self.get_arrow_icon_path()
+
+        self.vendor_combo = QComboBox()
+        self.vendor_combo.addItems(['Generic', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet'])
+
+        # Load saved vendor selection
+        if self.config:
+            saved_vendor = self.config.get('vendor')
+            index = self.vendor_combo.findText(saved_vendor)
+            if index >= 0:
+                self.vendor_combo.setCurrentIndex(index)
+        else:
+            self.vendor_combo.setCurrentText('Generic')
+
+        self.vendor_combo.currentTextChanged.connect(self.change_vendor)
+        self.vendor_combo.setMinimumHeight(35)
+        self.vendor_combo.setMaximumWidth(130)
+        self.vendor_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 2px solid #5a5a5a;
+                border-radius: 6px;
+                padding: 5px 28px 5px 10px;
+                font-size: 10pt;
+            }}
+            QComboBox:hover {{
+                border: 2px solid #707070;
+                background-color: #454545;
+            }}
+            QComboBox:focus {{
+                border: 2px solid #707070;
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border-left: 1px solid #5a5a5a;
+                border-top-right-radius: 5px;
+                border-bottom-right-radius: 5px;
+                background-color: transparent;
+            }}
+            QComboBox::down-arrow {{
+                image: url({arrow_path});
+                width: 12px;
+                height: 12px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 2px solid #5a5a5a;
+                selection-background-color: #5a5a5a;
+                selection-color: #ffffff;
+                outline: none;
+                padding: 4px;
+            }}
+            QComboBox QAbstractItemView::item {{
+                min-height: 28px;
+                padding: 5px;
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: #4a4a4a;
+            }}
+        """)
+
+        button_layout.addWidget(self.font_decrease_btn)
+        button_layout.addSpacing(10)  # Add space between font buttons
+        button_layout.addWidget(self.font_increase_btn)
+        button_layout.addSpacing(20)  # Add space before vendor selector
+        button_layout.addWidget(vendor_label)
+        button_layout.addWidget(self.vendor_combo)
         button_layout.addStretch()
         button_layout.addWidget(self.disconnect_btn)
-        
+
         layout.addLayout(button_layout)
         self.setLayout(layout)
-        
+
+    def change_vendor(self, vendor):
+        """Change the syntax highlighting vendor"""
+        self.terminal.set_vendor(vendor)
+        # Save vendor selection
+        if self.config:
+            self.config.set('vendor', vendor)
+
     def start_picocom(self, cmd):
         """Start picocom process with sudo"""
         # Ask for sudo password using graphical dialog
@@ -321,8 +869,10 @@ class SerialTerminalGUI(QMainWindow):
         self.setWindowTitle(f"SerialCom v{VERSION}")
         self.setFixedSize(550, 600)
         self.terminal_dialog = None
+        self.config = ConfigManager()
         self.init_ui()
         self.apply_styles()
+        self.load_settings()
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -542,6 +1092,52 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
+    def load_settings(self):
+        """Load saved settings and apply to ComboBoxes"""
+        # Load and set port type
+        port_type = self.config.get('port_type')
+        index = self.port_type.findText(port_type)
+        if index >= 0:
+            self.port_type.setCurrentIndex(index)
+
+        # Load and set baudrate
+        baudrate = self.config.get('baudrate')
+        index = self.baudrate.findText(baudrate)
+        if index >= 0:
+            self.baudrate.setCurrentIndex(index)
+
+        # Load and set databits
+        databits = self.config.get('databits')
+        index = self.databits.findText(databits)
+        if index >= 0:
+            self.databits.setCurrentIndex(index)
+
+        # Load and set parity
+        parity = self.config.get('parity')
+        index = self.parity.findText(parity)
+        if index >= 0:
+            self.parity.setCurrentIndex(index)
+
+        # Load and set stopbits
+        stopbits = self.config.get('stopbits')
+        index = self.stopbits.findText(stopbits)
+        if index >= 0:
+            self.stopbits.setCurrentIndex(index)
+
+        # Load and set flow
+        flow = self.config.get('flow')
+        index = self.flow.findText(flow)
+        if index >= 0:
+            self.flow.setCurrentIndex(index)
+
+        # Connect signals to save settings when changed
+        self.port_type.currentTextChanged.connect(lambda text: self.config.set('port_type', text))
+        self.baudrate.currentTextChanged.connect(lambda text: self.config.set('baudrate', text))
+        self.databits.currentTextChanged.connect(lambda text: self.config.set('databits', text))
+        self.parity.currentTextChanged.connect(lambda text: self.config.set('parity', text))
+        self.stopbits.currentTextChanged.connect(lambda text: self.config.set('stopbits', text))
+        self.flow.currentTextChanged.connect(lambda text: self.config.set('flow', text))
+
     def update_port_list(self):
         """Update the list of available ports"""
         self.port.clear()
@@ -649,7 +1245,7 @@ class SerialTerminalGUI(QMainWindow):
         QApplication.processEvents()
 
         # Create and show terminal dialog
-        self.terminal_dialog = TerminalDialog(self)
+        self.terminal_dialog = TerminalDialog(self, self.config)
         
         # Start picocom
         if self.terminal_dialog.start_picocom(cmd):
