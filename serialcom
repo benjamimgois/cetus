@@ -160,7 +160,8 @@ class TFTPServer:
     def __init__(self, host='0.0.0.0', port=69, root_dir=None):
         self.host = host
         self.port = port
-        self.root_dir = root_dir or os.path.expanduser('~')
+        # Use XDG HOME for Flatpak compatibility
+        self.root_dir = root_dir or os.environ.get('HOME', str(Path.home()))
         self.server = None
         self.thread = None
         self.running = False
@@ -1289,8 +1290,21 @@ class SerialTerminalGUI(QMainWindow):
 
         self.tftp_directory = QLineEdit()
         self.tftp_directory.setFixedWidth(combo_width)
-        self.tftp_directory.setText(os.path.expanduser('~'))
+        # Use XDG HOME for Flatpak compatibility
+        default_tftp_dir = os.environ.get('HOME', str(Path.home()))
+        self.tftp_directory.setText(default_tftp_dir)
+        self.tftp_directory.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.tftp_directory.setToolTip("Directory containing firmware files")
+        self.tftp_directory.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 4px 10px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 10pt;
+            }
+        """)
 
         self.tftp_browse_btn = QPushButton()
         self.tftp_browse_btn.setFixedSize(28, 28)
