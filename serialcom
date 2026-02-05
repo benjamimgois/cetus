@@ -13,24 +13,9 @@ import socket
 import threading
 import socketserver
 from pathlib import Path
-import pyte
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
-    QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
-    QGraphicsDropShadowEffect, QCheckBox, QFileDialog
-)
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon
 
 # Application version
 VERSION = "1.1"
-
-try:
-    from PyQt6.QtSerialPort import QSerialPortInfo
-    SERIAL_PORT_AVAILABLE = True
-except ImportError:
-    SERIAL_PORT_AVAILABLE = False
 
 
 class TFTPHandler(socketserver.BaseRequestHandler):
@@ -214,6 +199,62 @@ class TFTPServer:
         return self.running
 
 
+def run_tftp_server_standalone(host, port, directory):
+    """Run TFTP server in standalone mode (for sudo execution)"""
+    import signal
+
+    server = TFTPServer(host=host, port=port, root_dir=directory)
+
+    def signal_handler(signum, frame):
+        print("\n[TFTP] Stopping server...")
+        server.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    if server.start():
+        print(f"[TFTP] Server running on {host}:{port}")
+        print(f"[TFTP] Directory: {directory}")
+        print("[TFTP] Press Ctrl+C to stop")
+        # Keep running until signal
+        while server.is_running():
+            import time
+            time.sleep(1)
+    else:
+        print("[TFTP] Failed to start server")
+        sys.exit(1)
+
+
+# Check for TFTP server mode early (before importing GUI libraries)
+# This allows the TFTP server to run with sudo without requiring
+# PyQt6 and pyte to be installed system-wide
+if __name__ == '__main__' and len(sys.argv) >= 5 and sys.argv[1] == '--tftp-server':
+    host = sys.argv[2]
+    port = int(sys.argv[3])
+    directory = sys.argv[4]
+    run_tftp_server_standalone(host, port, directory)
+    sys.exit(0)
+
+
+# Import GUI libraries (only reached if not in TFTP server mode)
+import pyte
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
+    QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
+    QGraphicsDropShadowEffect, QCheckBox, QFileDialog
+)
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
+
+try:
+    from PyQt6.QtSerialPort import QSerialPortInfo
+    SERIAL_PORT_AVAILABLE = True
+except ImportError:
+    SERIAL_PORT_AVAILABLE = False
+
+
 def get_network_interfaces():
     """Get list of network interfaces with their IP addresses"""
     interfaces = []
@@ -317,6 +358,15 @@ class TerminalWidget(QTextEdit):
         self.vendor = "Generic"  # Default vendor for syntax highlighting
         self.setFont(QFont("Monospace", self.font_size))
 
+        # Track mouse state for selection
+        self.mouse_pressed = False
+
+        # Configure line wrap mode to prevent weird selection behavior
+        self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+
+        # Set word wrap mode for better text selection
+        self.setWordWrapMode(QTextOption.WrapMode.NoWrap)
+
         # Prevent Tab from being used for focus navigation
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setTabChangesFocus(False)
@@ -349,6 +399,16 @@ class TerminalWidget(QTextEdit):
                 event.accept()
                 return True
         return super().event(event)
+
+    def mousePressEvent(self, event):
+        """Track mouse press for selection"""
+        self.mouse_pressed = True
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Track mouse release after selection"""
+        self.mouse_pressed = False
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press and send to picocom"""
@@ -553,6 +613,67 @@ class TerminalWidget(QTextEdit):
 
         return vendor_keywords.get(self.vendor, generic)
 
+    def insert_cursor_at_position(self, html_text, raw_text, cursor_pos):
+        """Insert cursor highlight at specific position in HTML text"""
+        import re
+
+        # If cursor is beyond text length, add it at the end
+        if cursor_pos >= len(raw_text):
+            return html_text + '<span style="color: #0a0a0a; background-color: #e0e0e0;">█</span>'
+
+        # Build a map of raw text positions to HTML positions
+        # We need to find where in the HTML the cursor_pos character appears
+        raw_idx = 0
+        html_idx = 0
+        in_tag = False
+
+        while html_idx < len(html_text) and raw_idx < len(raw_text):
+            if html_text[html_idx] == '<':
+                in_tag = True
+                html_idx += 1
+            elif html_text[html_idx] == '>':
+                in_tag = False
+                html_idx += 1
+            elif in_tag:
+                html_idx += 1
+            else:
+                # Check for HTML entities
+                if html_text[html_idx:html_idx+5] == '&amp;':
+                    if raw_idx == cursor_pos:
+                        # Insert cursor here
+                        return (html_text[:html_idx] +
+                               '<span style="color: #0a0a0a; background-color: #e0e0e0;">&amp;</span>' +
+                               html_text[html_idx+5:])
+                    raw_idx += 1
+                    html_idx += 5
+                elif html_text[html_idx:html_idx+4] == '&lt;':
+                    if raw_idx == cursor_pos:
+                        return (html_text[:html_idx] +
+                               '<span style="color: #0a0a0a; background-color: #e0e0e0;">&lt;</span>' +
+                               html_text[html_idx+4:])
+                    raw_idx += 1
+                    html_idx += 4
+                elif html_text[html_idx:html_idx+4] == '&gt;':
+                    if raw_idx == cursor_pos:
+                        return (html_text[:html_idx] +
+                               '<span style="color: #0a0a0a; background-color: #e0e0e0;">&gt;</span>' +
+                               html_text[html_idx+4:])
+                    raw_idx += 1
+                    html_idx += 4
+                else:
+                    if raw_idx == cursor_pos:
+                        # Insert cursor here
+                        char = html_text[html_idx]
+                        if char == ' ':
+                            char = '&nbsp;'
+                        return (html_text[:html_idx] +
+                               f'<span style="color: #0a0a0a; background-color: #e0e0e0;">{char}</span>' +
+                               html_text[html_idx+1:])
+                    raw_idx += 1
+                    html_idx += 1
+
+        return html_text
+
     def apply_syntax_highlighting(self, text):
         """Apply syntax highlighting for network equipment commands"""
         import re
@@ -649,59 +770,133 @@ class TerminalWidget(QTextEdit):
         return default_bg if is_background else default_fg
 
     def render_screen(self):
-        """Render pyte screen buffer to QTextEdit with ANSI color support"""
+        """Render pyte screen buffer to QTextEdit with ANSI color support and syntax highlighting"""
+        # Don't update if user is selecting text or mouse is pressed
+        if self.textCursor().hasSelection() or self.mouse_pressed:
+            return
+
         # Get cursor position from pyte
         cursor_x = self.screen.cursor.x
         cursor_y = self.screen.cursor.y
 
-        # Build HTML content with cursor highlighting and ANSI colors
-        html_lines = []
-        html_lines.append('<pre style="margin: 0; padding: 0; line-height: 1.2;">')
+        # Build HTML content with cursor highlighting, ANSI colors, and syntax highlighting
+        html_parts = []
+        html_parts.append('<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">')
+
+        line_contents = []
 
         for y in range(self.screen.lines):
-            # Render character by character to preserve spacing
-            line = ""
+            # First, extract the raw text from this line
+            raw_line = ""
+            has_ansi_colors = False
+
             for x in range(self.screen.columns):
                 char = self.screen.buffer[y][x]
-                char_data = char.data
+                raw_line += char.data
 
-                # Escape HTML special characters and preserve spaces
-                char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(' ', '&nbsp;')
+                # Check if line has any ANSI colors/formatting
+                if char.fg != 'default' or char.bg != 'default' or char.bold or char.italics or char.underscore or char.reverse:
+                    has_ansi_colors = True
 
-                # Get ANSI colors from character attributes
-                fg_color = self.get_ansi_color(char.fg, is_background=False)
-                bg_color = self.get_ansi_color(char.bg, is_background=True)
+            # If line has ANSI colors, preserve them; otherwise apply syntax highlighting
+            if has_ansi_colors:
+                # Render with ANSI colors - group consecutive chars with same style
+                line = ""
+                x = 0
+                while x < self.screen.columns:
+                    char = self.screen.buffer[y][x]
 
-                # Build style string
-                styles = [f'color: {fg_color}']
-                if bg_color != 'transparent':
-                    styles.append(f'background-color: {bg_color}')
-                if char.bold:
-                    styles.append('font-weight: bold')
-                if char.italics:
-                    styles.append('font-style: italic')
-                if char.underscore:
-                    styles.append('text-decoration: underline')
-                if char.reverse:
-                    # Swap foreground and background
-                    styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
-                             f'background-color: {fg_color}']
+                    # Get style for this character
+                    fg_color = self.get_ansi_color(char.fg, is_background=False)
+                    bg_color = self.get_ansi_color(char.bg, is_background=True)
 
-                # Highlight cursor position (override colors)
-                if y == cursor_y and x == cursor_x:
-                    if char_data == '&nbsp;' or char_data == '':
-                        char_data = '█'
-                        styles = ['color: #e0e0e0', 'background-color: transparent']
+                    # Build style string
+                    styles = [f'color: {fg_color}']
+                    if bg_color != 'transparent':
+                        styles.append(f'background-color: {bg_color}')
+                    if char.bold:
+                        styles.append('font-weight: bold')
+                    if char.italics:
+                        styles.append('font-style: italic')
+                    if char.underscore:
+                        styles.append('text-decoration: underline')
+                    if char.reverse:
+                        styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
+                                 f'background-color: {fg_color}']
+
+                    # Check if this is cursor position
+                    is_cursor = (y == cursor_y and x == cursor_x)
+
+                    if is_cursor:
+                        char_data = char.data
+                        if char_data == ' ' or char_data == '':
+                            char_data = '█'
+                            styles = ['color: #e0e0e0', 'background-color: transparent']
+                        else:
+                            char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                            styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
+                        style_str = '; '.join(styles)
+                        line += f'<span style="{style_str}">{char_data}</span>'
+                        x += 1
                     else:
-                        styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
+                        # Group consecutive characters with same style
+                        style_str = '; '.join(styles)
+                        group_text = ""
+                        start_x = x
 
-                style_str = '; '.join(styles)
-                line += f'<span style="{style_str}">{char_data}</span>'
+                        while x < self.screen.columns:
+                            if y == cursor_y and x == cursor_x:
+                                break
 
-            html_lines.append(line)
+                            next_char = self.screen.buffer[y][x]
+                            next_fg = self.get_ansi_color(next_char.fg, is_background=False)
+                            next_bg = self.get_ansi_color(next_char.bg, is_background=True)
 
-        html_lines.append('</pre>')
-        new_html = '\n'.join(html_lines)
+                            # Check if style matches
+                            next_styles = [f'color: {next_fg}']
+                            if next_bg != 'transparent':
+                                next_styles.append(f'background-color: {next_bg}')
+                            if next_char.bold:
+                                next_styles.append('font-weight: bold')
+                            if next_char.italics:
+                                next_styles.append('font-style: italic')
+                            if next_char.underscore:
+                                next_styles.append('text-decoration: underline')
+                            if next_char.reverse:
+                                next_styles = [f'color: {next_bg if next_bg != "transparent" else "#0a0a0a"}',
+                                             f'background-color: {next_fg}']
+
+                            next_style_str = '; '.join(next_styles)
+
+                            if next_style_str != style_str:
+                                break
+
+                            # Add character to group
+                            char_text = next_char.data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                            if char_text == ' ':
+                                char_text = '&nbsp;'
+                            group_text += char_text
+                            x += 1
+
+                        if group_text:
+                            line += f'<span style="{style_str}">{group_text}</span>'
+            else:
+                # Apply syntax highlighting to lines without ANSI colors
+                highlighted_line = self.apply_syntax_highlighting(raw_line)
+
+                # Add cursor if on this line
+                if y == cursor_y:
+                    highlighted_line = self.insert_cursor_at_position(highlighted_line, raw_line, cursor_x)
+
+                line = highlighted_line
+
+            line_contents.append(line)
+
+        # Join lines with newlines and wrap in <pre>
+        # Each line becomes a separate text block, preventing cross-line selection issues
+        html_parts.append('\n'.join(line_contents))
+        html_parts.append('</pre>')
+        new_html = ''.join(html_parts)
 
         # Save scroll position - use tolerance for "at bottom" detection
         scrollbar = self.verticalScrollBar()
@@ -2016,42 +2211,7 @@ class SerialTerminalGUI(QMainWindow):
             self.status_led.setStyleSheet("color: #f38ba8; font-size: 14px;")
 
 
-def run_tftp_server_standalone(host, port, directory):
-    """Run TFTP server in standalone mode (for sudo execution)"""
-    import signal
-
-    server = TFTPServer(host=host, port=port, root_dir=directory)
-
-    def signal_handler(signum, frame):
-        print("\n[TFTP] Stopping server...")
-        server.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-
-    if server.start():
-        print(f"[TFTP] Server running on {host}:{port}")
-        print(f"[TFTP] Directory: {directory}")
-        print("[TFTP] Press Ctrl+C to stop")
-        # Keep running until signal
-        while server.is_running():
-            import time
-            time.sleep(1)
-    else:
-        print("[TFTP] Failed to start server")
-        sys.exit(1)
-
-
 def main():
-    # Check for TFTP server mode (used with sudo)
-    if len(sys.argv) >= 5 and sys.argv[1] == '--tftp-server':
-        host = sys.argv[2]
-        port = int(sys.argv[3])
-        directory = sys.argv[4]
-        run_tftp_server_standalone(host, port, directory)
-        return
-
     app = QApplication(sys.argv)
 
     # Set default font
