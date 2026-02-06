@@ -1577,6 +1577,21 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_browse_btn.setFixedSize(28, 28)
         self.tftp_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
         self.tftp_browse_btn.setToolTip("Browse for directory")
+        self.tftp_browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tftp_browse_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                border: 1px solid #bdbdbd;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #d0d0d0;
+                border: 1px solid #9e9e9e;
+            }
+            QPushButton:pressed {
+                background-color: #bdbdbd;
+            }
+        """)
         self.tftp_browse_btn.clicked.connect(self.browse_tftp_directory)
 
         self.tftp_btn = QPushButton("Start TFTP")
