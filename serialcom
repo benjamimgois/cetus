@@ -372,7 +372,7 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_ssh_profile(self, name, host, port, username, auth_method, key_path=''):
+    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH'):
         """Save an SSH connection profile"""
         profiles = self.get_ssh_profiles()
         # Update existing or add new
@@ -381,14 +381,14 @@ class ConfigManager:
                 profiles[i] = {
                     'name': name, 'host': host, 'port': port,
                     'username': username, 'auth_method': auth_method,
-                    'key_path': key_path
+                    'key_path': key_path, 'protocol': protocol
                 }
                 break
         else:
             profiles.append({
                 'name': name, 'host': host, 'port': port,
                 'username': username, 'auth_method': auth_method,
-                'key_path': key_path
+                'key_path': key_path, 'protocol': protocol
             })
         self.set('ssh_profiles', json.dumps(profiles))
 
@@ -2191,7 +2191,7 @@ class SerialTerminalGUI(QMainWindow):
         # Profiles table (at the top)
         self.ssh_profiles_table = QTableWidget()
         self.ssh_profiles_table.setColumnCount(4)
-        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Username"])
+        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol"])
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -2238,7 +2238,7 @@ class SerialTerminalGUI(QMainWindow):
         self.save_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_profile_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4caf50;
+                background-color: #78909c;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -2246,7 +2246,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 6px 12px;
             }
             QPushButton:hover {
-                background-color: #43a047;
+                background-color: #607d8b;
             }
         """)
         self.save_profile_btn.clicked.connect(self.save_current_ssh_profile)
@@ -2255,7 +2255,7 @@ class SerialTerminalGUI(QMainWindow):
         self.delete_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_profile_btn.setStyleSheet("""
             QPushButton {
-                background-color: #f44336;
+                background-color: #9e9e9e;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -2263,7 +2263,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 6px 12px;
             }
             QPushButton:hover {
-                background-color: #d32f2f;
+                background-color: #757575;
             }
         """)
         self.delete_profile_btn.clicked.connect(self.delete_ssh_profile)
@@ -2844,9 +2844,15 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
             self.ssh_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('host', '')))
             self.ssh_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('port', '22')))
-            self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(profile.get('username', '')))
+            
+            # Determine protocol based on port (22=SSH, 23=Telnet, or use saved protocol)
+            port = profile.get('port', '22')
+            protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
+            self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(protocol))
+            
             # Store profile data in first column item
             self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
+
 
     def load_ssh_profile_from_table(self):
         """Load selected SSH profile from table into form fields"""
@@ -2877,10 +2883,12 @@ class SerialTerminalGUI(QMainWindow):
         name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
         if ok and name:
             auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
+            protocol = 'SSH' if self.protocol_ssh_radio.isChecked() else 'Telnet'
             self.config.save_ssh_profile(
                 name, host, self.ssh_port.text(),
                 self.ssh_username.text(), auth_method,
-                self.ssh_key_path.text() if auth_method == 'key' else ''
+                self.ssh_key_path.text() if auth_method == 'key' else '',
+                protocol
             )
             self.refresh_ssh_profiles()
             QMessageBox.information(self, "Saved", f"Profile '{name}' saved")
