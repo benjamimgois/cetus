@@ -11,6 +11,7 @@ Modern and elegant graphical interface for serial communication via picocom.
 
 ## Features
 
+### Serial Communication
 - Modern graphical interface with PyQt6
 - **Embedded terminal** - No external terminal required
 - Elegant and responsive design
@@ -27,13 +28,41 @@ Modern and elegant graphical interface for serial communication via picocom.
 - Real-time bidirectional communication
 - Support for picocom control sequences (Ctrl+A, Ctrl+X, etc.)
 
+### Remote Connections
+- **SSH Support** - Secure remote connections with password or key authentication
+- **Telnet Support** - Connect to network devices via Telnet protocol
+- Connection profile management for quick access
+- Automatic protocol detection (SSH port 22, Telnet port 23)
+
+### Terminal Features
+- VT100/ANSI terminal emulation with pyte
+- Syntax highlighting for network equipment commands
+- Support for multiple vendors: Cisco, Huawei, H3C, Juniper, D-Link, Brocade, Datacom, Fortinet
+- Adjustable font size
+- Full keyboard support including special keys and control sequences
+
+### TFTP Server
+- Built-in TFTP server for firmware transfers
+- Network interface selection
+- Configurable root directory
+
 ## Requirements
 
-- Python 3
+### System Dependencies
+- Python 3.8+
 - PyQt6
 - Qt6 SerialPort (optional, for advanced port detection)
-- picocom
+- picocom (for serial connections)
 - sudo configured
+
+### Python Dependencies
+- **pyte** - Terminal emulator (VT100/ANSI)
+- **paramiko** - SSH protocol support (optional, for SSH connections)
+- **standard-telnetlib** - Telnet protocol support (Python 3.13+)
+
+> **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information. 
+> Use SSH whenever possible for remote connections. Telnet should only be used in trusted, isolated networks 
+> or when connecting to devices that don't support SSH.
 
 ## Installation
 
@@ -94,12 +123,18 @@ sudo pacman -U serialcom-1.1-1-any.pkg.tar.zst
 ```bash
 # Arch Linux / Manjaro
 sudo pacman -S python-pyqt6 qt6-serialport picocom
+pip install pyte paramiko
 
 # Fedora / RHEL
 sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom
+pip3 install pyte paramiko
 
 # Debian / Ubuntu (manual installation)
 sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom
+pip3 install pyte paramiko
+
+# Python 3.13+ users also need:
+pip3 install standard-telnetlib
 ```
 
 2. Make scripts executable:
@@ -126,7 +161,7 @@ Run the application:
 python3 serialcom
 ```
 
-### Configuration
+### Serial Connection
 
 1. Select port type (Serial or USB)
 2. Choose specific port from the list
@@ -135,6 +170,30 @@ python3 serialcom
 5. Click "CONNECT"
 6. Enter root password when prompted in the embedded terminal
 7. The integrated terminal window will open with picocom running
+
+### SSH Connection
+
+1. Click the SSH tab (computer icon)
+2. Select "SSH" protocol
+3. Enter host (IP address or hostname)
+4. Enter port (default: 22)
+5. Enter username
+6. Choose authentication method:
+   - **Password**: Enter password or leave blank to be prompted
+   - **SSH Key**: Browse and select your private key file
+7. (Optional) Save as profile for quick access
+8. Click "CONNECT SSH"
+
+### Telnet Connection
+
+1. Click the SSH tab (computer icon)
+2. Select "Telnet" protocol
+3. Enter host (IP address or hostname)
+4. Enter port (default: 23)
+5. Click "CONNECT TELNET"
+
+> **Note**: Telnet does not require authentication in the UI - credentials are typically 
+> requested by the remote device after connection.
 
 ### picocom Commands
 

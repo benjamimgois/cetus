@@ -2,19 +2,15 @@
 pkgname=serialcom
 pkgver=1.1
 pkgrel=1
-pkgdesc="Modern graphical interface for serial communication via picocom"
+pkgdesc="Modern graphical interface for serial communication with SSH and Telnet support"
 arch=('any')
 url="https://github.com/benjamimgois/serialcom"
 license=('MIT')
-depends=('python' 'python-pyqt6' 'python-pyte' 'qt6-serialport' 'picocom' 'sudo')
-makedepends=('imagemagick')
+depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'qt6-serialport' 'picocom' 'sudo')
 optdepends=(
-    'gnome-terminal: default terminal emulator'
-    'konsole: KDE terminal emulator'
-    'xfce4-terminal: XFCE terminal emulator'
-    'kitty: fast GPU-based terminal emulator'
-    'alacritty: cross-platform GPU-accelerated terminal emulator'
+    'python-standard-telnetlib: Telnet protocol support (Python 3.13+)'
 )
+makedepends=('imagemagick')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/serialcom/archive/refs/tags/${pkgver}.tar.gz")
 sha256sums=('b48bc914299a7d14da0629063b3f922588a88330f817430f63582bd247231706')
 

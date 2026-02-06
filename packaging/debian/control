@@ -8,14 +8,20 @@ Homepage: https://github.com/benjamimgois/serialcom
 
 Package: serialcom
 Architecture: all
-Depends: python3 (>= 3.10), python3-pyqt6, python3-pyte, picocom, ${misc:Depends}
+Depends: python3 (>= 3.10), python3-pyqt6, python3-pyte, python3-paramiko, picocom, ${misc:Depends}
+Recommends: python3-standard-telnetlib
 Description: Modern graphical interface for serial communication
  SerialCom is a modern and elegant graphical interface for serial
- communication via picocom. It provides an easy-to-use interface for
- configuring serial port parameters and establishing connections.
+ communication via picocom, with support for SSH and Telnet connections.
+ It provides an easy-to-use interface for configuring serial port
+ parameters and establishing remote connections.
  .
  Features:
   - Automatic serial port detection
   - Support for serial ports and USB adapters
+  - SSH and Telnet remote connections
+  - Connection profile management
+  - Syntax highlighting for network equipment
+  - Built-in TFTP server
   - Complete serial parameter configuration
   - Modern PyQt6 interface

@@ -29,6 +29,26 @@ modules:
         url: https://files.pythonhosted.org/packages/59/d0/bb522283b90853afbf506cd5b71c650cf708829914efd0003d615cf426cd/pyte-0.8.2-py3-none-any.whl
         sha256: 85db42a35798a5aafa96ac4d8da78b090b2c933248819157fc0e6f78876a0135
 
+  - name: python3-paramiko
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "paramiko" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/1b/0f/c00296e36ff7b0b9c30ae9a9a0e1ca33a3a1c71da05b4c464c1b7e9c6e1f/paramiko-3.5.0-py3-none-any.whl
+        sha256: 786699214858baf1cc3102f2852146366091cf1add6d72e05fe60228dae8bb52
+
+  - name: python3-telnetlib
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "standard-telnetlib" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/d1/5e/3c6f3e3e3e3e3e3e3e3e3e3e3e3e/standard_telnetlib-3.13.0-py3-none-any.whl
+        sha256: 243333696bf1659a558eb999c23add82c41ffc2f2d04a56fae13b61b536fb173
+
   - name: picocom
     buildsystem: simple
     build-commands:

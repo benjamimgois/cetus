@@ -12,6 +12,7 @@ import json
 import socket
 import threading
 import socketserver
+import telnetlib
 from pathlib import Path
 
 # Application version
@@ -244,7 +245,8 @@ from PyQt6.QtWidgets import (
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
-    QStackedWidget, QRadioButton, QButtonGroup
+    QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
+    QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
@@ -999,6 +1001,10 @@ class TerminalDialog(QDialog):
         self.ssh_channel = None
         self.ssh_read_thread = None
         self.ssh_running = False
+        # Telnet-related attributes
+        self.telnet_client = None
+        self.telnet_read_thread = None
+        self.telnet_running = False
         self.connection_type = 'serial'
 
         self.init_ui()
@@ -1382,9 +1388,11 @@ Router#_\r
         self.terminal.append_output(cisco_output)
 
     def send_to_process(self, text):
-        """Send input to the active connection (picocom or SSH)"""
+        """Send input to the active connection (picocom, SSH, or Telnet)"""
         if self.connection_type == 'ssh':
             self.send_to_ssh(text)
+        elif self.connection_type == 'telnet':
+            self.send_to_telnet(text)
         elif self.process and self.process.state() == QProcess.ProcessState.Running:
             self.process.write(text.encode())
 
@@ -1493,6 +1501,78 @@ Router#_\r
             except:
                 pass
             self.ssh_client = None
+
+    def start_telnet(self, host, port, username=None):
+        """Start Telnet connection"""
+        self.connection_type = 'telnet'
+        self.setWindowTitle(f"SerialCom Terminal - Telnet: {host}")
+
+        try:
+            self.terminal.append_output(f"Connecting to {host}:{port}...\n")
+            self.telnet_client = telnetlib.Telnet(host, int(port), timeout=10)
+            self.telnet_running = True
+
+            # Start read thread
+            self.telnet_read_thread = threading.Thread(target=self._telnet_read_loop, daemon=True)
+            self.telnet_read_thread.start()
+
+            self.terminal.append_output(f"Connected to {host}\n\n")
+            # Ensure terminal has focus for keyboard input
+            self.terminal.setFocus()
+            return True
+
+        except Exception as e:
+            self.terminal.append_output(f"[ERROR] Connection failed: {e}\n")
+            return False
+
+    def _telnet_read_loop(self):
+        """Background thread to read Telnet output"""
+        import time
+        print("[DEBUG] Telnet read thread started")
+        while self.telnet_running and self.telnet_client:
+            try:
+                data = self.telnet_client.read_very_eager()
+                if data:
+                    text = data.decode('utf-8', errors='replace')
+                    print(f"[DEBUG] Received {len(data)} bytes")
+                    # Use signal for thread-safe UI update
+                    self.ssh_output_received.emit(text)
+                else:
+                    # Small sleep to prevent CPU spinning
+                    time.sleep(0.05)
+            except EOFError:
+                print("[DEBUG] Telnet connection closed")
+                if self.telnet_running:
+                    self.ssh_output_received.emit("\n[Connection closed by remote host]\n")
+                break
+            except Exception as e:
+                print(f"[DEBUG] Telnet read error: {e}")
+                if self.telnet_running:
+                    self.ssh_output_received.emit(f"\n[Telnet Error: {e}]\n")
+                break
+        print("[DEBUG] Telnet read thread ended")
+
+    def send_to_telnet(self, text):
+        """Send input to Telnet connection"""
+        if self.telnet_client and self.telnet_running:
+            try:
+                print(f"[DEBUG] Sending: {repr(text)}")
+                self.telnet_client.write(text.encode('utf-8'))
+            except Exception as e:
+                print(f"[DEBUG] Send error: {e}")
+                self.terminal.append_output(f"\n[Send error: {e}]\n")
+        else:
+            print(f"[DEBUG] Cannot send - client: {self.telnet_client}, running: {self.telnet_running}")
+
+    def disconnect_telnet(self):
+        """Disconnect Telnet session"""
+        self.telnet_running = False
+        if self.telnet_client:
+            try:
+                self.telnet_client.close()
+            except:
+                pass
+            self.telnet_client = None
     
     def handle_stdout(self):
         """Handle standard output from picocom"""
@@ -1515,9 +1595,11 @@ Router#_\r
         self.disconnect_btn.setText("CLOSE")
     
     def disconnect(self):
-        """Disconnect from serial port or SSH"""
+        """Disconnect from serial port, SSH, or Telnet"""
         if self.connection_type == 'ssh':
             self.disconnect_ssh()
+        elif self.connection_type == 'telnet':
+            self.disconnect_telnet()
         elif self.process and self.process.state() == QProcess.ProcessState.Running:
             # Send Ctrl+A Ctrl+X to exit picocom gracefully
             self.process.write(b'\x01\x18')
@@ -1536,6 +1618,8 @@ Router#_\r
         is_connected = False
         if self.connection_type == 'ssh':
             is_connected = self.ssh_running
+        elif self.connection_type == 'telnet':
+            is_connected = self.telnet_running
         elif self.process:
             is_connected = self.process.state() == QProcess.ProcessState.Running
 
@@ -1965,29 +2049,51 @@ class SerialTerminalGUI(QMainWindow):
         """Create the SSH connection configuration page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         combo_width = 200
 
-        # === SSH Connection Group ===
-        ssh_group = QGroupBox("SSH Connection")
-        ssh_layout = QFormLayout()
-        ssh_layout.setVerticalSpacing(15)
-        ssh_layout.setContentsMargins(15, 15, 15, 15)
-        ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        # Style for QLineEdit fields
+        # Style for QLineEdit fields (compact)
         line_edit_style = """
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 4px 10px;
+                border-radius: 4px;
+                padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
                 font-size: 10pt;
             }
         """
+
+        # === Remote Connection Group ===
+        ssh_group = QGroupBox("Remote Connection")
+        ssh_layout = QFormLayout()
+        ssh_layout.setVerticalSpacing(8)
+        ssh_layout.setContentsMargins(10, 10, 10, 10)
+        ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        # Protocol selection (SSH/Telnet)
+        radio_style = "QRadioButton { color: #333333; font-size: 10pt; }"
+        self.protocol_ssh_radio = QRadioButton("SSH")
+        self.protocol_ssh_radio.setChecked(True)
+        self.protocol_ssh_radio.setStyleSheet(radio_style)
+        self.protocol_telnet_radio = QRadioButton("Telnet")
+        self.protocol_telnet_radio.setStyleSheet(radio_style)
+
+        self.protocol_button_group = QButtonGroup()
+        self.protocol_button_group.addButton(self.protocol_ssh_radio, 0)
+        self.protocol_button_group.addButton(self.protocol_telnet_radio, 1)
+        self.protocol_button_group.buttonClicked.connect(self.toggle_protocol)
+
+        protocol_widget = QWidget()
+        protocol_layout = QHBoxLayout()
+        protocol_layout.setContentsMargins(0, 0, 0, 0)
+        protocol_layout.addWidget(self.protocol_ssh_radio)
+        protocol_layout.addWidget(self.protocol_telnet_radio)
+        protocol_layout.addStretch()
+        protocol_widget.setLayout(protocol_layout)
+        ssh_layout.addRow("Protocol:", protocol_widget)
 
         # Host
         self.ssh_host = QLineEdit()
@@ -2026,10 +2132,10 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.addWidget(ssh_group)
 
         # === Authentication Group ===
-        auth_group = QGroupBox("Authentication")
+        self.auth_group = QGroupBox("Authentication")
         auth_layout = QVBoxLayout()
-        auth_layout.setSpacing(12)
-        auth_layout.setContentsMargins(15, 15, 15, 15)
+        auth_layout.setSpacing(6)
+        auth_layout.setContentsMargins(10, 10, 10, 10)
 
         # Radio buttons for auth method
         radio_style = "QRadioButton { color: #333333; font-size: 10pt; }"
@@ -2050,22 +2156,10 @@ class SerialTerminalGUI(QMainWindow):
         auth_method_layout.addStretch()
         auth_layout.addLayout(auth_method_layout)
 
-        # Style for password/key fields
-        line_edit_style = """
-            QLineEdit {
-                border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 4px 10px;
-                background-color: #f5f5f5;
-                color: #333333;
-                font-size: 10pt;
-            }
-        """
-
         # Password field (visible when password auth selected)
         self.ssh_password_widget = QWidget()
         password_layout = QFormLayout()
-        password_layout.setContentsMargins(0, 10, 0, 0)
+        password_layout.setContentsMargins(0, 4, 0, 0)
         self.ssh_password = QLineEdit()
         self.ssh_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.ssh_password.setFixedWidth(combo_width)
@@ -2078,7 +2172,7 @@ class SerialTerminalGUI(QMainWindow):
         # Key file field (hidden by default)
         self.ssh_key_widget = QWidget()
         key_layout = QHBoxLayout()
-        key_layout.setContentsMargins(0, 10, 0, 0)
+        key_layout.setContentsMargins(0, 4, 0, 0)
         key_layout.setSpacing(5)
 
         key_label = QLabel("Key File:")
@@ -2088,7 +2182,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_key_path.setStyleSheet(line_edit_style)
 
         self.ssh_key_browse = QPushButton()
-        self.ssh_key_browse.setFixedSize(28, 28)
+        self.ssh_key_browse.setFixedSize(24, 24)
         self.ssh_key_browse.setIcon(self.style().standardIcon(
             self.style().StandardPixmap.SP_FileIcon))
         self.ssh_key_browse.setToolTip("Browse for SSH key file")
@@ -2097,7 +2191,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {
                 background-color: #e0e0e0;
                 border: 1px solid #bdbdbd;
-                border-radius: 6px;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #d0d0d0;
@@ -2114,7 +2208,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_key_widget.setVisible(False)
         auth_layout.addWidget(self.ssh_key_widget)
 
-        auth_group.setLayout(auth_layout)
+        self.auth_group.setLayout(auth_layout)
 
         # Add shadow
         shadow2 = QGraphicsDropShadowEffect()
@@ -2122,22 +2216,63 @@ class SerialTerminalGUI(QMainWindow):
         shadow2.setXOffset(0)
         shadow2.setYOffset(2)
         shadow2.setColor(QColor(0, 0, 0, 30))
-        auth_group.setGraphicsEffect(shadow2)
+        self.auth_group.setGraphicsEffect(shadow2)
 
-        main_layout.addWidget(auth_group)
+        main_layout.addWidget(self.auth_group)
 
         # === Saved Profiles Group ===
         profiles_group = QGroupBox("Quick Connect")
-        profiles_layout = QHBoxLayout()
-        profiles_layout.setContentsMargins(15, 15, 15, 15)
+        profiles_layout = QVBoxLayout()
+        profiles_layout.setContentsMargins(10, 2, 10, 8)
+        profiles_layout.setSpacing(6)
 
-        self.ssh_profiles_combo = QComboBox()
-        self.ssh_profiles_combo.setFixedWidth(combo_width)
-        self.ssh_profiles_combo.addItem("-- Select saved profile --")
-        self.ssh_profiles_combo.currentIndexChanged.connect(self.load_ssh_profile)
+        # Profiles table (at the top)
+        self.ssh_profiles_table = QTableWidget()
+        self.ssh_profiles_table.setColumnCount(4)
+        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Username"])
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_table.setColumnWidth(2, 50)
+        self.ssh_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.ssh_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.ssh_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.ssh_profiles_table.verticalHeader().setVisible(False)
+        self.ssh_profiles_table.doubleClicked.connect(self.load_ssh_profile_from_table)
+        self.ssh_profiles_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 9pt;
+                gridline-color: #d0d0d0;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                background-color: #e8e8e8;
+            }
+            QTableWidget::item:selected {
+                background-color: #2196F3;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 4px;
+                border: none;
+                font-weight: bold;
+                font-size: 9pt;
+            }
+        """)
+        profiles_layout.addWidget(self.ssh_profiles_table)
 
-        self.save_profile_btn = QPushButton("Save")
-        self.save_profile_btn.setFixedWidth(60)
+        # Buttons row (centered, below table)
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+
+        self.save_profile_btn = QPushButton("Save Current")
         self.save_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_profile_btn.setStyleSheet("""
             QPushButton {
@@ -2146,7 +2281,7 @@ class SerialTerminalGUI(QMainWindow):
                 border: none;
                 border-radius: 6px;
                 font-weight: bold;
-                padding: 4px 8px;
+                padding: 6px 12px;
             }
             QPushButton:hover {
                 background-color: #43a047;
@@ -2154,8 +2289,7 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.save_profile_btn.clicked.connect(self.save_current_ssh_profile)
 
-        self.delete_profile_btn = QPushButton("Delete")
-        self.delete_profile_btn.setFixedWidth(60)
+        self.delete_profile_btn = QPushButton("Delete Selected")
         self.delete_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_profile_btn.setStyleSheet("""
             QPushButton {
@@ -2164,7 +2298,7 @@ class SerialTerminalGUI(QMainWindow):
                 border: none;
                 border-radius: 6px;
                 font-weight: bold;
-                padding: 4px 8px;
+                padding: 6px 12px;
             }
             QPushButton:hover {
                 background-color: #d32f2f;
@@ -2172,10 +2306,11 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.delete_profile_btn.clicked.connect(self.delete_ssh_profile)
 
-        profiles_layout.addWidget(self.ssh_profiles_combo)
-        profiles_layout.addWidget(self.save_profile_btn)
-        profiles_layout.addWidget(self.delete_profile_btn)
-        profiles_layout.addStretch()
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.save_profile_btn)
+        btn_layout.addWidget(self.delete_profile_btn)
+        btn_layout.addStretch()
+        profiles_layout.addLayout(btn_layout)
 
         profiles_group.setLayout(profiles_layout)
 
@@ -2187,10 +2322,7 @@ class SerialTerminalGUI(QMainWindow):
         shadow3.setColor(QColor(0, 0, 0, 30))
         profiles_group.setGraphicsEffect(shadow3)
 
-        main_layout.addWidget(profiles_group)
-
-        # Spacer
-        main_layout.addStretch()
+        main_layout.addWidget(profiles_group, 1)  # stretch factor 1 to expand
 
         # Connect SSH button
         self.ssh_connect_btn = QPushButton("CONNECT SSH")
@@ -2199,7 +2331,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ssh_connect_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2196F3;
+                background-color: #4caf50;
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
@@ -2208,10 +2340,10 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: #43a047;
             }
             QPushButton:pressed {
-                background-color: #1565C0;
+                background-color: #388e3c;
             }
         """)
         self.ssh_connect_btn.clicked.connect(self.connect_ssh)
@@ -2223,10 +2355,10 @@ class SerialTerminalGUI(QMainWindow):
         ssh_status_layout.setSpacing(8)
 
         self.ssh_status_led = QLabel("●")
-        self.ssh_status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
+        self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
 
         self.ssh_status_label = QLabel("Ready for SSH connection")
-        self.ssh_status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
+        self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
 
         ssh_status_layout.addWidget(self.ssh_status_led)
         ssh_status_layout.addWidget(self.ssh_status_label)
@@ -2712,7 +2844,20 @@ class SerialTerminalGUI(QMainWindow):
 
         return cmd
 
-    # === SSH Helper Methods ===
+    # === SSH/Telnet Helper Methods ===
+
+    def toggle_protocol(self, button):
+        """Toggle between SSH and Telnet protocol"""
+        if button == self.protocol_ssh_radio:
+            # SSH selected
+            self.ssh_port.setText("22")
+            self.auth_group.setVisible(True)
+            self.ssh_connect_btn.setText("CONNECT SSH")
+        else:
+            # Telnet selected
+            self.ssh_port.setText("23")
+            self.auth_group.setVisible(False)
+            self.ssh_connect_btn.setText("CONNECT TELNET")
 
     def toggle_auth_method(self, button):
         """Toggle between password and key authentication UI"""
@@ -2735,29 +2880,38 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_key_path.setText(key_file)
 
     def refresh_ssh_profiles(self):
-        """Refresh the SSH profiles dropdown"""
-        self.ssh_profiles_combo.clear()
-        self.ssh_profiles_combo.addItem("-- Select saved profile --")
-        for profile in self.config.get_ssh_profiles():
-            display = f"{profile['name']} ({profile['username']}@{profile['host']})"
-            self.ssh_profiles_combo.addItem(display, profile)
+        """Refresh the SSH profiles table"""
+        self.ssh_profiles_table.setRowCount(0)
+        profiles = self.config.get_ssh_profiles()
+        for profile in profiles:
+            row = self.ssh_profiles_table.rowCount()
+            self.ssh_profiles_table.insertRow(row)
+            self.ssh_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
+            self.ssh_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('host', '')))
+            self.ssh_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('port', '22')))
+            self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(profile.get('username', '')))
+            # Store profile data in first column item
+            self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
 
-    def load_ssh_profile(self, index):
-        """Load selected SSH profile into form fields"""
-        if index <= 0:
+    def load_ssh_profile_from_table(self):
+        """Load selected SSH profile from table into form fields"""
+        row = self.ssh_profiles_table.currentRow()
+        if row < 0:
             return
-        profile = self.ssh_profiles_combo.currentData()
-        if profile:
-            self.ssh_host.setText(profile.get('host', ''))
-            self.ssh_port.setText(profile.get('port', '22'))
-            self.ssh_username.setText(profile.get('username', ''))
-            if profile.get('auth_method') == 'key':
-                self.auth_key_radio.setChecked(True)
-                self.ssh_key_path.setText(profile.get('key_path', ''))
-                self.toggle_auth_method(self.auth_key_radio)
-            else:
-                self.auth_password_radio.setChecked(True)
-                self.toggle_auth_method(self.auth_password_radio)
+        item = self.ssh_profiles_table.item(row, 0)
+        if item:
+            profile = item.data(Qt.ItemDataRole.UserRole)
+            if profile:
+                self.ssh_host.setText(profile.get('host', ''))
+                self.ssh_port.setText(profile.get('port', '22'))
+                self.ssh_username.setText(profile.get('username', ''))
+                if profile.get('auth_method') == 'key':
+                    self.auth_key_radio.setChecked(True)
+                    self.ssh_key_path.setText(profile.get('key_path', ''))
+                    self.toggle_auth_method(self.auth_key_radio)
+                else:
+                    self.auth_password_radio.setChecked(True)
+                    self.toggle_auth_method(self.auth_password_radio)
 
     def save_current_ssh_profile(self):
         """Save current SSH settings as a profile"""
@@ -2778,22 +2932,61 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.information(self, "Saved", f"Profile '{name}' saved")
 
     def delete_ssh_profile(self):
-        """Delete selected SSH profile"""
-        if self.ssh_profiles_combo.currentIndex() <= 0:
+        """Delete selected SSH profile from table"""
+        row = self.ssh_profiles_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Warning", "Select a profile to delete")
             return
-        profile = self.ssh_profiles_combo.currentData()
-        if profile:
-            reply = QMessageBox.question(
-                self, "Delete Profile",
-                f"Delete profile '{profile['name']}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.config.delete_ssh_profile(profile['name'])
-                self.refresh_ssh_profiles()
+        item = self.ssh_profiles_table.item(row, 0)
+        if item:
+            profile = item.data(Qt.ItemDataRole.UserRole)
+            if profile:
+                reply = QMessageBox.question(
+                    self, "Delete Profile",
+                    f"Delete profile '{profile['name']}'?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.config.delete_ssh_profile(profile['name'])
+                    self.refresh_ssh_profiles()
 
     def connect_ssh(self):
-        """Connect via SSH"""
+        """Connect via SSH or Telnet"""
+        host = self.ssh_host.text().strip()
+        port = self.ssh_port.text().strip() or "22"
+        username = self.ssh_username.text().strip()
+
+        if not host:
+            QMessageBox.warning(self, "Warning", "Enter host address")
+            return
+
+        # Check if Telnet is selected
+        if self.protocol_telnet_radio.isChecked():
+            # Telnet connection
+            self.ssh_status_label.setText("Connecting...")
+            self.ssh_status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
+            self.ssh_status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
+            QApplication.processEvents()
+
+            self.terminal_dialog = TerminalDialog(self, self.config)
+
+            if self.terminal_dialog.start_telnet(host, port, username):
+                self.ssh_status_label.setText("Connected - Terminal opened")
+                self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+                self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+                self.terminal_dialog.exec()
+
+                # Reset status
+                self.ssh_status_label.setText("Ready for connection")
+                self.ssh_status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
+                self.ssh_status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
+            else:
+                self.ssh_status_label.setText("Connection failed")
+                self.ssh_status_label.setStyleSheet("color: #f44336; font-size: 10pt;")
+                self.ssh_status_led.setStyleSheet("color: #f44336; font-size: 14px;")
+            return
+
+        # SSH connection
         if not SSH_AVAILABLE:
             QMessageBox.critical(
                 self, "Error",
@@ -2802,11 +2995,7 @@ class SerialTerminalGUI(QMainWindow):
             )
             return
 
-        host = self.ssh_host.text().strip()
-        port = self.ssh_port.text().strip() or "22"
-        username = self.ssh_username.text().strip()
-
-        if not host or not username:
+        if not username:
             QMessageBox.warning(self, "Warning", "Enter host and username")
             return
 
