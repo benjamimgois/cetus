@@ -2099,7 +2099,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_host = QLineEdit()
         self.ssh_host.setFixedWidth(combo_width)
         self.ssh_host.setPlaceholderText("192.168.1.1 or hostname")
-        self.ssh_host.setToolTip("SSH server hostname or IP address")
+        self.ssh_host.setToolTip("SSH/Telnet server hostname or IP address")
         self.ssh_host.setStyleSheet(line_edit_style)
         ssh_layout.addRow("Host:", self.ssh_host)
 
@@ -2107,7 +2107,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_port = QLineEdit()
         self.ssh_port.setFixedWidth(80)
         self.ssh_port.setText("22")
-        self.ssh_port.setToolTip("SSH port (default: 22)")
+        self.ssh_port.setToolTip("SSH/Telnet port (default: 22 for SSH, 23 for Telnet)")
         self.ssh_port.setStyleSheet(line_edit_style)
         ssh_layout.addRow("Port:", self.ssh_port)
 
@@ -2115,69 +2115,33 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_username = QLineEdit()
         self.ssh_username.setFixedWidth(combo_width)
         self.ssh_username.setPlaceholderText("admin")
-        self.ssh_username.setToolTip("SSH username")
+        self.ssh_username.setToolTip("Username for authentication")
         self.ssh_username.setStyleSheet(line_edit_style)
         ssh_layout.addRow("Username:", self.ssh_username)
 
-        ssh_group.setLayout(ssh_layout)
-
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setXOffset(0)
-        shadow.setYOffset(2)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        ssh_group.setGraphicsEffect(shadow)
-
-        main_layout.addWidget(ssh_group)
-
-        # === Authentication Group ===
-        self.auth_group = QGroupBox("Authentication")
-        auth_layout = QVBoxLayout()
-        auth_layout.setSpacing(6)
-        auth_layout.setContentsMargins(10, 10, 10, 10)
-
-        # Radio buttons for auth method
-        radio_style = "QRadioButton { color: #333333; font-size: 10pt; }"
-        self.auth_password_radio = QRadioButton("Password")
-        self.auth_password_radio.setChecked(True)
-        self.auth_password_radio.setStyleSheet(radio_style)
-        self.auth_key_radio = QRadioButton("SSH Key")
-        self.auth_key_radio.setStyleSheet(radio_style)
-
-        self.auth_button_group = QButtonGroup()
-        self.auth_button_group.addButton(self.auth_password_radio, 0)
-        self.auth_button_group.addButton(self.auth_key_radio, 1)
-        self.auth_button_group.buttonClicked.connect(self.toggle_auth_method)
-
-        auth_method_layout = QHBoxLayout()
-        auth_method_layout.addWidget(self.auth_password_radio)
-        auth_method_layout.addWidget(self.auth_key_radio)
-        auth_method_layout.addStretch()
-        auth_layout.addLayout(auth_method_layout)
-
-        # Password field (visible when password auth selected)
-        self.ssh_password_widget = QWidget()
-        password_layout = QFormLayout()
-        password_layout.setContentsMargins(0, 4, 0, 0)
+        # Password (for both SSH and Telnet)
         self.ssh_password = QLineEdit()
         self.ssh_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.ssh_password.setFixedWidth(combo_width)
-        self.ssh_password.setToolTip("SSH password")
+        self.ssh_password.setPlaceholderText("Leave blank to be prompted")
+        self.ssh_password.setToolTip("Password for authentication (optional)")
         self.ssh_password.setStyleSheet(line_edit_style)
-        password_layout.addRow("Password:", self.ssh_password)
-        self.ssh_password_widget.setLayout(password_layout)
-        auth_layout.addWidget(self.ssh_password_widget)
+        ssh_layout.addRow("Password:", self.ssh_password)
 
-        # Key file field (hidden by default)
+        # SSH Key checkbox (for SSH only)
+        self.use_ssh_key = QCheckBox("Use SSH Key instead of password")
+        self.use_ssh_key.setStyleSheet("QCheckBox { color: #333333; font-size: 10pt; }")
+        self.use_ssh_key.toggled.connect(self.toggle_ssh_key)
+        ssh_layout.addRow("", self.use_ssh_key)
+
+        # SSH Key file field (hidden by default)
         self.ssh_key_widget = QWidget()
         key_layout = QHBoxLayout()
-        key_layout.setContentsMargins(0, 4, 0, 0)
+        key_layout.setContentsMargins(0, 0, 0, 0)
         key_layout.setSpacing(5)
 
-        key_label = QLabel("Key File:")
         self.ssh_key_path = QLineEdit()
-        self.ssh_key_path.setFixedWidth(combo_width - 40)
+        self.ssh_key_path.setFixedWidth(combo_width - 30)
         self.ssh_key_path.setPlaceholderText("~/.ssh/id_rsa")
         self.ssh_key_path.setStyleSheet(line_edit_style)
 
@@ -2200,25 +2164,23 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.ssh_key_browse.clicked.connect(self.browse_ssh_key)
 
-        key_layout.addWidget(key_label)
         key_layout.addWidget(self.ssh_key_path)
         key_layout.addWidget(self.ssh_key_browse)
-        key_layout.addStretch()
         self.ssh_key_widget.setLayout(key_layout)
         self.ssh_key_widget.setVisible(False)
-        auth_layout.addWidget(self.ssh_key_widget)
+        ssh_layout.addRow("Key File:", self.ssh_key_widget)
 
-        self.auth_group.setLayout(auth_layout)
+        ssh_group.setLayout(ssh_layout)
 
-        # Add shadow
-        shadow2 = QGraphicsDropShadowEffect()
-        shadow2.setBlurRadius(15)
-        shadow2.setXOffset(0)
-        shadow2.setYOffset(2)
-        shadow2.setColor(QColor(0, 0, 0, 30))
-        self.auth_group.setGraphicsEffect(shadow2)
+        # Add shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 0, 0, 30))
+        ssh_group.setGraphicsEffect(shadow)
 
-        main_layout.addWidget(self.auth_group)
+        main_layout.addWidget(ssh_group)
 
         # === Saved Profiles Group ===
         profiles_group = QGroupBox("Quick Connect")
@@ -2851,22 +2813,15 @@ class SerialTerminalGUI(QMainWindow):
         if button == self.protocol_ssh_radio:
             # SSH selected
             self.ssh_port.setText("22")
-            self.auth_group.setVisible(True)
             self.ssh_connect_btn.setText("CONNECT SSH")
         else:
             # Telnet selected
             self.ssh_port.setText("23")
-            self.auth_group.setVisible(False)
             self.ssh_connect_btn.setText("CONNECT TELNET")
 
-    def toggle_auth_method(self, button):
-        """Toggle between password and key authentication UI"""
-        if button == self.auth_password_radio:
-            self.ssh_password_widget.setVisible(True)
-            self.ssh_key_widget.setVisible(False)
-        else:
-            self.ssh_password_widget.setVisible(False)
-            self.ssh_key_widget.setVisible(True)
+    def toggle_ssh_key(self, checked):
+        """Toggle SSH key file widget visibility"""
+        self.ssh_key_widget.setVisible(checked)
 
     def browse_ssh_key(self):
         """Open file dialog to select SSH private key"""
@@ -2906,12 +2861,11 @@ class SerialTerminalGUI(QMainWindow):
                 self.ssh_port.setText(profile.get('port', '22'))
                 self.ssh_username.setText(profile.get('username', ''))
                 if profile.get('auth_method') == 'key':
-                    self.auth_key_radio.setChecked(True)
+                    self.use_ssh_key.setChecked(True)
                     self.ssh_key_path.setText(profile.get('key_path', ''))
-                    self.toggle_auth_method(self.auth_key_radio)
                 else:
-                    self.auth_password_radio.setChecked(True)
-                    self.toggle_auth_method(self.auth_password_radio)
+                    self.use_ssh_key.setChecked(False)
+
 
     def save_current_ssh_profile(self):
         """Save current SSH settings as a profile"""
@@ -2922,7 +2876,7 @@ class SerialTerminalGUI(QMainWindow):
 
         name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
         if ok and name:
-            auth_method = 'key' if self.auth_key_radio.isChecked() else 'password'
+            auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
             self.config.save_ssh_profile(
                 name, host, self.ssh_port.text(),
                 self.ssh_username.text(), auth_method,
@@ -3003,13 +2957,15 @@ class SerialTerminalGUI(QMainWindow):
         password = None
         key_path = None
 
-        if self.auth_key_radio.isChecked():
+        if self.use_ssh_key.isChecked():
+            # SSH Key authentication
             key_path = self.ssh_key_path.text().strip()
             if not key_path:
                 QMessageBox.warning(self, "Warning", "Select SSH key file")
                 return
             key_path = os.path.expanduser(key_path)
         else:
+            # Password authentication
             password = self.ssh_password.text()
             if not password:
                 # Prompt for password if not entered
