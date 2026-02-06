@@ -1006,53 +1006,41 @@ class TerminalDialog(QDialog):
         # Connect SSH output signal to terminal
         self.ssh_output_received.connect(self._on_ssh_output)
 
-    def get_arrow_icon_path(self):
-        """Get the path to arrow_down.svg for different installation types"""
+    def get_icon_path(self, icon_name, subdir='icons'):
+        """Get the path to an icon for different installation types"""
         # Check for Flatpak
-        if os.path.exists('/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'):
-            return '/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'
-        # Check for AppImage
-        elif os.environ.get('APPDIR'):
-            appdir = os.environ.get('APPDIR')
-            return os.path.join(appdir, 'usr/share/serialcom/arrow_down.svg')
-        # Local installation or development
-        else:
-            # Try current directory first
-            local_path = os.path.join(os.path.dirname(__file__), 'arrow_down.svg')
-            if os.path.exists(local_path):
-                return local_path
-            # Try assets directory
-            assets_path = os.path.join(os.path.dirname(__file__), 'assets/arrow_down.svg')
-            if os.path.exists(assets_path):
-                return assets_path
-            # Fallback
-            return local_path
-
-    def get_vendor_icon_path(self, vendor):
-        """Get the path to vendor icon SVG for different installation types"""
-        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
-
-        # Check for Flatpak
-        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/vendors/{vendor_file}'
+        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/{subdir}/{icon_name}'
         if os.path.exists(flatpak_path):
             return flatpak_path
         # Check for AppImage
-        elif os.environ.get('APPDIR'):
+        if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            return os.path.join(appdir, f'usr/share/serialcom/vendors/{vendor_file}')
-        # Check for system-wide installation (Debian/Arch packages)
-        system_path = f'/usr/share/serialcom/vendors/{vendor_file}'
-        if os.path.exists(system_path):
-            return system_path
+            appimage_path = os.path.join(appdir, f'usr/share/serialcom/{subdir}/{icon_name}')
+            if os.path.exists(appimage_path):
+                return appimage_path
         # Local installation or development
-        assets_path = os.path.join(os.path.dirname(__file__), f'assets/vendors/{vendor_file}')
+        # Try assets/subdir directory
+        assets_path = os.path.join(os.path.dirname(__file__), f'assets/{subdir}/{icon_name}')
         if os.path.exists(assets_path):
             return assets_path
+        # Try root directory (legacy)
+        root_path = os.path.join(os.path.dirname(__file__), icon_name)
+        if os.path.exists(root_path):
+            return root_path
+        return None
+
+    def get_arrow_icon_path(self):
+        """Get the path to arrow_down.svg"""
+        return self.get_icon_path('arrow_down.svg') or ''
+
+    def get_vendor_icon_path(self, vendor):
+        """Get the path to vendor icon SVG"""
+        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
+        path = self.get_icon_path(vendor_file, 'vendors')
+        if path:
+            return path
         # Fallback to generic
-        generic_system = '/usr/share/serialcom/vendors/generic.svg'
-        if os.path.exists(generic_system):
-            return generic_system
-        return os.path.join(os.path.dirname(__file__), 'assets/vendors/generic.svg')
+        return self.get_icon_path('generic.svg', 'vendors') or ''
 
     def init_ui(self):
         """Initialize the terminal dialog UI"""
@@ -1597,8 +1585,8 @@ class SerialTerminalGUI(QMainWindow):
         self.tab_widget.setFixedWidth(50)
         self.tab_widget.setStyleSheet("""
             QWidget {
-                background-color: #e8e8e8;
-                border-right: 1px solid #d0d0d0;
+                background-color: #37474f;
+                border-right: 1px solid #263238;
             }
         """)
 
@@ -1609,8 +1597,14 @@ class SerialTerminalGUI(QMainWindow):
         # Serial tab button
         self.serial_tab_btn = QPushButton()
         self.serial_tab_btn.setFixedSize(40, 40)
-        self.serial_tab_btn.setIcon(self.style().standardIcon(
-            self.style().StandardPixmap.SP_DriveHDIcon))
+        # Load custom serial port icon
+        serial_icon_path = self.get_tab_icon_path('serial-port-white.svg')
+        if serial_icon_path:
+            self.serial_tab_btn.setIcon(QIcon(serial_icon_path))
+            self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.6)
+        else:
+            self.serial_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_DriveHDIcon))
         self.serial_tab_btn.setToolTip("Serial Connection")
         self.serial_tab_btn.setCheckable(True)
         self.serial_tab_btn.setChecked(True)
@@ -1619,8 +1613,14 @@ class SerialTerminalGUI(QMainWindow):
         # SSH tab button
         self.ssh_tab_btn = QPushButton()
         self.ssh_tab_btn.setFixedSize(40, 40)
-        self.ssh_tab_btn.setIcon(self.style().standardIcon(
-            self.style().StandardPixmap.SP_ComputerIcon))
+        # Load custom SSH icon
+        ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
+        if ssh_icon_path:
+            self.ssh_tab_btn.setIcon(QIcon(ssh_icon_path))
+            self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.6)
+        else:
+            self.ssh_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_ComputerIcon))
         self.ssh_tab_btn.setToolTip("SSH Connection")
         self.ssh_tab_btn.setCheckable(True)
         self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(1))
@@ -1634,11 +1634,11 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 8px;
             }
             QPushButton:hover {
-                background-color: #d0d0d0;
+                background-color: #546e7a;
             }
             QPushButton:checked {
-                background-color: #ffffff;
-                border: 1px solid #c0c0c0;
+                background-color: #4caf50;
+                border: none;
             }
         """
         self.serial_tab_btn.setStyleSheet(tab_btn_style)
@@ -2242,27 +2242,35 @@ class SerialTerminalGUI(QMainWindow):
 
         return page
 
-    def get_arrow_icon_path(self):
-        """Get the path to arrow_down.svg for different installation types"""
+    def get_icon_path(self, icon_name):
+        """Get the path to an icon from assets/icons for different installation types"""
         # Check for Flatpak
-        if os.path.exists('/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'):
-            return '/app/share/io.github.benjamimgois.serialcom/arrow_down.svg'
+        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/icons/{icon_name}'
+        if os.path.exists(flatpak_path):
+            return flatpak_path
         # Check for AppImage
-        elif os.environ.get('APPDIR'):
+        if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            return os.path.join(appdir, 'usr/share/serialcom/arrow_down.svg')
-        # Local installation or development
-        else:
-            # Try current directory first
-            local_path = os.path.join(os.path.dirname(__file__), 'arrow_down.svg')
-            if os.path.exists(local_path):
-                return local_path
-            # Try assets directory
-            assets_path = os.path.join(os.path.dirname(__file__), 'assets/arrow_down.svg')
-            if os.path.exists(assets_path):
-                return assets_path
-            # Fallback
-            return local_path
+            appimage_path = os.path.join(appdir, f'usr/share/serialcom/icons/{icon_name}')
+            if os.path.exists(appimage_path):
+                return appimage_path
+        # Local installation or development - assets/icons
+        assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
+        if os.path.exists(assets_path):
+            return assets_path
+        # Legacy: root directory
+        root_path = os.path.join(os.path.dirname(__file__), icon_name)
+        if os.path.exists(root_path):
+            return root_path
+        return None
+
+    def get_arrow_icon_path(self):
+        """Get the path to arrow_down.svg"""
+        return self.get_icon_path('arrow_down.svg') or ''
+
+    def get_tab_icon_path(self, icon_name):
+        """Get the path to tab icons"""
+        return self.get_icon_path(icon_name)
 
     def apply_styles(self):
         """Apply modern light theme to the application"""

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+
+<svg
+   width="800"
+   height="800"
+   viewBox="0 0 48 48"
+   version="1.1"
+   id="svg2"
+   sodipodi:docname="ssh_icon.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:export-bgcolor="#ffffff00"
+     inkscape:zoom="0.705"
+     inkscape:cx="400"
+     inkscape:cy="400.70922"
+     inkscape:window-width="1920"
+     inkscape:window-height="1012"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2">
+    <inkscape:page
+       x="0"
+       y="0"
+       width="48"
+       height="48"
+       id="page2"
+       margin="0"
+       bleed="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <rect
+       x="-21.276596"
+       y="15.602837"
+       width="1121.9858"
+       height="828.36879"
+       id="rect1" />
+    <style
+       id="style1">.a{fill:none;stroke:#000000;stroke-linecap:round;stroke-linejoin:round;}</style>
+  </defs>
+  <text
+     xml:space="preserve"
+     style="font-size:19.2661px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.100344"
+     x="6.4193902"
+     y="37.521542"
+     id="text2"><tspan
+       id="tspan2"
+       style="font-size:19.2661px;fill:#ffffff;stroke-width:0.100344"
+       x="6.4193902"
+       y="37.521542"
+       sodipodi:role="line">SSH</tspan></text>
+  <text
+     xml:space="preserve"
+     style="font-size:19.2px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.100344"
+     x="7.6343288"
+     y="15.8278"
+     id="text2-7"><tspan
+       id="tspan2-5"
+       style="font-size:19.2px;fill:#ffffff;stroke-width:0.100344"
+       x="7.6343288"
+       y="15.8278"
+       sodipodi:role="line">#_</tspan></text>
+  <text
+     xml:space="preserve"
+     transform="scale(0.06)"
+     id="text1"
+     style="font-size:266.667px;writing-mode:lr-tb;direction:ltr;white-space:pre;shape-inside:url(#rect1);display:inline;fill:#ffffff" />
+</svg>
