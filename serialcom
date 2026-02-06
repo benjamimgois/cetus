@@ -424,9 +424,17 @@ class TerminalWidget(QTextEdit):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setTabChangesFocus(False)
 
-        # Initialize pyte terminal emulator
-        self.screen = pyte.Screen(columns, lines)
+        # Initialize pyte terminal emulator with scrollback history
+        self.screen = pyte.HistoryScreen(columns, lines, history=5000)
         self.stream = pyte.Stream(self.screen)
+
+        # Scrollback buffer: pre-rendered HTML lines that scrolled off the top
+        self._scrollback_lines = []
+        self._scrollback_cache = ""
+        self._scrollback_dirty = False
+        self._max_scrollback = 5000
+        self._render_needed = True  # Dirty flag to avoid redundant setHtml calls
+        self._in_scrollback_mode = False  # True when user is browsing history
 
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
@@ -452,6 +460,34 @@ class TerminalWidget(QTextEdit):
                 event.accept()
                 return True
         return super().event(event)
+
+    def wheelEvent(self, event):
+        """Enter scrollback mode when user scrolls up"""
+        if event.angleDelta().y() > 0 and not self._in_scrollback_mode and self._scrollback_lines:
+            self._enter_scrollback_mode()
+        super().wheelEvent(event)
+
+    def _enter_scrollback_mode(self):
+        """Inject scrollback into document so user can browse history"""
+        cursor_x = self.screen.cursor.x
+        cursor_y = self.screen.cursor.y
+        screen_lines = []
+        for y in range(self.screen.lines):
+            cx = cursor_x if y == cursor_y else None
+            screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
+
+        pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
+        if self._scrollback_cache:
+            full_html = pre_open + self._scrollback_cache + '\n' + '\n'.join(screen_lines) + '</pre>'
+        else:
+            full_html = pre_open + '\n'.join(screen_lines) + '</pre>'
+
+        self.setUpdatesEnabled(False)
+        self.setHtml(full_html)
+        scrollbar = self.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        self.setUpdatesEnabled(True)
+        self._in_scrollback_mode = True
 
     def mousePressEvent(self, event):
         """Track mouse press for selection"""
@@ -527,6 +563,7 @@ class TerminalWidget(QTextEdit):
     def append_output(self, text):
         """Feed text to pyte terminal emulator"""
         self.stream.feed(text)
+        self._render_needed = True
 
     def set_vendor(self, vendor):
         """Set the vendor for syntax highlighting"""
@@ -848,157 +885,167 @@ class TerminalWidget(QTextEdit):
 
         return default_bg if is_background else default_fg
 
+    def _render_line(self, line_buffer, columns, cursor_x=None):
+        """Render a single line (from screen buffer or history) to an HTML string.
+
+        Args:
+            line_buffer: dict-like mapping column index to pyte Char objects
+            columns: number of columns to render
+            cursor_x: if not None, draw cursor block at this column
+        """
+        raw_line = ""
+        has_ansi_colors = False
+
+        for x in range(columns):
+            char = line_buffer[x]
+            raw_line += char.data
+            if char.fg != 'default' or char.bg != 'default' or char.bold or char.italics or char.underscore or char.reverse:
+                has_ansi_colors = True
+
+        if has_ansi_colors:
+            line = ""
+            x = 0
+            while x < columns:
+                char = line_buffer[x]
+
+                fg_color = self.get_ansi_color(char.fg, is_background=False)
+                bg_color = self.get_ansi_color(char.bg, is_background=True)
+
+                styles = [f'color: {fg_color}']
+                if bg_color != 'transparent':
+                    styles.append(f'background-color: {bg_color}')
+                if char.bold:
+                    styles.append('font-weight: bold')
+                if char.italics:
+                    styles.append('font-style: italic')
+                if char.underscore:
+                    styles.append('text-decoration: underline')
+                if char.reverse:
+                    styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
+                             f'background-color: {fg_color}']
+
+                is_cursor = (cursor_x is not None and x == cursor_x)
+
+                if is_cursor:
+                    char_data = char.data
+                    if char_data == ' ' or char_data == '':
+                        char_data = '█'
+                        styles = ['color: #e0e0e0', 'background-color: transparent']
+                    else:
+                        char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
+                    style_str = '; '.join(styles)
+                    line += f'<span style="{style_str}">{char_data}</span>'
+                    x += 1
+                else:
+                    style_str = '; '.join(styles)
+                    group_text = ""
+
+                    while x < columns:
+                        if cursor_x is not None and x == cursor_x:
+                            break
+
+                        next_char = line_buffer[x]
+                        next_fg = self.get_ansi_color(next_char.fg, is_background=False)
+                        next_bg = self.get_ansi_color(next_char.bg, is_background=True)
+
+                        next_styles = [f'color: {next_fg}']
+                        if next_bg != 'transparent':
+                            next_styles.append(f'background-color: {next_bg}')
+                        if next_char.bold:
+                            next_styles.append('font-weight: bold')
+                        if next_char.italics:
+                            next_styles.append('font-style: italic')
+                        if next_char.underscore:
+                            next_styles.append('text-decoration: underline')
+                        if next_char.reverse:
+                            next_styles = [f'color: {next_bg if next_bg != "transparent" else "#0a0a0a"}',
+                                         f'background-color: {next_fg}']
+
+                        next_style_str = '; '.join(next_styles)
+
+                        if next_style_str != style_str:
+                            break
+
+                        char_text = next_char.data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        if char_text == ' ':
+                            char_text = '&nbsp;'
+                        group_text += char_text
+                        x += 1
+
+                    if group_text:
+                        line += f'<span style="{style_str}">{group_text}</span>'
+            return line
+        else:
+            highlighted_line = self.apply_syntax_highlighting(raw_line)
+            if cursor_x is not None:
+                highlighted_line = self.insert_cursor_at_position(highlighted_line, raw_line, cursor_x)
+            return highlighted_line
+
     def render_screen(self):
         """Render pyte screen buffer to QTextEdit with ANSI color support and syntax highlighting"""
         # Don't update if user is selecting text or mouse is pressed
         if self.textCursor().hasSelection() or self.mouse_pressed:
             return
 
-        # Get cursor position from pyte
+        # Always drain history lines into scrollback buffer (even in scrollback mode)
+        while self.screen.history.top:
+            history_line = self.screen.history.top.popleft()
+            rendered = self._render_line(history_line, self.screen.columns)
+            self._scrollback_lines.append(rendered)
+            self._scrollback_dirty = True
+            self._render_needed = True
+
+        # Trim scrollback if it exceeds max
+        if len(self._scrollback_lines) > self._max_scrollback:
+            self._scrollback_lines = self._scrollback_lines[-self._max_scrollback:]
+            self._scrollback_dirty = True
+
+        # Rebuild scrollback cache if needed
+        if self._scrollback_dirty:
+            self._scrollback_cache = '\n'.join(self._scrollback_lines)
+            self._scrollback_dirty = False
+
+        # In scrollback mode: check if user scrolled back to bottom to exit
+        if self._in_scrollback_mode:
+            scrollbar = self.verticalScrollBar()
+            if scrollbar.maximum() - scrollbar.value() <= 10:
+                self._in_scrollback_mode = False
+                self._render_needed = True
+            else:
+                return  # Frozen while browsing history
+
+        # Nothing changed since last render — skip setHtml entirely
+        if not self._render_needed:
+            return
+        self._render_needed = False
+
+        # Render ONLY the current screen (no scrollback — keeps the HTML small and setHtml fast)
         cursor_x = self.screen.cursor.x
         cursor_y = self.screen.cursor.y
-
-        # Build HTML content with cursor highlighting, ANSI colors, and syntax highlighting
-        html_parts = []
-        html_parts.append('<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">')
-
-        line_contents = []
-
+        screen_lines = []
         for y in range(self.screen.lines):
-            # First, extract the raw text from this line
-            raw_line = ""
-            has_ansi_colors = False
+            cx = cursor_x if y == cursor_y else None
+            screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
 
-            for x in range(self.screen.columns):
-                char = self.screen.buffer[y][x]
-                raw_line += char.data
+        pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
+        new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
 
-                # Check if line has any ANSI colors/formatting
-                if char.fg != 'default' or char.bg != 'default' or char.bold or char.italics or char.underscore or char.reverse:
-                    has_ansi_colors = True
-
-            # If line has ANSI colors, preserve them; otherwise apply syntax highlighting
-            if has_ansi_colors:
-                # Render with ANSI colors - group consecutive chars with same style
-                line = ""
-                x = 0
-                while x < self.screen.columns:
-                    char = self.screen.buffer[y][x]
-
-                    # Get style for this character
-                    fg_color = self.get_ansi_color(char.fg, is_background=False)
-                    bg_color = self.get_ansi_color(char.bg, is_background=True)
-
-                    # Build style string
-                    styles = [f'color: {fg_color}']
-                    if bg_color != 'transparent':
-                        styles.append(f'background-color: {bg_color}')
-                    if char.bold:
-                        styles.append('font-weight: bold')
-                    if char.italics:
-                        styles.append('font-style: italic')
-                    if char.underscore:
-                        styles.append('text-decoration: underline')
-                    if char.reverse:
-                        styles = [f'color: {bg_color if bg_color != "transparent" else "#0a0a0a"}',
-                                 f'background-color: {fg_color}']
-
-                    # Check if this is cursor position
-                    is_cursor = (y == cursor_y and x == cursor_x)
-
-                    if is_cursor:
-                        char_data = char.data
-                        if char_data == ' ' or char_data == '':
-                            char_data = '█'
-                            styles = ['color: #e0e0e0', 'background-color: transparent']
-                        else:
-                            char_data = char_data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                            styles = ['color: #0a0a0a', 'background-color: #e0e0e0']
-                        style_str = '; '.join(styles)
-                        line += f'<span style="{style_str}">{char_data}</span>'
-                        x += 1
-                    else:
-                        # Group consecutive characters with same style
-                        style_str = '; '.join(styles)
-                        group_text = ""
-                        start_x = x
-
-                        while x < self.screen.columns:
-                            if y == cursor_y and x == cursor_x:
-                                break
-
-                            next_char = self.screen.buffer[y][x]
-                            next_fg = self.get_ansi_color(next_char.fg, is_background=False)
-                            next_bg = self.get_ansi_color(next_char.bg, is_background=True)
-
-                            # Check if style matches
-                            next_styles = [f'color: {next_fg}']
-                            if next_bg != 'transparent':
-                                next_styles.append(f'background-color: {next_bg}')
-                            if next_char.bold:
-                                next_styles.append('font-weight: bold')
-                            if next_char.italics:
-                                next_styles.append('font-style: italic')
-                            if next_char.underscore:
-                                next_styles.append('text-decoration: underline')
-                            if next_char.reverse:
-                                next_styles = [f'color: {next_bg if next_bg != "transparent" else "#0a0a0a"}',
-                                             f'background-color: {next_fg}']
-
-                            next_style_str = '; '.join(next_styles)
-
-                            if next_style_str != style_str:
-                                break
-
-                            # Add character to group
-                            char_text = next_char.data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                            if char_text == ' ':
-                                char_text = '&nbsp;'
-                            group_text += char_text
-                            x += 1
-
-                        if group_text:
-                            line += f'<span style="{style_str}">{group_text}</span>'
-            else:
-                # Apply syntax highlighting to lines without ANSI colors
-                highlighted_line = self.apply_syntax_highlighting(raw_line)
-
-                # Add cursor if on this line
-                if y == cursor_y:
-                    highlighted_line = self.insert_cursor_at_position(highlighted_line, raw_line, cursor_x)
-
-                line = highlighted_line
-
-            line_contents.append(line)
-
-        # Join lines with newlines and wrap in <pre>
-        # Each line becomes a separate text block, preventing cross-line selection issues
-        html_parts.append('\n'.join(line_contents))
-        html_parts.append('</pre>')
-        new_html = ''.join(html_parts)
-
-        # Save scroll position - use tolerance for "at bottom" detection
-        scrollbar = self.verticalScrollBar()
-        # Consider "at bottom" if within 10 pixels of maximum
-        at_bottom = scrollbar.maximum() - scrollbar.value() <= 10
-
-        # Update text with HTML
+        self.setUpdatesEnabled(False)
         self.setHtml(new_html)
-
-        # Auto-scroll to bottom if user was at or near bottom
-        if at_bottom:
-            # Move cursor to end
-            cursor = self.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            self.setTextCursor(cursor)
-            # Ensure cursor is visible
-            self.ensureCursorVisible()
-            # Force scroll to maximum
-            scrollbar.setValue(scrollbar.maximum())
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.setTextCursor(cursor)
+        scrollbar = self.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        self.setUpdatesEnabled(True)
 
     def resizeEvent(self, event):
         """Recalculate terminal dimensions when widget is resized"""
         super().resizeEvent(event)
+        # Skip resize recalculation when updates are disabled (triggered by setHtml)
+        if not self.updatesEnabled():
+            return
         self._recalculate_size()
 
     def _recalculate_size(self):
@@ -1017,6 +1064,7 @@ class TerminalWidget(QTextEdit):
         rows = max(10, int(available_height / char_height))
         if cols != self.screen.columns or rows != self.screen.lines:
             self.screen.resize(rows, cols)
+            self._render_needed = True
             self.size_changed.emit(cols, rows)
 
     def increase_font_size(self):
