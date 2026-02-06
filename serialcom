@@ -1411,15 +1411,51 @@ class TerminalDialog(QDialog):
 
     def start_picocom(self, cmd):
         """Start picocom process with sudo"""
-        # Ask for sudo password using graphical dialog
-        password, ok = QInputDialog.getText(
-            self,
-            "Sudo Password Required",
-            "Please enter your sudo password to access serial port:",
-            QLineEdit.EchoMode.Password
-        )
+        # Ask for sudo password using styled dialog
+        password_dialog = QDialog(self)
+        password_dialog.setWindowTitle("Sudo Password Required")
+        password_dialog.setModal(True)
+        password_dialog.setFixedSize(420, 160)
+        password_dialog.setStyleSheet("""
+            QDialog { background-color: #1e1e2e; }
+            QLabel { color: #cdd6f4; font-size: 10pt; }
+            QLineEdit {
+                background-color: #313244; color: #cdd6f4;
+                border: 1px solid #585b70; border-radius: 6px;
+                padding: 8px; font-size: 10pt;
+            }
+            QLineEdit:focus { border: 2px solid #89b4fa; }
+            QPushButton {
+                background-color: #89b4fa; color: #1e1e2e;
+                border: none; border-radius: 6px;
+                padding: 8px 16px; font-weight: bold; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #74c7ec; }
+            QPushButton#cancelButton { background-color: #585b70; color: #cdd6f4; }
+            QPushButton#cancelButton:hover { background-color: #6c7086; }
+        """)
+        dlg_layout = QVBoxLayout()
+        dlg_layout.addWidget(QLabel("Please enter your sudo password to access serial port:"))
+        password_input = QLineEdit()
+        password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        dlg_layout.addWidget(password_input)
+        btn_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(password_dialog.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setObjectName("cancelButton")
+        cancel_button.clicked.connect(password_dialog.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_button)
+        btn_layout.addWidget(cancel_button)
+        dlg_layout.addLayout(btn_layout)
+        password_dialog.setLayout(dlg_layout)
 
-        if not ok or not password:
+        if password_dialog.exec() != QDialog.DialogCode.Accepted:
+            self.terminal.append_output("[CANCELLED] Password not provided\n")
+            return False
+        password = password_input.text()
+        if not password:
             self.terminal.append_output("[CANCELLED] Password not provided\n")
             return False
 
@@ -2799,44 +2835,24 @@ class SerialTerminalGUI(QMainWindow):
             password_dialog.setModal(True)
             password_dialog.setFixedSize(400, 150)
             
-            # Apply light theme styling to dialog
+            # Apply dark theme styling to dialog
             password_dialog.setStyleSheet("""
-                QDialog {
-                    background-color: #ffffff;
-                }
-                QLabel {
-                    color: #2c2c2c;
-                    font-size: 10pt;
-                }
+                QDialog { background-color: #1e1e2e; }
+                QLabel { color: #cdd6f4; font-size: 10pt; }
                 QLineEdit {
-                    background-color: #fafafa;
-                    color: #2c2c2c;
-                    border: 1px solid #d0d0d0;
-                    border-radius: 6px;
-                    padding: 8px;
-                    font-size: 10pt;
+                    background-color: #313244; color: #cdd6f4;
+                    border: 1px solid #585b70; border-radius: 6px;
+                    padding: 8px; font-size: 10pt;
                 }
-                QLineEdit:focus {
-                    border: 2px solid #4caf50;
-                }
+                QLineEdit:focus { border: 2px solid #89b4fa; }
                 QPushButton {
-                    background-color: #4caf50;
-                    color: #ffffff;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-weight: bold;
-                    min-width: 80px;
+                    background-color: #89b4fa; color: #1e1e2e;
+                    border: none; border-radius: 6px;
+                    padding: 8px 16px; font-weight: bold; min-width: 80px;
                 }
-                QPushButton:hover {
-                    background-color: #43a047;
-                }
-                QPushButton#cancelButton {
-                    background-color: #9e9e9e;
-                }
-                QPushButton#cancelButton:hover {
-                    background-color: #757575;
-                }
+                QPushButton:hover { background-color: #74c7ec; }
+                QPushButton#cancelButton { background-color: #585b70; color: #cdd6f4; }
+                QPushButton#cancelButton:hover { background-color: #6c7086; }
             """)
             
             layout = QVBoxLayout()
@@ -3176,13 +3192,47 @@ class SerialTerminalGUI(QMainWindow):
             password = self.ssh_password.text()
             if not password:
                 # Prompt for password if not entered
-                password, ok = QInputDialog.getText(
-                    self, "SSH Password",
-                    f"Password for {username}@{host}:",
-                    QLineEdit.EchoMode.Password
-                )
-                if not ok:
+                password_dialog = QDialog(self)
+                password_dialog.setWindowTitle("SSH Password")
+                password_dialog.setModal(True)
+                password_dialog.setFixedSize(420, 160)
+                password_dialog.setStyleSheet("""
+                    QDialog { background-color: #1e1e2e; }
+                    QLabel { color: #cdd6f4; font-size: 10pt; }
+                    QLineEdit {
+                        background-color: #313244; color: #cdd6f4;
+                        border: 1px solid #585b70; border-radius: 6px;
+                        padding: 8px; font-size: 10pt;
+                    }
+                    QLineEdit:focus { border: 2px solid #89b4fa; }
+                    QPushButton {
+                        background-color: #89b4fa; color: #1e1e2e;
+                        border: none; border-radius: 6px;
+                        padding: 8px 16px; font-weight: bold; min-width: 80px;
+                    }
+                    QPushButton:hover { background-color: #74c7ec; }
+                    QPushButton#cancelButton { background-color: #585b70; color: #cdd6f4; }
+                    QPushButton#cancelButton:hover { background-color: #6c7086; }
+                """)
+                dlg_layout = QVBoxLayout()
+                dlg_layout.addWidget(QLabel(f"Password for {username}@{host}:"))
+                password_input = QLineEdit()
+                password_input.setEchoMode(QLineEdit.EchoMode.Password)
+                dlg_layout.addWidget(password_input)
+                btn_layout = QHBoxLayout()
+                ok_button = QPushButton("OK")
+                ok_button.clicked.connect(password_dialog.accept)
+                cancel_button = QPushButton("Cancel")
+                cancel_button.setObjectName("cancelButton")
+                cancel_button.clicked.connect(password_dialog.reject)
+                btn_layout.addStretch()
+                btn_layout.addWidget(ok_button)
+                btn_layout.addWidget(cancel_button)
+                dlg_layout.addLayout(btn_layout)
+                password_dialog.setLayout(dlg_layout)
+                if password_dialog.exec() != QDialog.DialogCode.Accepted:
                     return
+                password = password_input.text()
 
         # Update status
         self.ssh_status_label.setText("Connecting...")
