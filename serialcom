@@ -248,7 +248,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView
 )
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
 
 try:
@@ -981,6 +981,62 @@ class TerminalWidget(QTextEdit):
         if self.font_size > 6:  # Minimum font size limit
             self.font_size -= 1
             self.setFont(QFont("Monospace", self.font_size))
+
+
+class ConnectionWorker(QThread):
+    """Worker thread for establishing SSH/Telnet connections without blocking UI"""
+    
+    connection_ready = pyqtSignal(str, object, object, object)  # type, client, channel/None, host_info
+    connection_failed = pyqtSignal(str)  # Emits error message on failure
+    
+    def __init__(self, connection_type, host, port, username, password=None, key_path=None):
+        super().__init__()
+        self.connection_type = connection_type  # 'ssh' or 'telnet'
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.key_path = key_path
+    
+    def run(self):
+        """Execute connection in background thread"""
+        try:
+            if self.connection_type == 'telnet':
+                # Establish Telnet connection
+                import telnetlib
+                telnet_client = telnetlib.Telnet(self.host, int(self.port), timeout=10)
+                self.connection_ready.emit('telnet', telnet_client, None, 
+                                          (self.host, self.port, self.username))
+            else:  # SSH
+                # Establish SSH connection
+                if not SSH_AVAILABLE:
+                    self.connection_failed.emit("paramiko library is not installed")
+                    return
+                
+                import paramiko
+                ssh_client = paramiko.SSHClient()
+                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                
+                # Connect with password or key
+                if self.key_path:
+                    ssh_client.connect(
+                        self.host, int(self.port), self.username,
+                        key_filename=self.key_path, timeout=10
+                    )
+                else:
+                    ssh_client.connect(
+                        self.host, int(self.port), self.username,
+                        password=self.password, timeout=10
+                    )
+                
+                # Open interactive shell
+                channel = ssh_client.invoke_shell()
+                channel.settimeout(0.1)
+                
+                self.connection_ready.emit('ssh', ssh_client, channel,
+                                          (self.host, self.port, self.username))
+        except Exception as e:
+            self.connection_failed.emit(str(e))
 
 
 class TerminalDialog(QDialog):
@@ -2885,17 +2941,39 @@ class SerialTerminalGUI(QMainWindow):
                     self.use_ssh_key.setChecked(False)
                 
                 # Set protocol (SSH or Telnet)
-                protocol = profile.get('protocol', 'SSH')
+                # Use saved protocol, or detect from port if not saved
+                port = profile.get('port', '22')
+                protocol = profile.get('protocol')
+                
+                # Fallback: detect protocol from port if not explicitly saved
+                if not protocol:
+                    protocol = 'Telnet' if port == '23' else 'SSH'
+                
+                print(f"DEBUG: Loading profile with protocol: {protocol} (port: {port})")
+                print(f"DEBUG: Full profile data: {profile}")
+                
                 if protocol == 'Telnet':
                     self.protocol_telnet_radio.setChecked(True)
+                    print(f"DEBUG: Telnet radio checked: {self.protocol_telnet_radio.isChecked()}")
+                    print(f"DEBUG: SSH radio checked: {self.protocol_ssh_radio.isChecked()}")
+                    # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
+                    self.toggle_protocol(self.protocol_telnet_radio)
                 else:
                     self.protocol_ssh_radio.setChecked(True)
+                    print(f"DEBUG: SSH radio checked: {self.protocol_ssh_radio.isChecked()}")
+                    print(f"DEBUG: Telnet radio checked: {self.protocol_telnet_radio.isChecked()}")
+                    # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
+                    self.toggle_protocol(self.protocol_ssh_radio)
                 
-                # Update port and button text based on protocol
-                self.toggle_protocol(self.protocol_telnet_radio if protocol == 'Telnet' else self.protocol_ssh_radio)
+                # Force UI update before connecting
+                QApplication.processEvents()
                 
-                # Automatically initiate connection
-                self.connect_ssh()
+                # Use QTimer to delay connection slightly to ensure UI updates complete
+                QTimer.singleShot(100, self.connect_ssh)
+
+
+
+
 
 
     def save_current_ssh_profile(self):
@@ -2947,33 +3025,8 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Enter host address")
             return
 
-        # Check if Telnet is selected
-        if self.protocol_telnet_radio.isChecked():
-            # Telnet connection
-            self.ssh_status_label.setText("Connecting...")
-            self.ssh_status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
-            self.ssh_status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
-            QApplication.processEvents()
-
-            terminal_dialog = TerminalDialog(self, self.config)
-
-            if terminal_dialog.start_telnet(host, port, username):
-                self.open_terminals.append(terminal_dialog)
-                self.ssh_status_label.setText("Connected - Terminal opened")
-                self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
-                self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
-                terminal_dialog.show()
-
-                # Status remains connected (don't reset immediately)
-                # Will reset when terminal is closed
-            else:
-                self.ssh_status_label.setText("Connection failed")
-                self.ssh_status_label.setStyleSheet("color: #f44336; font-size: 10pt;")
-                self.ssh_status_led.setStyleSheet("color: #f44336; font-size: 14px;")
-            return
-
-        # SSH connection
-        if not SSH_AVAILABLE:
+        # SSH connection requires paramiko
+        if self.protocol_ssh_radio.isChecked() and not SSH_AVAILABLE:
             QMessageBox.critical(
                 self, "Error",
                 "paramiko library is not installed.\n\n"
@@ -2981,8 +3034,9 @@ class SerialTerminalGUI(QMainWindow):
             )
             return
 
-        if not username:
-            QMessageBox.warning(self, "Warning", "Enter host and username")
+        # Username is required for SSH, optional for Telnet
+        if self.protocol_ssh_radio.isChecked() and not username:
+            QMessageBox.warning(self, "Warning", "Enter username for SSH connection")
             return
 
         # Get authentication credentials
@@ -3015,22 +3069,66 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
         QApplication.processEvents()
 
-        # Create terminal dialog
+        # Determine connection type
+        connection_type = 'telnet' if self.protocol_telnet_radio.isChecked() else 'ssh'
+        
+        # Create and start connection worker thread
+        self.connection_worker = ConnectionWorker(
+            connection_type,
+            host, port, username, password, key_path
+        )
+        
+        # Connect signals
+        self.connection_worker.connection_ready.connect(self.on_connection_ready)
+        self.connection_worker.connection_failed.connect(self.on_connection_failed)
+        
+        # Start connection in background thread
+        self.connection_worker.start()
+    
+    def on_connection_ready(self, conn_type, client, channel, host_info):
+        """Handle successful connection from worker thread - create terminal in UI thread"""
+        # Create terminal dialog in UI thread
         terminal_dialog = TerminalDialog(self, self.config)
-
-        if terminal_dialog.start_ssh(host, port, username, password, key_path):
-            self.open_terminals.append(terminal_dialog)
-            self.ssh_status_label.setText("Connected - Terminal opened")
-            self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
-            self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
-            terminal_dialog.show()
-
-            # Status remains connected (don't reset immediately)
-            # Will reset when terminal is closed
-        else:
-            self.ssh_status_label.setText("Connection failed")
-            self.ssh_status_label.setStyleSheet("color: #f44336; font-size: 10pt;")
-            self.ssh_status_led.setStyleSheet("color: #f44336; font-size: 14px;")
+        
+        # Inject the established connection
+        if conn_type == 'telnet':
+            terminal_dialog.telnet_client = client
+            terminal_dialog.telnet_running = True
+            terminal_dialog.connection_type = 'telnet'
+            terminal_dialog.setWindowTitle(f"SerialCom Terminal - Telnet: {host_info[0]}")
+            
+            # Start read thread
+            terminal_dialog.telnet_read_thread = threading.Thread(
+                target=terminal_dialog._telnet_read_loop, daemon=True
+            )
+            terminal_dialog.telnet_read_thread.start()
+        else:  # SSH
+            terminal_dialog.ssh_client = client
+            terminal_dialog.ssh_channel = channel
+            terminal_dialog.ssh_running = True
+            terminal_dialog.connection_type = 'ssh'
+            terminal_dialog.setWindowTitle(f"SerialCom Terminal - SSH: {host_info[2]}@{host_info[0]}")
+            
+            # Start read thread
+            terminal_dialog.ssh_read_thread = threading.Thread(
+                target=terminal_dialog._ssh_read_loop, daemon=True
+            )
+            terminal_dialog.ssh_read_thread.start()
+        
+        # Add to open terminals and show
+        self.open_terminals.append(terminal_dialog)
+        self.ssh_status_label.setText("Connected - Terminal opened")
+        self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+        self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+        terminal_dialog.show()
+    
+    def on_connection_failed(self, error_message):
+        """Handle connection failure from worker thread"""
+        self.ssh_status_label.setText("Connection failed")
+        self.ssh_status_label.setStyleSheet("color: #f44336; font-size: 10pt;")
+        self.ssh_status_led.setStyleSheet("color: #f44336; font-size: 14px;")
+        if error_message:
+            QMessageBox.critical(self, "Connection Error", error_message)
 
     def connect(self):
         """Connect to the serial port using embedded terminal"""
