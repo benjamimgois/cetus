@@ -26,14 +26,15 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="1.00375"
-     inkscape:cx="362.6401"
+     inkscape:cx="363.63636"
      inkscape:cy="395.01868"
      inkscape:window-width="1920"
      inkscape:window-height="1012"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
-     inkscape:current-layer="svg10">
+     inkscape:current-layer="svg10"
+     showguides="true">
     <inkscape:page
        x="0"
        y="0"
@@ -96,12 +97,12 @@
   <text
      xml:space="preserve"
      style="font-size:7.45626px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0254191"
-     x="-0.23034808"
-     y="18.842829"
+     x="0.39774656"
+     y="18.872717"
      id="text1"><tspan
        sodipodi:role="line"
        id="tspan1"
        style="font-size:7.45626px;fill:#ffffff;stroke-width:0.0254191"
-       x="-0.23034808"
-       y="18.842829">SERIAL</tspan></text>
+       x="0.39774656"
+       y="18.872717">SERIAL</tspan></text>
 </svg>

@@ -16,7 +16,7 @@ import telnetlib
 from pathlib import Path
 
 # Application version
-VERSION = "1.1"
+VERSION = "1.2"
 
 
 class TFTPHandler(socketserver.BaseRequestHandler):
@@ -246,7 +246,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView
+    QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
@@ -319,7 +319,7 @@ class ConfigManager:
             'parity': 'None',
             'stopbits': '1',
             'flow': 'None',
-            'vendor': 'Generic',
+            'vendor': 'Default',
             # Connection mode
             'connection_mode': 'serial',
             # SSH settings
@@ -402,12 +402,13 @@ class TerminalWidget(QTextEdit):
     """Terminal widget using pyte for proper VT100/ANSI emulation"""
 
     send_input = pyqtSignal(str)
+    size_changed = pyqtSignal(int, int)  # columns, lines
 
     def __init__(self, parent=None, columns=120, lines=40):
         super().__init__(parent)
         self.setReadOnly(True)  # Terminal handles all input
         self.font_size = 10  # Default font size
-        self.vendor = "Generic"  # Default vendor for syntax highlighting
+        self.vendor = "Default"  # Default vendor for syntax highlighting
         self.setFont(QFont("Monospace", self.font_size))
 
         # Track mouse state for selection
@@ -649,11 +650,36 @@ class TerminalWidget(QTextEdit):
             'status', 'arp', 'session', 'route', 'neighbor', 'hardware', 'nic'
         ]
 
-        # Generic - combination of all
-        generic = list(set(common + cisco + huawei + h3c + dlink + brocade + datacom + fortinet))
+        # Linux - bash commands and common utilities
+        linux = [
+            'ls', 'cd', 'pwd', 'mkdir', 'rmdir', 'rm', 'cp', 'mv', 'touch', 'cat',
+            'less', 'more', 'head', 'tail', 'grep', 'find', 'locate', 'which', 'whereis',
+            'chmod', 'chown', 'chgrp', 'umask', 'ln', 'file', 'stat', 'du', 'df',
+            'tar', 'gzip', 'gunzip', 'bzip2', 'bunzip2', 'zip', 'unzip', 'xz',
+            'ps', 'top', 'htop', 'kill', 'killall', 'pkill', 'bg', 'fg', 'jobs',
+            'systemctl', 'service', 'journalctl', 'dmesg', 'uname', 'hostname',
+            'ifconfig', 'ip', 'route', 'netstat', 'ss', 'ping', 'traceroute', 'dig',
+            'nslookup', 'host', 'curl', 'wget', 'ssh', 'scp', 'rsync', 'ftp', 'sftp',
+            'apt', 'apt-get', 'dpkg', 'yum', 'dnf', 'rpm', 'pacman', 'zypper',
+            'sudo', 'su', 'useradd', 'userdel', 'usermod', 'groupadd', 'groupdel',
+            'passwd', 'who', 'w', 'last', 'id', 'groups', 'finger',
+            'echo', 'printf', 'read', 'export', 'env', 'set', 'unset', 'alias',
+            'history', 'source', 'exec', 'exit', 'logout', 'clear', 'reset',
+            'man', 'info', 'help', 'apropos', 'whatis', 'type', 'command',
+            'mount', 'umount', 'fdisk', 'mkfs', 'fsck', 'lsblk', 'blkid',
+            'cron', 'crontab', 'at', 'batch', 'sleep', 'watch', 'time', 'date',
+            'awk', 'sed', 'cut', 'sort', 'uniq', 'wc', 'tr', 'tee', 'xargs',
+            'vim', 'nano', 'emacs', 'vi', 'gedit', 'pico',
+            'make', 'gcc', 'g++', 'python', 'python3', 'perl', 'ruby', 'node',
+            'git', 'svn', 'docker', 'kubectl', 'systemd', 'init', 'uptime', 'free'
+        ]
+
+        # Default - no highlighting (empty list)
+        default = []
 
         vendor_keywords = {
-            'Generic': generic,
+            'Default': default,
+            'Linux': linux,
             'Cisco': cisco,
             'Huawei': huawei,
             'H3C': h3c,
@@ -664,7 +690,7 @@ class TerminalWidget(QTextEdit):
             'Fortinet': fortinet
         }
 
-        return vendor_keywords.get(self.vendor, generic)
+        return vendor_keywords.get(self.vendor, default)
 
     def insert_cursor_at_position(self, html_text, raw_text, cursor_pos):
         """Insert cursor highlight at specific position in HTML text"""
@@ -970,17 +996,42 @@ class TerminalWidget(QTextEdit):
             # Force scroll to maximum
             scrollbar.setValue(scrollbar.maximum())
 
+    def resizeEvent(self, event):
+        """Recalculate terminal dimensions when widget is resized"""
+        super().resizeEvent(event)
+        self._recalculate_size()
+
+    def _recalculate_size(self):
+        """Calculate columns and lines from widget size and font metrics, then resize pyte screen"""
+        from PyQt6.QtGui import QFontMetricsF
+        fm = QFontMetricsF(self.font())
+        char_width = fm.averageCharWidth()
+        char_height = fm.height()
+        if char_width <= 0 or char_height <= 0:
+            return
+        # Account for padding (10px on each side from stylesheet)
+        viewport = self.viewport()
+        available_width = viewport.width() - 20
+        available_height = viewport.height()
+        cols = max(40, int(available_width / char_width))
+        rows = max(10, int(available_height / char_height))
+        if cols != self.screen.columns or rows != self.screen.lines:
+            self.screen.resize(rows, cols)
+            self.size_changed.emit(cols, rows)
+
     def increase_font_size(self):
         """Increase terminal font size"""
         if self.font_size < 24:  # Maximum font size limit
             self.font_size += 1
             self.setFont(QFont("Monospace", self.font_size))
+            self._recalculate_size()
 
     def decrease_font_size(self):
         """Decrease terminal font size"""
         if self.font_size > 6:  # Minimum font size limit
             self.font_size -= 1
             self.setFont(QFont("Monospace", self.font_size))
+            self._recalculate_size()
 
 
 class ConnectionWorker(QThread):
@@ -1113,7 +1164,9 @@ class TerminalDialog(QDialog):
         # Terminal widget
         self.terminal = TerminalWidget()
         self.terminal.send_input.connect(self.send_to_process)
-        layout.addWidget(self.terminal)
+        self.terminal.size_changed.connect(self._on_terminal_resized)
+        self.terminal.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.terminal, 1)
         
         # Control buttons
         button_layout = QHBoxLayout()
@@ -1196,7 +1249,7 @@ class TerminalDialog(QDialog):
         arrow_path = self.get_arrow_icon_path()
 
         self.vendor_combo = QComboBox()
-        self.vendor_combo.addItems(['Generic', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet'])
+        self.vendor_combo.addItems(['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet'])
 
         # Load saved vendor selection
         if self.config:
@@ -1205,7 +1258,7 @@ class TerminalDialog(QDialog):
             if index >= 0:
                 self.vendor_combo.setCurrentIndex(index)
         else:
-            self.vendor_combo.setCurrentText('Generic')
+            self.vendor_combo.setCurrentText('Default')
 
         self.vendor_combo.currentTextChanged.connect(self.change_vendor)
         self.vendor_combo.setMinimumHeight(35)
@@ -1291,7 +1344,7 @@ class TerminalDialog(QDialog):
             self.vendor_icon.setPixmap(scaled_pixmap)
         else:
             # Fallback to generic icon if loading fails
-            fallback_path = self.get_vendor_icon_path('Generic')
+            fallback_path = self.get_vendor_icon_path('Default')
             fallback_pixmap = QPixmap(fallback_path)
             if not fallback_pixmap.isNull():
                 scaled_pixmap = fallback_pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
@@ -1476,8 +1529,10 @@ Router#_\r
                 # Password authentication
                 self.ssh_client.connect(host, port=int(port), username=username, password=password)
 
-            # Request a pseudo-terminal
-            self.ssh_channel = self.ssh_client.invoke_shell(term='xterm-256color', width=120, height=40)
+            # Request a pseudo-terminal with actual widget dimensions
+            cols = self.terminal.screen.columns
+            rows = self.terminal.screen.lines
+            self.ssh_channel = self.ssh_client.invoke_shell(term='xterm-256color', width=cols, height=rows)
             self.ssh_channel.settimeout(0.1)
             self.ssh_running = True
 
@@ -1541,6 +1596,24 @@ Router#_\r
                 self.terminal.append_output(f"\n[Send error: {e}]\n")
         else:
             print(f"[DEBUG] Cannot send - channel: {self.ssh_channel}, running: {self.ssh_running}")
+
+    def _on_terminal_resized(self, cols, rows):
+        """Notify the remote PTY about the new terminal size"""
+        if self.ssh_channel and self.ssh_running:
+            try:
+                self.ssh_channel.resize_pty(width=cols, height=rows)
+            except Exception:
+                pass
+        if self.telnet_client and self.telnet_running:
+            try:
+                # Send Telnet NAWS (Negotiate About Window Size)
+                import struct
+                naws = struct.pack('!HH', cols, rows)
+                self.telnet_client.get_socket().sendall(
+                    b'\xff\xfa\x1f' + naws + b'\xff\xf0'
+                )
+            except Exception:
+                pass
 
     def disconnect_ssh(self):
         """Disconnect SSH session"""
@@ -1742,7 +1815,7 @@ class SerialTerminalGUI(QMainWindow):
         serial_icon_path = self.get_tab_icon_path('serial-port-white.svg')
         if serial_icon_path:
             self.serial_tab_btn.setIcon(QIcon(serial_icon_path))
-            self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.6)
+            self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.95)
         else:
             self.serial_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_DriveHDIcon))
@@ -1758,7 +1831,7 @@ class SerialTerminalGUI(QMainWindow):
         ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
         if ssh_icon_path:
             self.ssh_tab_btn.setIcon(QIcon(ssh_icon_path))
-            self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.6)
+            self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.95)
         else:
             self.ssh_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_ComputerIcon))
@@ -3121,6 +3194,8 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
         self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
         terminal_dialog.show()
+        # Resize PTY to match actual widget size after dialog is shown
+        QTimer.singleShot(100, terminal_dialog.terminal._recalculate_size)
     
     def on_connection_failed(self, error_message):
         """Handle connection failure from worker thread"""
