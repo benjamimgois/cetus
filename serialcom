@@ -246,7 +246,8 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy
+    QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
+    QMenu
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
@@ -532,6 +533,76 @@ class TerminalWidget(QTextEdit):
         """Track mouse release after selection"""
         self.mouse_pressed = False
         super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        """Show right-click context menu with copy, paste and export options"""
+        # Pre-fetch clipboard text before showing menu to avoid delay on paste
+        clipboard_text = QApplication.clipboard().text()
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #585b70;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #45475a;
+            }
+        """)
+        copy_action = menu.addAction("Copy")
+        copy_action.setEnabled(self.textCursor().hasSelection())
+        paste_action = menu.addAction("Paste")
+        paste_action.setEnabled(bool(clipboard_text))
+        menu.addSeparator()
+        export_action = menu.addAction("Export to file...")
+
+        action = menu.exec(event.globalPos())
+        # Reset mouse_pressed since the release happened over the menu, not the terminal
+        self.mouse_pressed = False
+
+        if action == copy_action:
+            text = self.textCursor().selectedText()
+            if text:
+                QApplication.clipboard().setText(text)
+        elif action == paste_action:
+            self._paste_clipboard(clipboard_text)
+        elif action == export_action:
+            self._export_terminal()
+
+    def _paste_clipboard(self, text):
+        """Paste clipboard text into the terminal"""
+        if text:
+            self.send_input.emit(text)
+
+    def _export_terminal(self):
+        """Export full terminal content (scrollback + current screen) to a text file"""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Terminal", "", "Text files (*.txt);;All files (*)"
+        )
+        if not path:
+            return
+        # Build plain text from scrollback HTML lines
+        import re
+        tag_re = re.compile(r'<[^>]+>')
+        lines = []
+        for html_line in self._scrollback_lines:
+            plain = tag_re.sub('', html_line)
+            plain = plain.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&nbsp;', ' ')
+            lines.append(plain)
+        # Append current screen content
+        for y in range(self.screen.lines):
+            row = self.screen.buffer[y]
+            line = ''.join(row[x].data for x in range(self.screen.columns)).rstrip()
+            lines.append(line)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
 
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press and send to picocom"""
@@ -1237,10 +1308,33 @@ class TerminalDialog(QDialog):
         # Fallback to generic
         return self.get_icon_path('generic.svg', 'vendors') or ''
 
+    BANNER_COLORS = [
+        "#4caf50",  # green
+        "#2196F3",  # blue
+        "#ff9800",  # orange
+        "#9c27b0",  # purple
+        "#e91e63",  # pink
+        "#00bcd4",  # cyan
+        "#ff5722",  # deep orange
+        "#3f51b5",  # indigo
+    ]
+    _banner_index = 0
+
     def set_profile_name(self, name):
         """Show the profile name banner at the top of the terminal"""
         if name:
+            color = self.BANNER_COLORS[TerminalDialog._banner_index % len(self.BANNER_COLORS)]
+            TerminalDialog._banner_index += 1
             self.profile_label.setText(f"  {name}")
+            self.profile_label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {color};
+                    color: #ffffff;
+                    font-size: 11pt;
+                    font-weight: bold;
+                    padding: 4px 10px;
+                }}
+            """)
             self.profile_label.setVisible(True)
 
     def init_ui(self):
@@ -1252,15 +1346,6 @@ class TerminalDialog(QDialog):
         # Profile name banner (hidden by default)
         self.profile_label = QLabel()
         self.profile_label.setVisible(False)
-        self.profile_label.setStyleSheet("""
-            QLabel {
-                background-color: #4caf50;
-                color: #ffffff;
-                font-size: 11pt;
-                font-weight: bold;
-                padding: 4px 10px;
-            }
-        """)
         layout.addWidget(self.profile_label)
 
         # Terminal widget
