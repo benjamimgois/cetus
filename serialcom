@@ -328,7 +328,9 @@ class ConfigManager:
             'ssh_username': '',
             'ssh_auth_method': 'password',
             'ssh_key_path': '',
-            'ssh_profiles': '[]'
+            'ssh_profiles': '[]',
+            # Serial profiles
+            'serial_profiles': '[]'
         }
 
         # Load settings
@@ -396,6 +398,38 @@ class ConfigManager:
         """Delete an SSH connection profile"""
         profiles = [p for p in self.get_ssh_profiles() if p.get('name') != name]
         self.set('ssh_profiles', json.dumps(profiles))
+
+    def get_serial_profiles(self):
+        """Get list of saved serial connection profiles"""
+        profiles_json = self.settings.get('serial_profiles', '[]')
+        try:
+            return json.loads(profiles_json)
+        except json.JSONDecodeError:
+            return []
+
+    def save_serial_profile(self, name, port, baudrate, databits, parity, stopbits, flow):
+        """Save a serial connection profile"""
+        profiles = self.get_serial_profiles()
+        for i, p in enumerate(profiles):
+            if p.get('name') == name:
+                profiles[i] = {
+                    'name': name, 'port': port, 'baudrate': baudrate,
+                    'databits': databits, 'parity': parity,
+                    'stopbits': stopbits, 'flow': flow
+                }
+                break
+        else:
+            profiles.append({
+                'name': name, 'port': port, 'baudrate': baudrate,
+                'databits': databits, 'parity': parity,
+                'stopbits': stopbits, 'flow': flow
+            })
+        self.set('serial_profiles', json.dumps(profiles))
+
+    def delete_serial_profile(self, name):
+        """Delete a serial connection profile"""
+        profiles = [p for p in self.get_serial_profiles() if p.get('name') != name]
+        self.set('serial_profiles', json.dumps(profiles))
 
 
 class TerminalWidget(QTextEdit):
@@ -1905,8 +1939,7 @@ class SerialTerminalGUI(QMainWindow):
                 self.style().StandardPixmap.SP_DriveHDIcon))
         self.serial_tab_btn.setToolTip("Serial Connection")
         self.serial_tab_btn.setCheckable(True)
-        self.serial_tab_btn.setChecked(True)
-        self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(0))
+        self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(1))
 
         # SSH tab button
         self.ssh_tab_btn = QPushButton()
@@ -1921,7 +1954,22 @@ class SerialTerminalGUI(QMainWindow):
                 self.style().StandardPixmap.SP_ComputerIcon))
         self.ssh_tab_btn.setToolTip("SSH Connection")
         self.ssh_tab_btn.setCheckable(True)
-        self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(1))
+        self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(2))
+
+        # TFTP tab button
+        self.tftp_tab_btn = QPushButton()
+        self.tftp_tab_btn.setFixedSize(40, 40)
+        tftp_icon_path = self.get_tab_icon_path('TFTP.svg')
+        if tftp_icon_path:
+            self.tftp_tab_btn.setIcon(QIcon(tftp_icon_path))
+            self.tftp_tab_btn.setIconSize(self.tftp_tab_btn.size() * 0.95)
+        else:
+            self.tftp_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_DriveNetIcon))
+        self.tftp_tab_btn.setToolTip("TFTP Server")
+        self.tftp_tab_btn.setCheckable(True)
+        self.tftp_tab_btn.setChecked(True)
+        self.tftp_tab_btn.clicked.connect(lambda: self.switch_tab(0))
 
         # Style for tab buttons
         tab_btn_style = """
@@ -1941,7 +1989,9 @@ class SerialTerminalGUI(QMainWindow):
         """
         self.serial_tab_btn.setStyleSheet(tab_btn_style)
         self.ssh_tab_btn.setStyleSheet(tab_btn_style)
+        self.tftp_tab_btn.setStyleSheet(tab_btn_style)
 
+        tab_layout.addWidget(self.tftp_tab_btn)
         tab_layout.addWidget(self.serial_tab_btn)
         tab_layout.addWidget(self.ssh_tab_btn)
         tab_layout.addStretch()
@@ -1950,11 +2000,15 @@ class SerialTerminalGUI(QMainWindow):
         # === RIGHT SIDE: Stacked Widget for Content ===
         self.content_stack = QStackedWidget()
 
-        # Create Serial configuration page
+        # Create TFTP server page (index 0)
+        self.tftp_page = self.create_tftp_page()
+        self.content_stack.addWidget(self.tftp_page)
+
+        # Create Serial configuration page (index 1)
         self.serial_page = self.create_serial_page()
         self.content_stack.addWidget(self.serial_page)
 
-        # Create SSH configuration page
+        # Create SSH configuration page (index 2)
         self.ssh_page = self.create_ssh_page()
         self.content_stack.addWidget(self.ssh_page)
 
@@ -1968,18 +2022,20 @@ class SerialTerminalGUI(QMainWindow):
         self.update_port_list()
 
     def switch_tab(self, index):
-        """Switch between Serial and SSH tabs"""
+        """Switch between TFTP, Serial and SSH tabs"""
         self.content_stack.setCurrentIndex(index)
-        self.serial_tab_btn.setChecked(index == 0)
-        self.ssh_tab_btn.setChecked(index == 1)
-        self.config.set('connection_mode', 'serial' if index == 0 else 'ssh')
+        self.tftp_tab_btn.setChecked(index == 0)
+        self.serial_tab_btn.setChecked(index == 1)
+        self.ssh_tab_btn.setChecked(index == 2)
+        modes = {0: 'tftp', 1: 'serial', 2: 'ssh'}
+        self.config.set('connection_mode', modes.get(index, 'tftp'))
 
     def create_serial_page(self):
         """Create the serial connection configuration page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         # Standard width for all comboboxes
         combo_width = 200
@@ -1987,8 +2043,8 @@ class SerialTerminalGUI(QMainWindow):
         # Port configuration group
         port_group = QGroupBox("Port Configuration")
         port_layout = QFormLayout()
-        port_layout.setVerticalSpacing(15)
-        port_layout.setContentsMargins(15, 15, 15, 15)
+        port_layout.setVerticalSpacing(8)
+        port_layout.setContentsMargins(10, 10, 10, 10)
         port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         port_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -2022,8 +2078,8 @@ class SerialTerminalGUI(QMainWindow):
         # Communication parameters group
         comm_group = QGroupBox("Communication Parameters")
         comm_layout = QFormLayout()
-        comm_layout.setVerticalSpacing(15)
-        comm_layout.setContentsMargins(15, 15, 15, 15)
+        comm_layout.setVerticalSpacing(8)
+        comm_layout.setContentsMargins(10, 10, 10, 10)
         comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         comm_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -2097,6 +2153,173 @@ class SerialTerminalGUI(QMainWindow):
 
         main_layout.addWidget(comm_group)
 
+        # === Quick Connect (Saved Profiles) ===
+        profiles_group = QGroupBox("Quick Connect")
+        profiles_layout = QVBoxLayout()
+        profiles_layout.setContentsMargins(10, 2, 10, 8)
+        profiles_layout.setSpacing(6)
+
+        self.serial_profiles_table = QTableWidget()
+        self.serial_profiles_table.setColumnCount(4)
+        self.serial_profiles_table.setHorizontalHeaderLabels(["Name", "Port", "Baud Rate", "Config"])
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_table.setColumnWidth(2, 80)
+        self.serial_profiles_table.setColumnWidth(3, 70)
+        self.serial_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.serial_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.serial_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.serial_profiles_table.verticalHeader().setVisible(False)
+        self.serial_profiles_table.doubleClicked.connect(self.load_serial_profile_from_table)
+        self.serial_profiles_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 9pt;
+                gridline-color: #d0d0d0;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                background-color: #e8e8e8;
+            }
+            QTableWidget::item:selected {
+                background-color: #2196F3;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 4px;
+                border: none;
+                font-weight: bold;
+                font-size: 9pt;
+            }
+        """)
+        profiles_layout.addWidget(self.serial_profiles_table)
+
+        serial_btn_layout = QHBoxLayout()
+        serial_btn_layout.setSpacing(8)
+
+        self.save_serial_profile_btn = QPushButton("Save Current")
+        self.save_serial_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_serial_profile_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #78909c;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #607d8b;
+            }
+        """)
+        self.save_serial_profile_btn.clicked.connect(self.save_current_serial_profile)
+
+        self.delete_serial_profile_btn = QPushButton("Delete Selected")
+        self.delete_serial_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_serial_profile_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9e9e9e;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #757575;
+            }
+        """)
+        self.delete_serial_profile_btn.clicked.connect(self.delete_serial_profile)
+
+        serial_btn_layout.addStretch()
+        serial_btn_layout.addWidget(self.save_serial_profile_btn)
+        serial_btn_layout.addWidget(self.delete_serial_profile_btn)
+        serial_btn_layout.addStretch()
+        profiles_layout.addLayout(serial_btn_layout)
+
+        profiles_group.setLayout(profiles_layout)
+
+        shadow3 = QGraphicsDropShadowEffect()
+        shadow3.setBlurRadius(15)
+        shadow3.setXOffset(0)
+        shadow3.setYOffset(2)
+        shadow3.setColor(QColor(0, 0, 0, 30))
+        profiles_group.setGraphicsEffect(shadow3)
+
+        main_layout.addWidget(profiles_group, 1)
+
+        # Debug mode checkbox
+        self.debug_checkbox = QCheckBox("Debug Mode (simulate Cisco router)")
+        self.debug_checkbox.setToolTip("Enable to test terminal without a real device")
+        self.debug_checkbox.setStyleSheet("color: #606060; font-size: 9pt;")
+        main_layout.addWidget(self.debug_checkbox)
+
+        # Connect button
+        self.connect_btn = QPushButton("CONNECT")
+        self.connect_btn.setMinimumHeight(40)
+        self.connect_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.connect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4caf50;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 8px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #43a047;
+            }
+            QPushButton:pressed {
+                background-color: #388e3c;
+            }
+        """)
+        self.connect_btn.clicked.connect(self.connect)
+        main_layout.addWidget(self.connect_btn)
+
+        # Status with LED indicator
+        status_layout = QHBoxLayout()
+        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_layout.setSpacing(8)
+
+        self.status_led = QLabel("●")
+        self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+
+        self.status_label = QLabel("Ready to connect")
+        self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+
+        status_layout.addWidget(self.status_led)
+        status_layout.addWidget(self.status_label)
+
+        status_widget = QWidget()
+        status_widget.setLayout(status_layout)
+        main_layout.addWidget(status_widget)
+
+        page.setLayout(main_layout)
+
+        # Load saved serial profiles
+        self.refresh_serial_profiles()
+
+        return page
+
+    def create_tftp_page(self):
+        """Create the TFTP server configuration page"""
+        page = QWidget()
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        combo_width = 200
+
         # TFTP Server group
         tftp_group = QGroupBox("TFTP Server")
         tftp_layout = QFormLayout()
@@ -2109,7 +2332,6 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_interface = QComboBox()
         self.tftp_interface.setFixedWidth(combo_width)
         self.tftp_interface.setToolTip("Select network interface for TFTP server")
-        # Smaller font to fit longer IP addresses
         self.tftp_interface.setStyleSheet("""
             QComboBox {
                 font-size: 8pt;
@@ -2125,7 +2347,6 @@ class SerialTerminalGUI(QMainWindow):
 
         self.tftp_directory = QLineEdit()
         self.tftp_directory.setFixedWidth(combo_width)
-        # Use XDG HOME for Flatpak compatibility
         default_tftp_dir = os.environ.get('HOME', str(Path.home()))
         self.tftp_directory.setText(default_tftp_dir)
         self.tftp_directory.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -2194,67 +2415,100 @@ class SerialTerminalGUI(QMainWindow):
         tftp_group.setLayout(tftp_layout)
 
         # Add shadow effect to tftp group
-        shadow3 = QGraphicsDropShadowEffect()
-        shadow3.setBlurRadius(15)
-        shadow3.setXOffset(0)
-        shadow3.setYOffset(2)
-        shadow3.setColor(QColor(0, 0, 0, 30))
-        tftp_group.setGraphicsEffect(shadow3)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 0, 0, 30))
+        tftp_group.setGraphicsEffect(shadow)
 
         main_layout.addWidget(tftp_group)
 
         # Initialize TFTP server instance
         self.tftp_server = None
 
-        # Debug mode checkbox
-        self.debug_checkbox = QCheckBox("Debug Mode (simulate Cisco router)")
-        self.debug_checkbox.setToolTip("Enable to test terminal without a real device")
-        self.debug_checkbox.setStyleSheet("color: #606060; font-size: 9pt;")
-        main_layout.addWidget(self.debug_checkbox)
+        # === Directory Contents ===
+        files_group = QGroupBox("Directory Contents")
+        files_layout = QVBoxLayout()
+        files_layout.setContentsMargins(10, 2, 10, 8)
+        files_layout.setSpacing(6)
 
-        # Connect button
-        self.connect_btn = QPushButton("CONNECT")
-        self.connect_btn.setMinimumHeight(45)
-        self.connect_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Keep Connect button in original green color
-        self.connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4caf50;
-                color: #ffffff;
+        self.tftp_files_table = QTableWidget()
+        self.tftp_files_table.setColumnCount(3)
+        self.tftp_files_table.setHorizontalHeaderLabels(["Name", "Size", "Modified"])
+        self.tftp_files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tftp_files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.tftp_files_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.tftp_files_table.setColumnWidth(1, 80)
+        self.tftp_files_table.setColumnWidth(2, 130)
+        self.tftp_files_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tftp_files_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tftp_files_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tftp_files_table.verticalHeader().setVisible(False)
+        self.tftp_files_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 9pt;
+                gridline-color: #d0d0d0;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                background-color: #e8e8e8;
+            }
+            QTableWidget::item:selected {
+                background-color: #2196F3;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 4px;
                 border: none;
-                border-radius: 8px;
-                padding: 12px;
                 font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton:hover {
-                background-color: #43a047;
-            }
-            QPushButton:pressed {
-                background-color: #388e3c;
+                font-size: 9pt;
             }
         """)
-        self.connect_btn.clicked.connect(self.connect)
-        main_layout.addWidget(self.connect_btn)
+        files_layout.addWidget(self.tftp_files_table)
 
-        # Status with LED indicator
-        status_layout = QHBoxLayout()
-        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status_layout.setSpacing(8)
+        # Refresh button
+        refresh_btn_layout = QHBoxLayout()
+        refresh_btn_layout.addStretch()
+        self.tftp_refresh_btn = QPushButton("Refresh")
+        self.tftp_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tftp_refresh_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #78909c;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #607d8b;
+            }
+        """)
+        self.tftp_refresh_btn.clicked.connect(self.refresh_tftp_files)
+        refresh_btn_layout.addWidget(self.tftp_refresh_btn)
+        refresh_btn_layout.addStretch()
+        files_layout.addLayout(refresh_btn_layout)
 
-        self.status_led = QLabel("●")
-        self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+        files_group.setLayout(files_layout)
 
-        self.status_label = QLabel("Ready to connect")
-        self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+        shadow2 = QGraphicsDropShadowEffect()
+        shadow2.setBlurRadius(15)
+        shadow2.setXOffset(0)
+        shadow2.setYOffset(2)
+        shadow2.setColor(QColor(0, 0, 0, 30))
+        files_group.setGraphicsEffect(shadow2)
 
-        status_layout.addWidget(self.status_led)
-        status_layout.addWidget(self.status_label)
+        main_layout.addWidget(files_group, 1)
 
-        status_widget = QWidget()
-        status_widget.setLayout(status_layout)
-        main_layout.addWidget(status_widget)
+        # Load initial file list
+        self.refresh_tftp_files()
 
         page.setLayout(main_layout)
         return page
@@ -2792,6 +3046,39 @@ class SerialTerminalGUI(QMainWindow):
         )
         if directory:
             self.tftp_directory.setText(directory)
+            self.refresh_tftp_files()
+
+    def refresh_tftp_files(self):
+        """Refresh the TFTP directory file listing"""
+        self.tftp_files_table.setRowCount(0)
+        directory = self.tftp_directory.text()
+        if not os.path.isdir(directory):
+            return
+        try:
+            from datetime import datetime
+            entries = sorted(os.listdir(directory))
+            for name in entries:
+                filepath = os.path.join(directory, name)
+                if not os.path.isfile(filepath):
+                    continue
+                row = self.tftp_files_table.rowCount()
+                self.tftp_files_table.insertRow(row)
+                self.tftp_files_table.setItem(row, 0, QTableWidgetItem(name))
+                # Format size
+                size = os.path.getsize(filepath)
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f} KB"
+                else:
+                    size_str = f"{size / (1024 * 1024):.1f} MB"
+                self.tftp_files_table.setItem(row, 1, QTableWidgetItem(size_str))
+                # Format date
+                mtime = os.path.getmtime(filepath)
+                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+                self.tftp_files_table.setItem(row, 2, QTableWidgetItem(date_str))
+        except OSError:
+            pass
 
     def toggle_tftp_server(self):
         """Start or stop the TFTP server"""
@@ -3151,6 +3438,80 @@ class SerialTerminalGUI(QMainWindow):
                 if reply == QMessageBox.StandardButton.Yes:
                     self.config.delete_ssh_profile(profile['name'])
                     self.refresh_ssh_profiles()
+
+    def refresh_serial_profiles(self):
+        """Refresh the serial profiles table"""
+        self.serial_profiles_table.setRowCount(0)
+        profiles = self.config.get_serial_profiles()
+        for profile in profiles:
+            row = self.serial_profiles_table.rowCount()
+            self.serial_profiles_table.insertRow(row)
+            self.serial_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
+            self.serial_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('port', '')))
+            self.serial_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('baudrate', '9600')))
+            # Config column: e.g. "8N1"
+            databits = profile.get('databits', '8')
+            parity = profile.get('parity', 'None')[0]  # N, E, O
+            stopbits = profile.get('stopbits', '1')
+            self.serial_profiles_table.setItem(row, 3, QTableWidgetItem(f"{databits}{parity}{stopbits}"))
+            self.serial_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
+
+    def load_serial_profile_from_table(self):
+        """Load selected serial profile from table and initiate connection"""
+        row = self.serial_profiles_table.currentRow()
+        if row < 0:
+            return
+        item = self.serial_profiles_table.item(row, 0)
+        if item:
+            profile = item.data(Qt.ItemDataRole.UserRole)
+            if profile:
+                # Load profile data into form fields
+                idx = self.port.findText(profile.get('port', ''))
+                if idx >= 0:
+                    self.port.setCurrentIndex(idx)
+                self.baudrate.setCurrentText(profile.get('baudrate', '9600'))
+                self.databits.setCurrentText(profile.get('databits', '8'))
+                self.parity.setCurrentText(profile.get('parity', 'None'))
+                self.stopbits.setCurrentText(profile.get('stopbits', '1'))
+                self.flow.setCurrentText(profile.get('flow', 'None'))
+                QApplication.processEvents()
+                QTimer.singleShot(100, self.connect)
+
+    def save_current_serial_profile(self):
+        """Save current serial settings as a profile"""
+        port = self.port.currentText()
+        if not port or 'No ports found' in port:
+            QMessageBox.warning(self, "Warning", "Select a valid port before saving")
+            return
+
+        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
+        if ok and name:
+            self.config.save_serial_profile(
+                name, port, self.baudrate.currentText(),
+                self.databits.currentText(), self.parity.currentText(),
+                self.stopbits.currentText(), self.flow.currentText()
+            )
+            self.refresh_serial_profiles()
+            QMessageBox.information(self, "Saved", f"Profile '{name}' saved")
+
+    def delete_serial_profile(self):
+        """Delete selected serial profile from table"""
+        row = self.serial_profiles_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Warning", "Select a profile to delete")
+            return
+        item = self.serial_profiles_table.item(row, 0)
+        if item:
+            profile = item.data(Qt.ItemDataRole.UserRole)
+            if profile:
+                reply = QMessageBox.question(
+                    self, "Delete Profile",
+                    f"Delete profile '{profile['name']}'?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.config.delete_serial_profile(profile['name'])
+                    self.refresh_serial_profiles()
 
     def connect_ssh(self):
         """Connect via SSH or Telnet"""
