@@ -1,7 +1,7 @@
-# SerialCom 1.1
+# Omnicom 1.1
 
-[![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fserialcom-blue?logo=github)](https://github.com/benjamimgois/serialcom)
-[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/serialcom/releases)
+[![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
+[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Modern and elegant graphical interface for serial communication via picocom.
@@ -68,17 +68,17 @@ Modern and elegant graphical interface for serial communication via picocom.
 
 ### Debian / Ubuntu (from .deb package)
 
-1. Download the latest .deb package from [releases](https://github.com/benjamimgois/serialcom/releases)
+1. Download the latest .deb package from [releases](https://github.com/benjamimgois/omnicom/releases)
 
 2. Install the package:
 ```bash
-sudo dpkg -i serialcom_1.1-1_all.deb
+sudo dpkg -i omnicom_1.1-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
 3. Launch from application menu or terminal:
 ```bash
-serialcom
+omnicom
 ```
 
 ### Debian / Ubuntu (build from source)
@@ -96,25 +96,25 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../serialcom_1.1-1_all.deb
+sudo dpkg -i ../omnicom_1.1-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
 
 Install using an AUR helper:
 ```bash
-yay -S serialcom
+yay -S omnicom
 # or
-paru -S serialcom
+paru -S omnicom
 ```
 
 ### Arch Linux / Manjaro (from package file)
 
-1. Download the latest `.pkg.tar.zst` package from [releases](https://github.com/benjamimgois/serialcom/releases)
+1. Download the latest `.pkg.tar.zst` package from [releases](https://github.com/benjamimgois/omnicom/releases)
 
 2. Install the package:
 ```bash
-sudo pacman -U serialcom-1.1-1-any.pkg.tar.zst
+sudo pacman -U omnicom-1.1-1-any.pkg.tar.zst
 ```
 
 ### Other Linux Distributions
@@ -139,7 +139,7 @@ pip3 install standard-telnetlib
 
 2. Make scripts executable:
 ```bash
-chmod +x serialcom
+chmod +x omnicom
 ```
 
 3. (Optional) Install system-wide:
@@ -152,13 +152,13 @@ chmod +x serialcom
 Run the application:
 ```bash
 # Recommended way
-./serialcom
+./omnicom
 
 # Directly
-./serialcom
+./omnicom
 
 # Or via Python
-python3 serialcom
+python3 omnicom
 ```
 
 ### Serial Connection
@@ -226,10 +226,10 @@ After this, logout and login again to apply changes.
 
 ## Links
 
-- **GitHub Repository**: https://github.com/benjamimgois/serialcom
-- **AUR Package**: https://aur.archlinux.org/packages/serialcom
-- **Releases**: https://github.com/benjamimgois/serialcom/releases
-- **Issues**: https://github.com/benjamimgois/serialcom/issues
+- **GitHub Repository**: https://github.com/benjamimgois/omnicom
+- **AUR Package**: https://aur.archlinux.org/packages/omnicom
+- **Releases**: https://github.com/benjamimgois/omnicom/releases
+- **Issues**: https://github.com/benjamimgois/omnicom/issues
 
 ## License
 

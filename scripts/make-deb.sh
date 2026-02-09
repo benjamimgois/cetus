@@ -1,12 +1,12 @@
 #!/bin/bash
-# Script to build Debian package for SerialCom
+# Script to build Debian package for Omnicom
 
 set -e
 
 VERSION="1.0"
-PKGNAME="serialcom"
+PKGNAME="omnicom"
 
-echo "=== SerialCom Debian Package Builder ==="
+echo "=== Omnicom Debian Package Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 

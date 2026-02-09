@@ -1,11 +1,11 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=SerialCom
+Name=Omnicom
 GenericName=Serial Communication
 Comment=Modern graphical interface for serial communication via picocom
-Exec=serialcom
-Icon=io.github.benjamimgois.serialcom
+Exec=omnicom
+Icon=io.github.benjamimgois.omnicom
 Terminal=false
 Categories=System;Utility;
 Keywords=serial;communication;picocom;tty;uart;rs232;

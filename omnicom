@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SerialCom - Graphical interface for serial communication via picocom
+Omnicom - Graphical interface for serial communication via picocom
 Version: 1.1
 """
 
@@ -304,8 +304,8 @@ class ConfigManager:
         if not xdg_config_home:
             xdg_config_home = os.path.join(Path.home(), '.config')
 
-        # Create serialcom config directory
-        self.config_dir = os.path.join(xdg_config_home, 'serialcom')
+        # Create omnicom config directory
+        self.config_dir = os.path.join(xdg_config_home, 'omnicom')
         os.makedirs(self.config_dir, exist_ok=True)
 
         # Config file path
@@ -1258,7 +1258,7 @@ class TerminalDialog(QDialog):
 
     def __init__(self, parent=None, config=None):
         super().__init__(parent)
-        self.setWindowTitle("SerialCom Terminal")
+        self.setWindowTitle("Omnicom Terminal")
         self.setMinimumSize(1200, 700)
         self.process = None
         self.sudo_process = None
@@ -1282,13 +1282,13 @@ class TerminalDialog(QDialog):
     def get_icon_path(self, icon_name, subdir='icons'):
         """Get the path to an icon for different installation types"""
         # Check for Flatpak
-        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/{subdir}/{icon_name}'
+        flatpak_path = f'/app/share/io.github.benjamimgois.omnicom/{subdir}/{icon_name}'
         if os.path.exists(flatpak_path):
             return flatpak_path
         # Check for AppImage
         if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            appimage_path = os.path.join(appdir, f'usr/share/serialcom/{subdir}/{icon_name}')
+            appimage_path = os.path.join(appdir, f'usr/share/omnicom/{subdir}/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
         # Local installation or development
@@ -1804,7 +1804,7 @@ class TerminalDialog(QDialog):
 
     def start_debug_mode(self):
         """Start terminal in debug mode with simulated Cisco router output"""
-        self.setWindowTitle("SerialCom Terminal [DEBUG MODE]")
+        self.setWindowTitle("Omnicom Terminal [DEBUG MODE]")
 
         # Simulated Cisco router configuration
         cisco_output = """\r
@@ -1913,7 +1913,7 @@ Router#_\r
             return False
 
         self.connection_type = 'ssh'
-        self.setWindowTitle(f"SerialCom Terminal - SSH: {username}@{host}")
+        self.setWindowTitle(f"Omnicom Terminal - SSH: {username}@{host}")
 
         try:
             self.ssh_client = paramiko.SSHClient()
@@ -2034,7 +2034,7 @@ Router#_\r
     def start_telnet(self, host, port, username=None):
         """Start Telnet connection"""
         self.connection_type = 'telnet'
-        self.setWindowTitle(f"SerialCom Terminal - Telnet: {host}")
+        self.setWindowTitle(f"Omnicom Terminal - Telnet: {host}")
 
         try:
             self.terminal.append_output(f"Connecting to {host}:{port}...\n")
@@ -2173,7 +2173,7 @@ Router#_\r
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"SerialCom v{VERSION}")
+        self.setWindowTitle(f"Omnicom v{VERSION}")
         self.setFixedSize(600, 780)
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
@@ -3137,13 +3137,13 @@ class SerialTerminalGUI(QMainWindow):
     def get_icon_path(self, icon_name):
         """Get the path to an icon from assets/icons for different installation types"""
         # Check for Flatpak
-        flatpak_path = f'/app/share/io.github.benjamimgois.serialcom/icons/{icon_name}'
+        flatpak_path = f'/app/share/io.github.benjamimgois.omnicom/icons/{icon_name}'
         if os.path.exists(flatpak_path):
             return flatpak_path
         # Check for AppImage
         if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            appimage_path = os.path.join(appdir, f'usr/share/serialcom/icons/{icon_name}')
+            appimage_path = os.path.join(appdir, f'usr/share/omnicom/icons/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
         # Local installation or development - assets/icons
@@ -3546,8 +3546,8 @@ class SerialTerminalGUI(QMainWindow):
 
             try:
                 # Redirect TFTP server output to terminal for debugging
-                print(f"[SerialCom] Starting TFTP server on {ip}:69")
-                print(f"[SerialCom] Directory: {directory}")
+                print(f"[Omnicom] Starting TFTP server on {ip}:69")
+                print(f"[Omnicom] Directory: {directory}")
                 
                 self.tftp_process = subprocess.Popen(
                     cmd,
@@ -3576,7 +3576,7 @@ class SerialTerminalGUI(QMainWindow):
                     self.tftp_process = None
                     return
 
-                print(f"[SerialCom] TFTP server started successfully")
+                print(f"[Omnicom] TFTP server started successfully")
                 
                 QMessageBox.information(
                     self,
@@ -3994,7 +3994,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.telnet_client = client
             terminal_dialog.telnet_running = True
             terminal_dialog.connection_type = 'telnet'
-            title = f"SerialCom Terminal - Telnet: {host_info[0]}"
+            title = f"Omnicom Terminal - Telnet: {host_info[0]}"
             if self._pending_profile_name:
                 title = f"[{self._pending_profile_name}] {title}"
             terminal_dialog.setWindowTitle(title)
@@ -4009,7 +4009,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.ssh_channel = channel
             terminal_dialog.ssh_running = True
             terminal_dialog.connection_type = 'ssh'
-            title = f"SerialCom Terminal - SSH: {host_info[2]}@{host_info[0]}"
+            title = f"Omnicom Terminal - SSH: {host_info[2]}@{host_info[0]}"
             if self._pending_profile_name:
                 title = f"[{self._pending_profile_name}] {title}"
             terminal_dialog.setWindowTitle(title)

@@ -2,9 +2,9 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=SerialCom
+Name=Omnicom
 Comment=Interface gráfica para comunicação serial
-Exec=/usr/bin/serialcom
-Icon=serialcom
+Exec=/usr/bin/omnicom
+Icon=omnicom
 Terminal=false
 Categories=System;Utility;

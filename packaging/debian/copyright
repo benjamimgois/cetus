@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: serialcom
+Upstream-Name: omnicom
 Upstream-Contact: Benjamim Gois <benjamimgois@example.com>
-Source: https://github.com/benjamimgois/serialcom
+Source: https://github.com/benjamimgois/omnicom
 
 Files: *
 Copyright: 2026 Benjamim Gois

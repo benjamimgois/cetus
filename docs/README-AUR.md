@@ -1,4 +1,4 @@
-# SerialCom
+# Omnicom
 
 Modern graphical interface for serial communication via picocom.
 
@@ -16,16 +16,16 @@ Modern graphical interface for serial communication via picocom.
 ### From AUR
 
 ```bash
-yay -S serialcom
+yay -S omnicom
 # or
-paru -S serialcom
+paru -S omnicom
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://aur.archlinux.org/serialcom.git
-cd serialcom
+git clone https://aur.archlinux.org/omnicom.git
+cd omnicom
 makepkg -si
 ```
 
@@ -34,7 +34,7 @@ makepkg -si
 Simply run:
 
 ```bash
-serialcom
+omnicom
 ```
 
 Or launch from your application menu.
@@ -77,5 +77,5 @@ MIT
 
 ## Links
 
-- GitHub: https://github.com/benjamimgois/serialcom
-- AUR: https://aur.archlinux.org/packages/serialcom
+- GitHub: https://github.com/benjamimgois/omnicom
+- AUR: https://aur.archlinux.org/packages/omnicom

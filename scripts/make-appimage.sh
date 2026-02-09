@@ -1,21 +1,21 @@
 #!/bin/bash
-# Script to build AppImage for SerialCom
+# Script to build AppImage for Omnicom
 
 set -e
 
 VERSION="1.0"
-PKGNAME="serialcom"
+PKGNAME="omnicom"
 ARCH="x86_64"
-APPIMAGE_NAME="SerialCom-${ARCH}.AppImage"
+APPIMAGE_NAME="Omnicom-${ARCH}.AppImage"
 
-echo "=== SerialCom AppImage Builder ==="
+echo "=== Omnicom AppImage Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
 # Check if AppDir exists
 if [ ! -d "AppDir" ]; then
     echo "Error: AppDir directory not found"
-    echo "Please run this script from the serialcom directory"
+    echo "Please run this script from the omnicom directory"
     exit 1
 fi
 
@@ -34,20 +34,20 @@ if [ ! -f "AppDir/AppRun" ]; then
     exit 1
 fi
 
-if [ ! -f "AppDir/serialcom.desktop" ]; then
-    echo "Error: AppDir/serialcom.desktop not found"
+if [ ! -f "AppDir/omnicom.desktop" ]; then
+    echo "Error: AppDir/omnicom.desktop not found"
     exit 1
 fi
 
-if [ ! -f "AppDir/serialcom.png" ]; then
-    echo "Error: AppDir/serialcom.png not found"
+if [ ! -f "AppDir/omnicom.png" ]; then
+    echo "Error: AppDir/omnicom.png not found"
     exit 1
 fi
 
 # Update desktop file paths for AppImage
 echo "Updating desktop file..."
-sed -i 's|Exec=.*|Exec=serialcom|' AppDir/serialcom.desktop
-sed -i 's|Icon=.*|Icon=serialcom|' AppDir/serialcom.desktop
+sed -i 's|Exec=.*|Exec=omnicom|' AppDir/omnicom.desktop
+sed -i 's|Icon=.*|Icon=omnicom|' AppDir/omnicom.desktop
 
 # Build AppImage
 echo ""

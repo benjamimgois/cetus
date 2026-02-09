@@ -1,14 +1,14 @@
 #!/bin/bash
-# Script to build self-contained AppImage for SerialCom with all dependencies
+# Script to build self-contained AppImage for Omnicom with all dependencies
 
 set -e
 
 VERSION="1.0"
-PKGNAME="serialcom"
+PKGNAME="omnicom"
 ARCH="x86_64"
-APPIMAGE_NAME="SerialCom-full-${ARCH}.AppImage"
+APPIMAGE_NAME="Omnicom-full-${ARCH}.AppImage"
 
-echo "=== SerialCom Self-Contained AppImage Builder ==="
+echo "=== Omnicom Self-Contained AppImage Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
@@ -25,7 +25,7 @@ rm -rf AppDir-full
 # Create AppDir-full structure
 echo "Creating AppDir-full structure..."
 mkdir -p AppDir-full/usr/bin
-mkdir -p AppDir-full/usr/share/serialcom
+mkdir -p AppDir-full/usr/share/omnicom
 mkdir -p AppDir-full/usr/lib
 
 # Install PyQt6 using pip --target (no venv needed)
@@ -76,16 +76,16 @@ fi
 
 # Copy application files
 echo "Copying application files..."
-cp serialcom AppDir-full/usr/bin/
-cp arrow_down.svg AppDir-full/usr/share/serialcom/
-cp serialcom.png AppDir-full/
-cp serialcom.desktop AppDir-full/
+cp omnicom AppDir-full/usr/bin/
+cp arrow_down.svg AppDir-full/usr/share/omnicom/
+cp omnicom.png AppDir-full/
+cp omnicom.desktop AppDir-full/
 
 # Create AppRun script
 echo "Creating AppRun script..."
 cat > AppDir-full/AppRun << 'APPRUN_EOF'
 #!/bin/bash
-# AppRun script for self-contained SerialCom AppImage
+# AppRun script for self-contained Omnicom AppImage
 
 HERE="$(dirname "$(readlink -f "${0}")")"
 export APPDIR="${HERE}"
@@ -96,15 +96,15 @@ export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
 
 # Use bundled Python
-exec "${HERE}/usr/bin/python3" "${HERE}/usr/bin/serialcom" "$@"
+exec "${HERE}/usr/bin/python3" "${HERE}/usr/bin/omnicom" "$@"
 APPRUN_EOF
 
 chmod +x AppDir-full/AppRun
 
 # Update desktop file
 echo "Updating desktop file..."
-sed -i 's|Exec=.*|Exec=serialcom|' AppDir-full/serialcom.desktop
-sed -i 's|Icon=.*|Icon=serialcom|' AppDir-full/serialcom.desktop
+sed -i 's|Exec=.*|Exec=omnicom|' AppDir-full/omnicom.desktop
+sed -i 's|Icon=.*|Icon=omnicom|' AppDir-full/omnicom.desktop
 
 # Download appimagetool if not present
 APPIMAGETOOL="appimagetool-${ARCH}.AppImage"
@@ -131,7 +131,7 @@ if [ $? -eq 0 ]; then
     echo "  - Python 3 (from venv)"
     echo "  - PyQt6"
     echo "  - picocom (if available on build system)"
-    echo "  - SerialCom application"
+    echo "  - Omnicom application"
     echo ""
     echo "To run (minimal dependencies required):"
     echo "  chmod +x ${APPIMAGE_NAME}"

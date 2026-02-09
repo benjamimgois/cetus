@@ -1,8 +1,8 @@
-pkgbase = serialcom
+pkgbase = omnicom
 	pkgdesc = Modern graphical interface for serial communication via picocom
 	pkgver = 1.1
 	pkgrel = 1
-	url = https://github.com/benjamimgois/serialcom
+	url = https://github.com/benjamimgois/omnicom
 	arch = any
 	license = MIT
 	makedepends = imagemagick
@@ -17,7 +17,7 @@ pkgbase = serialcom
 	optdepends = xfce4-terminal: XFCE terminal emulator
 	optdepends = kitty: fast GPU-based terminal emulator
 	optdepends = alacritty: cross-platform GPU-accelerated terminal emulator
-	source = serialcom-1.1.tar.gz::https://github.com/benjamimgois/serialcom/archive/refs/tags/1.1.tar.gz
+	source = omnicom-1.1.tar.gz::https://github.com/benjamimgois/omnicom/archive/refs/tags/1.1.tar.gz
 	sha256sums = b48bc914299a7d14da0629063b3f922588a88330f817430f63582bd247231706
 
-pkgname = serialcom
+pkgname = omnicom

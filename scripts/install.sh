@@ -1,7 +1,7 @@
 #!/bin/bash
-# SerialCom installation script
+# Omnicom installation script
 
-echo "=== SerialCom - Installation ==="
+echo "=== Omnicom - Installation ==="
 echo ""
 
 # Detect package manager
@@ -80,15 +80,15 @@ fi
 # Install .desktop file
 echo "5. Installing menu shortcut..."
 mkdir -p ~/.local/share/applications
-cp serialcom.desktop ~/.local/share/applications/
+cp omnicom.desktop ~/.local/share/applications/
 echo "   ✓ Shortcut installed at ~/.local/share/applications/"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "To run the application:"
-echo "  - From terminal: ./serialcom"
-echo "  - From menu: Look for 'SerialCom'"
+echo "  - From terminal: ./omnicom"
+echo "  - From menu: Look for 'Omnicom'"
 echo ""
 echo "IMPORTANT: If added to dialout group now,"
 echo "logout and login again to avoid password prompts."

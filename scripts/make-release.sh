@@ -1,13 +1,13 @@
 #!/bin/bash
-# Script to prepare SerialCom for AUR submission
+# Script to prepare Omnicom for AUR submission
 
 set -e
 
 VERSION="1.0"
-PKGNAME="serialcom"
+PKGNAME="omnicom"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 
-echo "=== SerialCom Release Builder ==="
+echo "=== Omnicom Release Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
@@ -23,10 +23,10 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 
 # Copy necessary files
 echo "Copying files..."
-cp serialcom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp serialcom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp serialcom.png "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp serialcom.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp omnicom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp omnicom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp omnicom.png "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp omnicom.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp INTERFACE.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp LICENSE "${BUILD_DIR}/${PKGNAME}-${VERSION}/"

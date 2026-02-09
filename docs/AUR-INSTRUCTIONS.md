@@ -1,6 +1,6 @@
-# How to Submit SerialCom to AUR
+# How to Submit Omnicom to AUR
 
-This guide explains how to prepare and submit SerialCom to the Arch User Repository (AUR).
+This guide explains how to prepare and submit Omnicom to the Arch User Repository (AUR).
 
 ## Prerequisites
 
@@ -20,14 +20,14 @@ Create a tarball of the project:
 cd /home/benjamim/Documentos
 
 # Create a versioned directory
-mkdir serialcom-1.0
-cp serialcom/{serialcom,serialcom.desktop,README.md,INTERFACE.md,LICENSE} serialcom-1.0/
+mkdir omnicom-1.0
+cp omnicom/{omnicom,omnicom.desktop,README.md,INTERFACE.md,LICENSE} omnicom-1.0/
 
 # Create tarball
-tar -czf serialcom-1.0.tar.gz serialcom-1.0/
+tar -czf omnicom-1.0.tar.gz omnicom-1.0/
 
 # Clean up
-rm -rf serialcom-1.0
+rm -rf omnicom-1.0
 ```
 
 ## Step 2: Host the Source Archive
@@ -35,7 +35,7 @@ rm -rf serialcom-1.0
 You need to host the tarball somewhere publicly accessible. Options:
 
 1. **GitHub Release** (recommended):
-   - Create a GitHub repository for SerialCom
+   - Create a GitHub repository for Omnicom
    - Create a release tagged `v1.0`
    - Upload the tarball as a release asset
    - Use the release URL in PKGBUILD
@@ -46,7 +46,7 @@ You need to host the tarball somewhere publicly accessible. Options:
 
 Example GitHub URL:
 ```
-https://github.com/benjamimgois/serialcom/releases/download/v1.0/serialcom-1.0.tar.gz
+https://github.com/benjamimgois/omnicom/releases/download/v1.0/omnicom-1.0.tar.gz
 ```
 
 ## Step 3: Update PKGBUILD
@@ -58,17 +58,17 @@ https://github.com/benjamimgois/serialcom/releases/download/v1.0/serialcom-1.0.t
 
 2. Update the `url` field with your repository:
    ```bash
-   url="https://github.com/benjamimgois/serialcom"
+   url="https://github.com/benjamimgois/omnicom"
    ```
 
 3. Update the `source` array with the actual download URL:
    ```bash
-   source=("https://github.com/benjamimgois/serialcom/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz")
+   source=("https://github.com/benjamimgois/omnicom/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz")
    ```
 
 4. Calculate the SHA256 checksum:
    ```bash
-   sha256sum serialcom-1.0.tar.gz
+   sha256sum omnicom-1.0.tar.gz
    ```
 
 5. Update `sha256sums` in PKGBUILD with the actual checksum:
@@ -80,13 +80,13 @@ https://github.com/benjamimgois/serialcom/releases/download/v1.0/serialcom-1.0.t
 
 ```bash
 # Navigate to the directory with PKGBUILD
-cd /home/benjamim/Documentos/serialcom
+cd /home/benjamim/Documentos/omnicom
 
 # Build the package
 makepkg -si
 
 # Test the installed package
-serialcom
+omnicom
 
 # Clean up if needed
 makepkg --clean
@@ -103,17 +103,17 @@ makepkg --printsrcinfo > .SRCINFO
 ## Step 6: Clone the AUR Repository
 
 ```bash
-# Clone the AUR repo (replace 'serialcom' with your package name if different)
-git clone ssh://aur@aur.archlinux.org/serialcom.git aur-serialcom
-cd aur-serialcom
+# Clone the AUR repo (replace 'omnicom' with your package name if different)
+git clone ssh://aur@aur.archlinux.org/omnicom.git aur-omnicom
+cd aur-omnicom
 ```
 
 ## Step 7: Add Your Files
 
 ```bash
 # Copy PKGBUILD and .SRCINFO
-cp ../serialcom/PKGBUILD .
-cp ../serialcom/.SRCINFO .
+cp ../omnicom/PKGBUILD .
+cp ../omnicom/.SRCINFO .
 
 # Add files to git
 git add PKGBUILD .SRCINFO
@@ -123,7 +123,7 @@ git add PKGBUILD .SRCINFO
 
 ```bash
 # Commit
-git commit -m "Initial release of SerialCom v1.0"
+git commit -m "Initial release of Omnicom v1.0"
 
 # Push to AUR
 git push
@@ -131,7 +131,7 @@ git push
 
 ## Step 9: Verify on AUR
 
-Visit: https://aur.archlinux.org/packages/serialcom
+Visit: https://aur.archlinux.org/packages/omnicom
 
 Your package should now be available!
 

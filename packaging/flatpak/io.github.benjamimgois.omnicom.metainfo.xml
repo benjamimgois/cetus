@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.benjamimgois.serialcom</id>
+  <id>io.github.benjamimgois.omnicom</id>
 
-  <name>SerialCom</name>
+  <name>Omnicom</name>
   <summary>Modern graphical interface for serial communication via picocom</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
@@ -14,7 +14,7 @@
 
   <description>
     <p>
-      SerialCom is a modern and elegant graphical interface for serial communication.
+      Omnicom is a modern and elegant graphical interface for serial communication.
       It provides an intuitive way to configure and establish serial connections using picocom as the backend.
     </p>
     <p>Features:</p>
@@ -28,7 +28,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.benjamimgois.serialcom.desktop</launchable>
+  <launchable type="desktop-id">io.github.benjamimgois.omnicom.desktop</launchable>
 
   <branding>
     <color type="primary" scheme_preference="light">#3584e4</color>
@@ -37,14 +37,14 @@
 
   <screenshots>
     <screenshot type="default">
-      <caption>SerialCom main window</caption>
-      <image>https://raw.githubusercontent.com/benjamimgois/serialcom/main/assets/screenshots/screenshot.jpeg</image>
+      <caption>Omnicom main window</caption>
+      <image>https://raw.githubusercontent.com/benjamimgois/omnicom/main/assets/screenshots/screenshot.jpeg</image>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://github.com/benjamimgois/serialcom</url>
-  <url type="bugtracker">https://github.com/benjamimgois/serialcom/issues</url>
-  <url type="vcs-browser">https://github.com/benjamimgois/serialcom</url>
+  <url type="homepage">https://github.com/benjamimgois/omnicom</url>
+  <url type="bugtracker">https://github.com/benjamimgois/omnicom/issues</url>
+  <url type="vcs-browser">https://github.com/benjamimgois/omnicom</url>
 
   <content_rating type="oars-1.1" />
 

@@ -9,7 +9,7 @@ repo/
 *.flatpak
 
 # Debian build
-debian/serialcom/
+debian/omnicom/
 *.deb
 *.buildinfo
 *.changes

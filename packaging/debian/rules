@@ -5,29 +5,29 @@
 
 override_dh_auto_install:
 	# Install main script
-	install -Dm755 serialcom debian/serialcom/usr/bin/serialcom
+	install -Dm755 omnicom debian/omnicom/usr/bin/omnicom
 
 	# Install icon in hicolor theme (FreeDesktop.org standard)
-	install -Dm644 assets/serialcom.png debian/serialcom/usr/share/icons/hicolor/512x512/apps/serialcom.png
+	install -Dm644 assets/omnicom.png debian/omnicom/usr/share/icons/hicolor/512x512/apps/omnicom.png
 
 	# Install SVG arrow icon
-	install -Dm644 assets/arrow_down.svg debian/serialcom/usr/share/serialcom/arrow_down.svg
+	install -Dm644 assets/arrow_down.svg debian/omnicom/usr/share/omnicom/arrow_down.svg
 
 	# Install vendor icons
-	install -Dm644 assets/vendors/generic.svg debian/serialcom/usr/share/serialcom/vendors/generic.svg
-	install -Dm644 assets/vendors/cisco.svg debian/serialcom/usr/share/serialcom/vendors/cisco.svg
-	install -Dm644 assets/vendors/huawei.svg debian/serialcom/usr/share/serialcom/vendors/huawei.svg
-	install -Dm644 assets/vendors/juniper.svg debian/serialcom/usr/share/serialcom/vendors/juniper.svg
-	install -Dm644 assets/vendors/fortinet.svg debian/serialcom/usr/share/serialcom/vendors/fortinet.svg
-	install -Dm644 assets/vendors/dlink.svg debian/serialcom/usr/share/serialcom/vendors/dlink.svg
-	install -Dm644 assets/vendors/h3c.svg debian/serialcom/usr/share/serialcom/vendors/h3c.svg
-	install -Dm644 assets/vendors/brocade.svg debian/serialcom/usr/share/serialcom/vendors/brocade.svg
-	install -Dm644 assets/vendors/datacom.svg debian/serialcom/usr/share/serialcom/vendors/datacom.svg
+	install -Dm644 assets/vendors/generic.svg debian/omnicom/usr/share/omnicom/vendors/generic.svg
+	install -Dm644 assets/vendors/cisco.svg debian/omnicom/usr/share/omnicom/vendors/cisco.svg
+	install -Dm644 assets/vendors/huawei.svg debian/omnicom/usr/share/omnicom/vendors/huawei.svg
+	install -Dm644 assets/vendors/juniper.svg debian/omnicom/usr/share/omnicom/vendors/juniper.svg
+	install -Dm644 assets/vendors/fortinet.svg debian/omnicom/usr/share/omnicom/vendors/fortinet.svg
+	install -Dm644 assets/vendors/dlink.svg debian/omnicom/usr/share/omnicom/vendors/dlink.svg
+	install -Dm644 assets/vendors/h3c.svg debian/omnicom/usr/share/omnicom/vendors/h3c.svg
+	install -Dm644 assets/vendors/brocade.svg debian/omnicom/usr/share/omnicom/vendors/brocade.svg
+	install -Dm644 assets/vendors/datacom.svg debian/omnicom/usr/share/omnicom/vendors/datacom.svg
 
 	# Install desktop file
-	install -Dm644 serialcom.desktop debian/serialcom/usr/share/applications/serialcom.desktop
+	install -Dm644 omnicom.desktop debian/omnicom/usr/share/applications/omnicom.desktop
 
 	# Install documentation
-	install -Dm644 README.md debian/serialcom/usr/share/doc/serialcom/README.md
-	install -Dm644 docs/INTERFACE.md debian/serialcom/usr/share/doc/serialcom/INTERFACE.md
-	install -Dm644 LICENSE debian/serialcom/usr/share/doc/serialcom/copyright
+	install -Dm644 README.md debian/omnicom/usr/share/doc/omnicom/README.md
+	install -Dm644 docs/INTERFACE.md debian/omnicom/usr/share/doc/omnicom/INTERFACE.md
+	install -Dm644 LICENSE debian/omnicom/usr/share/doc/omnicom/copyright
