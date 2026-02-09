@@ -250,7 +250,7 @@ from PyQt6.QtWidgets import (
     QMenu
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QColor, QPixmap, QIcon, QTextOption
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption
 
 try:
     from PyQt6.QtSerialPort import QSerialPortInfo
@@ -615,7 +615,14 @@ class TerminalWidget(QTextEdit):
 
         # Handle Ctrl combinations
         if modifiers & Qt.KeyboardModifier.ControlModifier:
-            if key == Qt.Key.Key_A:
+            if key == Qt.Key.Key_F:
+                # Focus search input in parent dialog
+                dialog = self.parent()
+                if hasattr(dialog, 'search_input'):
+                    dialog.search_input.setFocus()
+                    dialog.search_input.selectAll()
+                return
+            elif key == Qt.Key.Key_A:
                 sequence = '\x01'
             elif key == Qt.Key.Key_C:
                 sequence = '\x03'
@@ -1361,6 +1368,7 @@ class TerminalDialog(QDialog):
 
         # Font size buttons
         self.font_decrease_btn = QPushButton("A-")
+        self.font_decrease_btn.setAutoDefault(False)
         self.font_decrease_btn.setMinimumHeight(35)
         self.font_decrease_btn.setMaximumWidth(50)
         self.font_decrease_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
@@ -1382,6 +1390,7 @@ class TerminalDialog(QDialog):
         """)
 
         self.font_increase_btn = QPushButton("A+")
+        self.font_increase_btn.setAutoDefault(False)
         self.font_increase_btn.setMinimumHeight(35)
         self.font_increase_btn.setMaximumWidth(50)
         self.font_increase_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
@@ -1403,6 +1412,7 @@ class TerminalDialog(QDialog):
         """)
 
         self.disconnect_btn = QPushButton("DISCONNECT")
+        self.disconnect_btn.setAutoDefault(False)
         self.disconnect_btn.setMinimumHeight(35)
         self.disconnect_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
         self.disconnect_btn.clicked.connect(self.disconnect)
@@ -1423,19 +1433,11 @@ class TerminalDialog(QDialog):
         """)
 
         # Vendor selector
-        vendor_label = QLabel("Equipment:")
-        vendor_label.setStyleSheet("""
-            QLabel {
-                color: #b0b0b0;
-                font-size: 10pt;
-                padding: 0 8px;
-            }
-        """)
-
         # Get arrow icon path (same method as main window)
         arrow_path = self.get_arrow_icon_path()
 
         self.vendor_combo = QComboBox()
+        self.vendor_combo.setPlaceholderText("Manufacturer syntax highlight")
         self.vendor_combo.addItems(['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet'])
 
         # Load saved vendor selection
@@ -1511,15 +1513,190 @@ class TerminalDialog(QDialog):
         button_layout.addSpacing(10)  # Add space between font buttons
         button_layout.addWidget(self.font_increase_btn)
         button_layout.addSpacing(20)  # Add space before vendor selector
-        button_layout.addWidget(vendor_label)
         button_layout.addWidget(self.vendor_combo)
         button_layout.addSpacing(8)
         button_layout.addWidget(self.vendor_icon)
+        button_layout.addStretch()
+
+        # Search widgets (centered)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search...")
+        self.search_input.setMinimumHeight(35)
+        self.search_input.setMaximumWidth(200)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 1px solid #5a5a5a;
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 10pt;
+            }
+            QLineEdit:focus {
+                border: 1px solid #707070;
+            }
+        """)
+        self.search_input.textChanged.connect(self._on_search_changed)
+        self.search_input.returnPressed.connect(self._search_next)
+
+        search_nav_style = """
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 1px solid #5a5a5a;
+                border-radius: 4px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #454545;
+            }
+        """
+
+        self.search_prev_btn = QPushButton("▲")
+        self.search_prev_btn.setAutoDefault(False)
+        self.search_prev_btn.setFixedSize(30, 35)
+        self.search_prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_prev_btn.setStyleSheet(search_nav_style)
+        self.search_prev_btn.clicked.connect(self._search_prev)
+
+        self.search_next_btn = QPushButton("▼")
+        self.search_next_btn.setAutoDefault(False)
+        self.search_next_btn.setFixedSize(30, 35)
+        self.search_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_next_btn.setStyleSheet(search_nav_style)
+        self.search_next_btn.clicked.connect(self._search_next)
+
+        self.search_status = QLabel()
+        self.search_status.setStyleSheet("color: #b0b0b0; font-size: 9pt;")
+
+        button_layout.addWidget(self.search_input)
+        button_layout.addWidget(self.search_prev_btn)
+        button_layout.addWidget(self.search_next_btn)
+        button_layout.addWidget(self.search_status)
+
         button_layout.addStretch()
         button_layout.addWidget(self.disconnect_btn)
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def keyPressEvent(self, event):
+        """Handle Ctrl+F to focus search input"""
+        if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+        elif event.key() == Qt.Key.Key_Escape and self.search_input.hasFocus():
+            self.search_input.clear()
+            self.search_status.clear()
+            self._search_matches = []
+            self.terminal.setExtraSelections([])
+            self.terminal.setFocus()
+        else:
+            super().keyPressEvent(event)
+
+    def _on_search_changed(self, text):
+        """Live search as the user types"""
+        self._search_matches = []
+        self._search_match_idx = -1
+        if not text:
+            self.search_status.clear()
+            self.terminal.setExtraSelections([])
+            return
+        lines = self._get_terminal_lines()
+        matches = []
+        lower_query = text.lower()
+        for i, line in enumerate(lines):
+            idx = 0
+            lower_line = line.lower()
+            while True:
+                pos = lower_line.find(lower_query, idx)
+                if pos == -1:
+                    break
+                matches.append((i, pos))
+                idx = pos + 1
+        self._search_matches = matches
+        if not matches:
+            self.search_status.setText("No results")
+            return
+        self._search_match_idx = 0
+        self._show_search_result()
+
+    def _get_terminal_lines(self):
+        """Get all terminal lines (scrollback + current screen) as plain text list"""
+        import re
+        tag_re = re.compile(r'<[^>]+>')
+        lines = []
+        for html_line in self.terminal._scrollback_lines:
+            plain = tag_re.sub('', html_line)
+            plain = plain.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&nbsp;', ' ')
+            lines.append(plain)
+        for y in range(self.terminal.screen.lines):
+            row = self.terminal.screen.buffer[y]
+            line = ''.join(row[x].data for x in range(self.terminal.screen.columns)).rstrip()
+            lines.append(line)
+        return lines
+
+    def _search_next(self):
+        """Navigate to next search match"""
+        if not getattr(self, '_search_matches', None):
+            return
+        self._search_match_idx = (self._search_match_idx + 1) % len(self._search_matches)
+        self._show_search_result()
+
+    def _search_prev(self):
+        """Navigate to previous search match"""
+        if not getattr(self, '_search_matches', None):
+            return
+        self._search_match_idx = (self._search_match_idx - 1) % len(self._search_matches)
+        self._show_search_result()
+
+    def _show_search_result(self):
+        """Scroll to and highlight all search matches using ExtraSelections"""
+        matches = self._search_matches
+        idx = self._search_match_idx
+        self.search_status.setText(f"{idx + 1}/{len(matches)}")
+
+        query = self.search_input.text()
+        query_len = len(query)
+
+        # Build ExtraSelections for all matches
+        selections = []
+        current_sel = None
+        for i, (line_num, col) in enumerate(matches):
+            cursor = self.terminal.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            for _ in range(line_num):
+                cursor.movePosition(QTextCursor.MoveOperation.Down)
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfLine)
+            for _ in range(col):
+                cursor.movePosition(QTextCursor.MoveOperation.Right)
+            cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, query_len)
+
+            sel = QTextEdit.ExtraSelection()
+            fmt = QTextCharFormat()
+            if i == idx:
+                # Current match: bright orange
+                fmt.setBackground(QColor("#ff9800"))
+                fmt.setForeground(QColor("#000000"))
+                current_sel = cursor
+            else:
+                # Other matches: yellow
+                fmt.setBackground(QColor("#ffeb3b"))
+                fmt.setForeground(QColor("#000000"))
+            sel.format = fmt
+            sel.cursor = cursor
+            selections.append(sel)
+
+        self.terminal.setExtraSelections(selections)
+
+        # Scroll to current match
+        if current_sel:
+            self.terminal.setTextCursor(current_sel)
+            self.terminal.ensureCursorVisible()
+            # Clear cursor selection so blue highlight doesn't show
+            clear = self.terminal.textCursor()
+            clear.clearSelection()
+            self.terminal.setTextCursor(clear)
 
     def update_vendor_icon(self, vendor):
         """Update the vendor icon QLabel with the appropriate SVG"""
