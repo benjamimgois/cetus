@@ -1291,6 +1291,10 @@ class TerminalDialog(QDialog):
             appimage_path = os.path.join(appdir, f'usr/share/omnicom/{subdir}/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
+        # Check for system installation (AUR, Debian, etc.)
+        system_path = f'/usr/share/omnicom/{subdir}/{icon_name}'
+        if os.path.exists(system_path):
+            return system_path
         # Local installation or development
         # Try assets/subdir directory
         assets_path = os.path.join(os.path.dirname(__file__), f'assets/{subdir}/{icon_name}')
@@ -3146,6 +3150,10 @@ class SerialTerminalGUI(QMainWindow):
             appimage_path = os.path.join(appdir, f'usr/share/omnicom/icons/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
+        # Check for system installation (AUR, Debian, etc.)
+        system_path = f'/usr/share/omnicom/icons/{icon_name}'
+        if os.path.exists(system_path):
+            return system_path
         # Local installation or development - assets/icons
         assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
         if os.path.exists(assets_path):

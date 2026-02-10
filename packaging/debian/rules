@@ -10,8 +10,11 @@ override_dh_auto_install:
 	# Install icon in hicolor theme (FreeDesktop.org standard)
 	install -Dm644 assets/omnicom.png debian/omnicom/usr/share/icons/hicolor/512x512/apps/omnicom.png
 
-	# Install SVG arrow icon
-	install -Dm644 assets/icons/arrow_down.svg debian/omnicom/usr/share/omnicom/arrow_down.svg
+	# Install UI icons (sidebar and misc)
+	install -Dm644 assets/icons/arrow_down.svg debian/omnicom/usr/share/omnicom/icons/arrow_down.svg
+	install -Dm644 assets/icons/TFTP.svg debian/omnicom/usr/share/omnicom/icons/TFTP.svg
+	install -Dm644 assets/icons/serial-port-white.svg debian/omnicom/usr/share/omnicom/icons/serial-port-white.svg
+	install -Dm644 assets/icons/ssh_icon.svg debian/omnicom/usr/share/omnicom/icons/ssh_icon.svg
 
 	# Install vendor icons
 	install -Dm644 assets/vendors/generic.svg debian/omnicom/usr/share/omnicom/vendors/generic.svg

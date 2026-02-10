@@ -88,7 +88,10 @@ modules:
       - install -Dm644 assets/icons/omnicom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
-      - install -Dm644 assets/icons/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
+      - install -Dm644 assets/icons/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/arrow_down.svg
+      - install -Dm644 assets/icons/TFTP.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/TFTP.svg
+      - install -Dm644 assets/icons/serial-port-white.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/serial-port-white.svg
+      - install -Dm644 assets/icons/ssh_icon.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ssh_icon.svg
       - install -Dm644 assets/vendors/generic.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/generic.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
