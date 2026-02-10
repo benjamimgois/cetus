@@ -6,10 +6,7 @@
 
 Modern and elegant graphical interface for serial communication via picocom.
 
-<img width="1191" height="1617" alt="image" src="https://github.com/user-attachments/assets/d4fd652c-c00a-4139-b215-73e9c727e9bc" />
-
-<img width="2389" height="1454" alt="image" src="https://github.com/user-attachments/assets/ca740a76-7074-49a4-98e6-9171bb19e2c0" />
-
+<img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
 ## Features
 
