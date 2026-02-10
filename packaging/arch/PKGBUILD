@@ -1,6 +1,6 @@
 # Maintainer: Benjamim Gois <benjamimgois@gmail.com>
 pkgname=omnicom
-pkgver=1.1
+pkgver=1.2
 pkgrel=1
 pkgdesc="Modern graphical interface for serial communication with SSH and Telnet support"
 arch=('any')
@@ -12,7 +12,7 @@ optdepends=(
 )
 makedepends=('imagemagick')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/omnicom/archive/refs/tags/${pkgver}.tar.gz")
-sha256sums=('b48bc914299a7d14da0629063b3f922588a88330f817430f63582bd247231706')
+sha256sums=('e12e339899651ec3b514011fd4f459013d010b33ac6e5302d2bb5d9a6a2739b9')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
@@ -30,7 +30,7 @@ package() {
     done
 
     # Install SVG arrow icon
-    install -Dm644 assets/arrow_down.svg "${pkgdir}/usr/share/omnicom/arrow_down.svg"
+    install -Dm644 assets/icons/arrow_down.svg "${pkgdir}/usr/share/omnicom/arrow_down.svg"
 
     # Install vendor icons
     for vendor in generic cisco huawei juniper fortinet dlink h3c brocade datacom; do

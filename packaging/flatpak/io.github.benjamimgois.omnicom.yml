@@ -36,8 +36,23 @@ modules:
         --prefix=${FLATPAK_DEST} "paramiko" --no-build-isolation
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/1b/0f/c00296e36ff7b0b9c30ae9a9a0e1ca33a3a1c71da05b4c464c1b7e9c6e1f/paramiko-3.5.0-py3-none-any.whl
-        sha256: 786699214858baf1cc3102f2852146366091cf1add6d72e05fe60228dae8bb52
+        url: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
+        sha256: b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+      - type: file
+        url: https://files.pythonhosted.org/packages/98/df/0a1755e750013a2081e863e7cd37e0cdd02664372c754e5560099eb7aa44/cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+        sha256: c8d3b5532fc71b7a77c09192b4a5a200ea992702734a2e9279a37f2478236f26
+      - type: file
+        url: https://files.pythonhosted.org/packages/cb/c6/8fedca4c2ada1b6e889c52d2943b2f968d3427e5d65f595620ec4c06fa2f/bcrypt-4.3.0-cp39-abi3-manylinux_2_28_x86_64.whl
+        sha256: f1e3ffa1365e8702dc48c8b360fef8d7afeca482809c5e45e653af82ccd088c1
+      - type: file
+        url: https://files.pythonhosted.org/packages/2b/08/f83e2e0814248b844265802d081f2fac2f1cbe6cd258e72ba14ff006823a/cryptography-46.0.4-cp311-abi3-manylinux_2_28_x86_64.whl
+        sha256: 0a9ad24359fee86f131836a9ac3bffc9329e956624a2d379b613f8f8abaf5255
+      - type: file
+        url: https://files.pythonhosted.org/packages/3e/d0/f301f83ac8dbe53442c5a43f6a39016f94f754d7a9815a875b65e218a307/pynacl-1.6.2-cp38-abi3-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 8a66d6fb6ae7661c58995f9c6435bda2b1e68b54b598a6a10247bfcdadac996c
+      - type: file
+        url: https://files.pythonhosted.org/packages/1f/66/14b2c030fcce69cba482d205c2d1462ca5c77303a263260dcb1192801c85/paramiko-3.5.0-py3-none-any.whl
+        sha256: 1fedf06b085359051cd7d0d270cebe19e755a8a921cc2ddbfa647fb0cd7d68f9
 
   - name: python3-telnetlib
     buildsystem: simple
@@ -46,8 +61,8 @@ modules:
         --prefix=${FLATPAK_DEST} "standard-telnetlib" --no-build-isolation
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/d1/5e/3c6f3e3e3e3e3e3e3e3e3e3e3e3e/standard_telnetlib-3.13.0-py3-none-any.whl
-        sha256: 243333696bf1659a558eb999c23add82c41ffc2f2d04a56fae13b61b536fb173
+        url: https://files.pythonhosted.org/packages/33/85/a1808451ac0b36c61dffe8aea21e45c64ba7da28f6cb0d269171298c6281/standard_telnetlib-3.13.0-py3-none-any.whl
+        sha256: b268060a3220c80c7887f2ad9df91cd81e865f0c5052332b81d80ffda8677691
 
   - name: picocom
     buildsystem: simple
@@ -73,7 +88,7 @@ modules:
       - install -Dm644 assets/icons/omnicom-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
-      - install -Dm644 assets/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
+      - install -Dm644 assets/icons/arrow_down.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/arrow_down.svg
       - install -Dm644 assets/vendors/generic.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/generic.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg

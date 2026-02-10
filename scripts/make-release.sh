@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.0"
+VERSION="1.2"
 PKGNAME="omnicom"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 
@@ -24,12 +24,12 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 # Copy necessary files
 echo "Copying files..."
 cp omnicom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp omnicom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp omnicom.png "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp -r assets "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp omnicom.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp INTERFACE.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp -r docs "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp LICENSE "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp -r packaging "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 
 # Create tarball
 echo "Creating tarball..."

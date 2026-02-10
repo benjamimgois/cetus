@@ -1,3 +1,12 @@
+omnicom (1.2-1) jammy; urgency=medium
+
+  * Rename project from SerialCom to Omnicom
+  * Add search functionality to terminal dialog with keyboard shortcuts
+  * Add context menu with copy, paste, and export options to terminal widget
+  * Add profile name banner and copy button for TFTP file names
+
+ -- Benjamim Gois <benjamimgois@example.com>  Sun, 09 Feb 2026 19:00:00 -0300
+
 omnicom (1.1-1) jammy; urgency=medium
 
   * Add manufacturer SVG icons (Cisco, Huawei, Juniper, Fortinet, D-Link,

@@ -11,7 +11,7 @@ override_dh_auto_install:
 	install -Dm644 assets/omnicom.png debian/omnicom/usr/share/icons/hicolor/512x512/apps/omnicom.png
 
 	# Install SVG arrow icon
-	install -Dm644 assets/arrow_down.svg debian/omnicom/usr/share/omnicom/arrow_down.svg
+	install -Dm644 assets/icons/arrow_down.svg debian/omnicom/usr/share/omnicom/arrow_down.svg
 
 	# Install vendor icons
 	install -Dm644 assets/vendors/generic.svg debian/omnicom/usr/share/omnicom/vendors/generic.svg
