@@ -1,4 +1,4 @@
-# Omnicom 1.1
+# Omnicom
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
 [![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/omnicom/releases)
@@ -6,7 +6,9 @@
 
 Modern and elegant graphical interface for serial communication via picocom.
 
-<img width="549" height="626" alt="image" src="https://github.com/user-attachments/assets/d39b5111-4605-486e-8078-24ca070819bf" />
+<img width="1191" height="1617" alt="image" src="https://github.com/user-attachments/assets/d4fd652c-c00a-4139-b215-73e9c727e9bc" />
+
+<img width="2389" height="1454" alt="image" src="https://github.com/user-attachments/assets/ca740a76-7074-49a4-98e6-9171bb19e2c0" />
 
 
 ## Features
