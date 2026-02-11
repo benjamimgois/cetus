@@ -1,7 +1,7 @@
 # Omnicom
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
-[![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/omnicom/releases)
+[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Easy and modern interface to manage network devices.
@@ -22,7 +22,7 @@ Easy and modern interface to manage network devices.
   - Parity (None, Even, Odd)
   - Stop bits (1-2)
   - Flow control (None, Hardware, Software)
-- Automatic detection of available ports
+- Quick connect profiles with per-device vendor selection
 - Root password request via sudo
 - Real-time bidirectional communication
 - Support for picocom control sequences (Ctrl+A, Ctrl+X, etc.)
@@ -30,20 +30,24 @@ Easy and modern interface to manage network devices.
 ### Remote Connections
 - **SSH Support** - Secure remote connections with password or key authentication
 - **Telnet Support** - Connect to network devices via Telnet protocol
-- Connection profile management for quick access
+- Connection profile management with per-device vendor selection
 - Automatic protocol detection (SSH port 22, Telnet port 23)
 
 ### Terminal Features
 - VT100/ANSI terminal emulation with pyte
-- Syntax highlighting for network equipment commands
+- **Syntax highlighting** for network equipment commands
 - Support for multiple vendors: Cisco, Huawei, H3C, Juniper, D-Link, Brocade, Datacom, Fortinet
+- **Vendor selection per profile** - Automatically applies syntax highlighting on connect
+- **Search with scroll-to-match** - Find text in terminal output (Ctrl+F)
+- **Context menu** - Right-click for copy, paste, and export options
 - Adjustable font size
 - Full keyboard support including special keys and control sequences
 
 ### TFTP Server
 - Built-in TFTP server for firmware transfers
-- Network interface selection
+- Network interface auto-detection
 - Configurable root directory
+- Profile name banner with copy button for TFTP file names
 
 ## Requirements
 
@@ -71,7 +75,7 @@ Easy and modern interface to manage network devices.
 
 2. Install the package:
 ```bash
-sudo dpkg -i omnicom_1.1-1_all.deb
+sudo dpkg -i omnicom_1.2-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -95,7 +99,7 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../omnicom_1.1-1_all.deb
+sudo dpkg -i ../omnicom_1.2-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -113,7 +117,25 @@ paru -S omnicom
 
 2. Install the package:
 ```bash
-sudo pacman -U omnicom-1.1-1-any.pkg.tar.zst
+sudo pacman -U omnicom-1.2-1-any.pkg.tar.zst
+```
+
+### Flatpak
+
+1. Install from Flathub (when available):
+```bash
+flatpak install flathub io.github.benjamimgois.omnicom
+```
+
+2. Or build from source:
+```bash
+cd packaging/flatpak
+flatpak-builder --install --user build io.github.benjamimgois.omnicom.yml
+```
+
+3. Run:
+```bash
+flatpak run io.github.benjamimgois.omnicom
 ```
 
 ### Other Linux Distributions
@@ -227,6 +249,7 @@ After this, logout and login again to apply changes.
 
 - **GitHub Repository**: https://github.com/benjamimgois/omnicom
 - **AUR Package**: https://aur.archlinux.org/packages/omnicom
+- **Flathub**: https://flathub.org/apps/io.github.benjamimgois.omnicom
 - **Releases**: https://github.com/benjamimgois/omnicom/releases
 - **Issues**: https://github.com/benjamimgois/omnicom/issues
 
