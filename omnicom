@@ -468,7 +468,7 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_serial_profile(self, name, port, baudrate, databits, parity, stopbits, flow):
+    def save_serial_profile(self, name, port, baudrate, databits, parity, stopbits, flow, vendor='Default'):
         """Save a serial connection profile"""
         profiles = self.get_serial_profiles()
         for i, p in enumerate(profiles):
@@ -476,14 +476,16 @@ class ConfigManager:
                 profiles[i] = {
                     'name': name, 'port': port, 'baudrate': baudrate,
                     'databits': databits, 'parity': parity,
-                    'stopbits': stopbits, 'flow': flow
+                    'stopbits': stopbits, 'flow': flow,
+                    'vendor': vendor
                 }
                 break
         else:
             profiles.append({
                 'name': name, 'port': port, 'baudrate': baudrate,
                 'databits': databits, 'parity': parity,
-                'stopbits': stopbits, 'flow': flow
+                'stopbits': stopbits, 'flow': flow,
+                'vendor': vendor
             })
         self.set('serial_profiles', json.dumps(profiles))
 
@@ -2536,14 +2538,17 @@ class SerialTerminalGUI(QMainWindow):
         profiles_layout.setSpacing(6)
 
         self.serial_profiles_table = QTableWidget()
-        self.serial_profiles_table.setColumnCount(4)
-        self.serial_profiles_table.setHorizontalHeaderLabels(["Name", "Port", "Baud Rate", "Config"])
+        self.serial_profiles_table.setColumnCount(5)
+        self.serial_profiles_table.setHorizontalHeaderLabels(["Name", "Port", "Baud Rate", "Config", "Vendor"])
         self.serial_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.serial_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.serial_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_table.setColumnWidth(1, 120)
         self.serial_profiles_table.setColumnWidth(2, 80)
-        self.serial_profiles_table.setColumnWidth(3, 70)
+        self.serial_profiles_table.setColumnWidth(3, 60)
+        self.serial_profiles_table.setColumnWidth(4, 50)
         self.serial_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.serial_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.serial_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3080,15 +3085,16 @@ class SerialTerminalGUI(QMainWindow):
         # Profiles table (at the top)
         self.ssh_profiles_table = QTableWidget()
         self.ssh_profiles_table.setColumnCount(5)
-        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol", "Type"])
+        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol", "Vendor"])
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_table.setColumnWidth(1, 130)
         self.ssh_profiles_table.setColumnWidth(2, 50)
         self.ssh_profiles_table.setColumnWidth(3, 70)
-        self.ssh_profiles_table.setColumnWidth(4, 110)
+        self.ssh_profiles_table.setColumnWidth(4, 50)
         self.ssh_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.ssh_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.ssh_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3261,6 +3267,31 @@ class SerialTerminalGUI(QMainWindow):
     def get_tab_icon_path(self, icon_name):
         """Get the path to tab icons"""
         return self.get_icon_path(icon_name)
+
+    def get_vendor_icon_path(self, vendor):
+        """Get the path to vendor icon SVG"""
+        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
+        # Check multiple install paths for vendors subdir
+        for base in [
+            '/app/share/io.github.benjamimgois.omnicom/vendors',
+            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/omnicom/vendors'),
+            '/usr/share/omnicom/vendors',
+            os.path.join(os.path.dirname(__file__), 'assets/vendors'),
+        ]:
+            path = os.path.join(base, vendor_file)
+            if os.path.exists(path):
+                return path
+        # Fallback to generic
+        for base in [
+            '/app/share/io.github.benjamimgois.omnicom/vendors',
+            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/omnicom/vendors'),
+            '/usr/share/omnicom/vendors',
+            os.path.join(os.path.dirname(__file__), 'assets/vendors'),
+        ]:
+            path = os.path.join(base, 'generic.svg')
+            if os.path.exists(path):
+                return path
+        return None
 
     def apply_styles(self):
         """Apply modern light theme to the application"""
@@ -3781,23 +3812,110 @@ class SerialTerminalGUI(QMainWindow):
         if key_file:
             self.ssh_key_path.setText(key_file)
 
-    def _get_vendor_list(self):
-        """Return the list of available syntax highlighting vendors"""
-        return ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet']
+    VENDOR_LIST = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet']
 
-    def _on_vendor_combo_changed(self, row, vendor):
-        """Handle vendor combobox change in SSH profiles table"""
-        item = self.ssh_profiles_table.item(row, 0)
-        if item:
-            profile = item.data(Qt.ItemDataRole.UserRole)
-            if profile:
-                profile['vendor'] = vendor
-                self.config.save_ssh_profile(
-                    profile['name'], profile['host'], profile.get('port', '22'),
-                    profile.get('username', ''), profile.get('auth_method', 'password'),
-                    profile.get('key_path', ''), profile.get('protocol', 'SSH'),
-                    vendor
-                )
+    def _create_vendor_icon_widget(self, vendor, row, table='ssh'):
+        """Create a clickable vendor icon widget for a profiles table"""
+        btn = QPushButton()
+        btn.setFlat(True)
+        btn.setFixedSize(32, 32)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(vendor)
+        icon_path = self.get_vendor_icon_path(vendor)
+        pixmap = load_svg_pixmap(icon_path, 24)
+        if pixmap and not pixmap.isNull():
+            btn.setIcon(QIcon(pixmap))
+            btn.setIconSize(btn.size() * 0.75)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #37474f;
+                border: none;
+                border-radius: 16px;
+            }
+            QPushButton:hover {
+                background-color: #546e7a;
+            }
+        """)
+        btn.setProperty('vendor', vendor)
+        btn.setProperty('row', row)
+        btn.setProperty('table', table)
+        btn.clicked.connect(lambda: self._show_vendor_menu(btn))
+        # Center the button in the cell
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(btn)
+        return container
+
+    def _show_vendor_menu(self, btn):
+        """Show popup menu to select vendor"""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #f5f5f5;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #2196F3;
+                color: white;
+            }
+        """)
+        current_vendor = btn.property('vendor')
+        for vendor in self.VENDOR_LIST:
+            icon_path = self.get_vendor_icon_path(vendor)
+            pixmap = load_svg_pixmap(icon_path, 20)
+            action = menu.addAction(vendor)
+            if pixmap and not pixmap.isNull():
+                action.setIcon(QIcon(pixmap))
+            if vendor == current_vendor:
+                font = action.font()
+                font.setBold(True)
+                action.setFont(font)
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen:
+            new_vendor = chosen.text()
+            row = btn.property('row')
+            table_type = btn.property('table')
+            # Update icon and tooltip
+            icon_path = self.get_vendor_icon_path(new_vendor)
+            pixmap = load_svg_pixmap(icon_path, 24)
+            if pixmap and not pixmap.isNull():
+                btn.setIcon(QIcon(pixmap))
+            btn.setToolTip(new_vendor)
+            btn.setProperty('vendor', new_vendor)
+            # Save to config
+            if table_type == 'serial':
+                item = self.serial_profiles_table.item(row, 0)
+                if item:
+                    profile = item.data(Qt.ItemDataRole.UserRole)
+                    if profile:
+                        profile['vendor'] = new_vendor
+                        self.config.save_serial_profile(
+                            profile['name'], profile.get('port', ''),
+                            profile.get('baudrate', '9600'), profile.get('databits', '8'),
+                            profile.get('parity', 'None'), profile.get('stopbits', '1'),
+                            profile.get('flow', 'None'), new_vendor
+                        )
+            else:
+                item = self.ssh_profiles_table.item(row, 0)
+                if item:
+                    profile = item.data(Qt.ItemDataRole.UserRole)
+                    if profile:
+                        profile['vendor'] = new_vendor
+                        self.config.save_ssh_profile(
+                            profile['name'], profile['host'], profile.get('port', '22'),
+                            profile.get('username', ''), profile.get('auth_method', 'password'),
+                            profile.get('key_path', ''), profile.get('protocol', 'SSH'),
+                            new_vendor
+                        )
 
     def refresh_ssh_profiles(self):
         """Refresh the SSH profiles table"""
@@ -3815,34 +3933,10 @@ class SerialTerminalGUI(QMainWindow):
             protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
             self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(protocol))
 
-            # Vendor type combobox
-            vendor_combo = QComboBox()
-            vendor_combo.addItems(self._get_vendor_list())
-            saved_vendor = profile.get('vendor', 'Default')
-            idx = vendor_combo.findText(saved_vendor)
-            if idx >= 0:
-                vendor_combo.setCurrentIndex(idx)
-            vendor_combo.setStyleSheet("""
-                QComboBox {
-                    background-color: #e8e8e8;
-                    color: #333333;
-                    border: none;
-                    padding: 2px 4px;
-                    font-size: 9pt;
-                }
-                QComboBox::drop-down { border: none; }
-                QComboBox QAbstractItemView {
-                    background-color: #e8e8e8;
-                    color: #333333;
-                    selection-background-color: #2196F3;
-                    selection-color: white;
-                }
-            """)
-            current_row = row
-            vendor_combo.currentTextChanged.connect(
-                lambda vendor, r=current_row: self._on_vendor_combo_changed(r, vendor)
-            )
-            self.ssh_profiles_table.setCellWidget(row, 4, vendor_combo)
+            # Vendor icon widget
+            vendor = profile.get('vendor', 'Default')
+            vendor_widget = self._create_vendor_icon_widget(vendor, row)
+            self.ssh_profiles_table.setCellWidget(row, 4, vendor_widget)
 
             # Store profile data in first column item
             self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
@@ -3896,9 +3990,13 @@ class SerialTerminalGUI(QMainWindow):
                     # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
                     self.toggle_protocol(self.protocol_ssh_radio)
                 
-                # Read vendor directly from the combobox widget in the table
-                vendor_widget = self.ssh_profiles_table.cellWidget(row, 4)
-                self._pending_vendor = vendor_widget.currentText() if vendor_widget else 'Default'
+                # Read vendor from the icon button in the table
+                cell_widget = self.ssh_profiles_table.cellWidget(row, 4)
+                if cell_widget:
+                    btn = cell_widget.findChild(QPushButton)
+                    self._pending_vendor = btn.property('vendor') if btn else 'Default'
+                else:
+                    self._pending_vendor = 'Default'
 
                 # Force UI update before connecting
                 QApplication.processEvents()
@@ -3965,6 +4063,12 @@ class SerialTerminalGUI(QMainWindow):
             parity = profile.get('parity', 'None')[0]  # N, E, O
             stopbits = profile.get('stopbits', '1')
             self.serial_profiles_table.setItem(row, 3, QTableWidgetItem(f"{databits}{parity}{stopbits}"))
+
+            # Vendor icon widget
+            vendor = profile.get('vendor', 'Default')
+            vendor_widget = self._create_vendor_icon_widget(vendor, row, table='serial')
+            self.serial_profiles_table.setCellWidget(row, 4, vendor_widget)
+
             self.serial_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
 
     def load_serial_profile_from_table(self):
@@ -3985,6 +4089,13 @@ class SerialTerminalGUI(QMainWindow):
                 self.parity.setCurrentText(profile.get('parity', 'None'))
                 self.stopbits.setCurrentText(profile.get('stopbits', '1'))
                 self.flow.setCurrentText(profile.get('flow', 'None'))
+                # Read vendor from the icon button in the table
+                cell_widget = self.serial_profiles_table.cellWidget(row, 4)
+                if cell_widget:
+                    btn = cell_widget.findChild(QPushButton)
+                    self._pending_vendor = btn.property('vendor') if btn else 'Default'
+                else:
+                    self._pending_vendor = 'Default'
                 QApplication.processEvents()
                 QTimer.singleShot(100, self.connect)
 
@@ -4251,6 +4362,15 @@ class SerialTerminalGUI(QMainWindow):
 
         # Start picocom
         if terminal_dialog.start_picocom(cmd):
+            # Apply vendor syntax highlighting from profile
+            if hasattr(self, '_pending_vendor') and self._pending_vendor:
+                vendor = self._pending_vendor
+                terminal_dialog.terminal.set_vendor(vendor)
+                idx = terminal_dialog.vendor_combo.findText(vendor)
+                if idx >= 0:
+                    terminal_dialog.vendor_combo.setCurrentIndex(idx)
+                terminal_dialog.update_vendor_icon(vendor)
+                self._pending_vendor = None
             self.open_terminals.append(terminal_dialog)
             self.status_label.setText("Connected - Terminal opened")
             self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
