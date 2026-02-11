@@ -534,6 +534,10 @@ class TerminalWidget(QTextEdit):
         self._in_scrollback_mode = False  # True when user is browsing history
         self._search_active = False  # True when search is active, freezes display updates
 
+        # State for stripping escape sequences not handled by pyte (DCS, SOS, PM, APC)
+        self._in_unhandled_escape = False
+        self._escape_discard_buffer = ""
+
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.render_screen)
@@ -642,6 +646,11 @@ class TerminalWidget(QTextEdit):
     def _paste_clipboard(self, text):
         """Paste clipboard text into the terminal"""
         if text:
+            # Convert clipboard line endings to terminal CR
+            text = text.replace('\r\n', '\r').replace('\n', '\r')
+            # Wrap in bracketed paste markers if the remote side enabled it
+            if (2004 << 5) in self.screen.mode:
+                text = '\x1b[200~' + text + '\x1b[201~'
             self.send_input.emit(text)
 
     def _export_terminal(self):
@@ -676,6 +685,18 @@ class TerminalWidget(QTextEdit):
         # Build key sequence to send
         sequence = ""
 
+        # Handle Ctrl+Shift combinations
+        if modifiers & Qt.KeyboardModifier.ControlModifier and modifiers & Qt.KeyboardModifier.ShiftModifier:
+            if key == Qt.Key.Key_V:
+                clipboard_text = QApplication.clipboard().text()
+                self._paste_clipboard(clipboard_text)
+                return
+            elif key == Qt.Key.Key_C:
+                text_sel = self.textCursor().selectedText()
+                if text_sel:
+                    QApplication.clipboard().setText(text_sel)
+                return
+
         # Handle Ctrl combinations
         if modifiers & Qt.KeyboardModifier.ControlModifier:
             if key == Qt.Key.Key_F:
@@ -685,22 +706,9 @@ class TerminalWidget(QTextEdit):
                     dialog.search_input.setFocus()
                     dialog.search_input.selectAll()
                 return
-            elif key == Qt.Key.Key_A:
-                sequence = '\x01'
-            elif key == Qt.Key.Key_C:
-                sequence = '\x03'
-            elif key == Qt.Key.Key_D:
-                sequence = '\x04'
-            elif key == Qt.Key.Key_H:
-                sequence = '\x08'
-            elif key == Qt.Key.Key_L:
-                sequence = '\x0c'
-            elif key == Qt.Key.Key_U:
-                sequence = '\x15'
-            elif key == Qt.Key.Key_X:
-                sequence = '\x18'
-            elif key == Qt.Key.Key_Z:
-                sequence = '\x1a'
+            elif Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+                # Generate control character: Ctrl+A=\x01, Ctrl+O=\x0f, etc.
+                sequence = chr(key - Qt.Key.Key_A + 1)
 
         # Handle special keys
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
@@ -746,10 +754,63 @@ class TerminalWidget(QTextEdit):
             print(f"[DEBUG] Key pressed, sending: {repr(sequence)}")
             self.send_input.emit(sequence)
 
+    # Regex to match complete DCS/SOS/PM/APC sequences (not handled by pyte 0.8.x)
+    import re as _re
+    _UNHANDLED_SEQ_RE = _re.compile(
+        r'\x1bP[^\x1b]*(?:\x1b\\|\x07)'    # DCS: ESC P ... ST/BEL
+        r'|\x1bX[^\x1b]*(?:\x1b\\|\x07)'   # SOS: ESC X ... ST/BEL
+        r'|\x1b\^[^\x1b]*(?:\x1b\\|\x07)'  # PM:  ESC ^ ... ST/BEL
+        r'|\x1b_[^\x1b]*(?:\x1b\\|\x07)'   # APC: ESC _ ... ST/BEL
+        r'|\$<\d+[/*]?>'                    # terminfo padding ($<N>)
+    )
+
+    def _strip_unhandled_sequences(self, text):
+        """Strip DCS/SOS/PM/APC sequences that pyte doesn't handle.
+
+        These sequences leak their content as visible text in pyte 0.8.x.
+        This also handles sequences split across multiple data chunks.
+        """
+        import re
+
+        # If we're inside an unfinished sequence from a previous chunk,
+        # discard everything until the terminator (ST or BEL)
+        if self._in_unhandled_escape:
+            match = re.search(r'\x1b\\|\x07', text)
+            if match:
+                self._in_unhandled_escape = False
+                text = text[match.end():]
+            else:
+                return ''  # Still inside sequence, discard all
+
+        # Prepend any buffered ESC from previous chunk boundary
+        if self._escape_discard_buffer:
+            text = self._escape_discard_buffer + text
+            self._escape_discard_buffer = ""
+
+        # Strip complete sequences in one pass
+        text = self._UNHANDLED_SEQ_RE.sub('', text)
+
+        # Check for partial sequence (starter found but no terminator)
+        for starter in ('\x1bP', '\x1bX', '\x1b^', '\x1b_'):
+            idx = text.find(starter)
+            if idx != -1:
+                self._in_unhandled_escape = True
+                text = text[:idx]
+                break
+
+        # Handle lone ESC at the very end (could be start of ESC P/X/^/_)
+        if text.endswith('\x1b'):
+            self._escape_discard_buffer = '\x1b'
+            text = text[:-1]
+
+        return text
+
     def append_output(self, text):
         """Feed text to pyte terminal emulator"""
-        self.stream.feed(text)
-        self._render_needed = True
+        text = self._strip_unhandled_sequences(text)
+        if text:
+            self.stream.feed(text)
+            self._render_needed = True
 
     def set_vendor(self, vendor):
         """Set the vendor for syntax highlighting"""
@@ -873,6 +934,28 @@ class TerminalWidget(QTextEdit):
             'status', 'arp', 'session', 'route', 'neighbor', 'hardware', 'nic'
         ]
 
+        # Aruba (ArubaOS / ArubaOS-CX)
+        aruba = common + [
+            'show', 'configure', 'terminal', 'interface', 'vlan', 'no', 'router', 'bgp',
+            'ospf', 'rip', 'access-list', 'line', 'vty', 'console', 'enable',
+            'hostname', 'banner', 'switchport', 'mode', 'trunk', 'access',
+            'spanning-tree', 'port-channel', 'lacp',
+            'aaa', 'radius-server', 'tacacs-server', 'local-user', 'group',
+            'wlan', 'ssid-profile', 'ap-group', 'ap-name', 'virtual-controller',
+            'cluster', 'controller-ip', 'master-redundancy',
+            'firewall', 'policy', 'user-role', 'captive-portal', 'web-server',
+            'crypto', 'pki', 'certificate', 'isakmp',
+            'aruba-central', 'mobility-controller', 'mobility-master',
+            'stacking', 'member', 'vsf',
+            'write', 'memory', 'reload', 'copy', 'running-config', 'startup-config',
+            'backup', 'restore', 'flash', 'tftp', 'ftp', 'boot',
+            'logging', 'trap', 'buffered', 'facility',
+            'speed', 'duplex', 'mtu', 'lldp', 'cdp',
+            'qos', 'trust', 'dscp', 'queue', 'scheduler-policy',
+            'debug', 'monitor', 'session', 'destination',
+            'vrf', 'default-gateway', 'management', 'oobm'
+        ]
+
         # Linux - bash commands and common utilities
         linux = [
             'ls', 'cd', 'pwd', 'mkdir', 'rmdir', 'rm', 'cp', 'mv', 'touch', 'cat',
@@ -897,6 +980,32 @@ class TerminalWidget(QTextEdit):
             'git', 'svn', 'docker', 'kubectl', 'systemd', 'init', 'uptime', 'free'
         ]
 
+        # MikroTik RouterOS
+        mikrotik = common + [
+            'interface', 'bridge', 'ether', 'wlan', 'vlan', 'bonding', 'vrrp', 'gre',
+            'eoip', 'ipip', 'ovpn-client', 'ovpn-server', 'l2tp-client', 'l2tp-server',
+            'pptp-client', 'pptp-server', 'pppoe-client', 'pppoe-server', 'sstp-client',
+            'wireless', 'security-profiles', 'registration-table', 'access-list',
+            'address', 'firewall', 'filter', 'nat', 'mangle', 'raw', 'connection-tracking',
+            'route', 'routing', 'bgp', 'ospf', 'rip', 'mpls', 'vpls',
+            'queue', 'simple', 'tree', 'type',
+            'system', 'identity', 'clock', 'scheduler', 'script', 'resource', 'routerboard',
+            'user', 'group', 'aaa', 'radius',
+            'tool', 'bandwidth-test', 'flood-ping', 'netwatch', 'torch', 'sniffer',
+            'profile', 'traceroute', 'ping', 'fetch', 'email',
+            'export', 'import', 'backup', 'restore', 'reset-configuration',
+            'print', 'set', 'add', 'remove', 'enable', 'disable', 'move', 'find', 'get',
+            'where', 'detail', 'brief', 'terse', 'count-only', 'follow',
+            'log', 'action', 'topic',
+            'certificate', 'crl', 'scep',
+            'dhcp-client', 'dhcp-server', 'lease', 'network', 'pool',
+            'dns', 'static', 'cache',
+            'neighbor', 'discovery', 'lldp', 'cdp', 'mndp',
+            'snmp', 'community', 'trap',
+            'port', 'serial-console', 'console',
+            'upgrade', 'package', 'reboot'
+        ]
+
         # Default - no highlighting (empty list)
         default = []
 
@@ -910,7 +1019,9 @@ class TerminalWidget(QTextEdit):
             'D-Link': dlink,
             'Brocade': brocade,
             'Datacom': datacom,
-            'Fortinet': fortinet
+            'Fortinet': fortinet,
+            'Aruba': aruba,
+            'MikroTik': mikrotik
         }
 
         return vendor_keywords.get(self.vendor, default)
@@ -1163,7 +1274,11 @@ class TerminalWidget(QTextEdit):
                         line += f'<span style="{style_str}">{group_text}</span>'
             return line
         else:
-            highlighted_line = self.apply_syntax_highlighting(raw_line)
+            if self.vendor == "Default":
+                # No highlighting — show original terminal text as-is
+                highlighted_line = raw_line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            else:
+                highlighted_line = self.apply_syntax_highlighting(raw_line)
             if cursor_x is not None:
                 highlighted_line = self.insert_cursor_at_position(highlighted_line, raw_line, cursor_x)
             return highlighted_line
@@ -1369,15 +1484,14 @@ class TerminalDialog(QDialog):
             appimage_path = os.path.join(appdir, f'usr/share/omnicom/{subdir}/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
+        # Local/development assets (prioritized over system install)
+        assets_path = os.path.join(os.path.dirname(__file__), f'assets/{subdir}/{icon_name}')
+        if os.path.exists(assets_path):
+            return assets_path
         # Check for system installation (AUR, Debian, etc.)
         system_path = f'/usr/share/omnicom/{subdir}/{icon_name}'
         if os.path.exists(system_path):
             return system_path
-        # Local installation or development
-        # Try assets/subdir directory
-        assets_path = os.path.join(os.path.dirname(__file__), f'assets/{subdir}/{icon_name}')
-        if os.path.exists(assets_path):
-            return assets_path
         # Try root directory (legacy)
         root_path = os.path.join(os.path.dirname(__file__), icon_name)
         if os.path.exists(root_path):
@@ -1520,7 +1634,7 @@ class TerminalDialog(QDialog):
 
         self.vendor_combo = QComboBox()
         self.vendor_combo.setPlaceholderText("Manufacturer syntax highlight")
-        self.vendor_combo.addItems(['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet'])
+        self.vendor_combo.addItems(['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik'])
 
         # Load saved vendor selection
         if self.config:
@@ -3275,8 +3389,8 @@ class SerialTerminalGUI(QMainWindow):
         for base in [
             '/app/share/io.github.benjamimgois.omnicom/vendors',
             os.path.join(os.environ.get('APPDIR', ''), 'usr/share/omnicom/vendors'),
-            '/usr/share/omnicom/vendors',
             os.path.join(os.path.dirname(__file__), 'assets/vendors'),
+            '/usr/share/omnicom/vendors',
         ]:
             path = os.path.join(base, vendor_file)
             if os.path.exists(path):
@@ -3285,8 +3399,8 @@ class SerialTerminalGUI(QMainWindow):
         for base in [
             '/app/share/io.github.benjamimgois.omnicom/vendors',
             os.path.join(os.environ.get('APPDIR', ''), 'usr/share/omnicom/vendors'),
-            '/usr/share/omnicom/vendors',
             os.path.join(os.path.dirname(__file__), 'assets/vendors'),
+            '/usr/share/omnicom/vendors',
         ]:
             path = os.path.join(base, 'generic.svg')
             if os.path.exists(path):
@@ -3812,7 +3926,7 @@ class SerialTerminalGUI(QMainWindow):
         if key_file:
             self.ssh_key_path.setText(key_file)
 
-    VENDOR_LIST = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet']
+    VENDOR_LIST = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik']
 
     def _create_vendor_icon_widget(self, vendor, row, table='ssh'):
         """Create a clickable vendor icon widget for a profiles table"""
