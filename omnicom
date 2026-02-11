@@ -249,7 +249,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu
 )
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter
 
 try:
@@ -1571,17 +1571,17 @@ class TerminalDialog(QDialog):
         self.font_decrease_btn.clicked.connect(self.terminal.decrease_font_size)
         self.font_decrease_btn.setStyleSheet("""
             QPushButton {
-                background-color: #89b4fa;
-                color: #ffffff;
+                background-color: #455a64;
+                color: #cfd8dc;
                 border: none;
                 border-radius: 6px;
                 padding: 8px;
             }
             QPushButton:hover {
-                background-color: #74a0e8;
+                background-color: #546e7a;
             }
             QPushButton:pressed {
-                background-color: #5f8cd6;
+                background-color: #37474f;
             }
         """)
 
@@ -1593,17 +1593,17 @@ class TerminalDialog(QDialog):
         self.font_increase_btn.clicked.connect(self.terminal.increase_font_size)
         self.font_increase_btn.setStyleSheet("""
             QPushButton {
-                background-color: #89b4fa;
-                color: #ffffff;
+                background-color: #455a64;
+                color: #cfd8dc;
                 border: none;
                 border-radius: 6px;
                 padding: 8px;
             }
             QPushButton:hover {
-                background-color: #74a0e8;
+                background-color: #546e7a;
             }
             QPushButton:pressed {
-                background-color: #5f8cd6;
+                background-color: #37474f;
             }
         """)
 
@@ -2662,7 +2662,7 @@ class SerialTerminalGUI(QMainWindow):
         self.serial_profiles_table.setColumnWidth(1, 120)
         self.serial_profiles_table.setColumnWidth(2, 80)
         self.serial_profiles_table.setColumnWidth(3, 60)
-        self.serial_profiles_table.setColumnWidth(4, 50)
+        self.serial_profiles_table.setColumnWidth(4, 56)
         self.serial_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.serial_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.serial_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3199,16 +3199,16 @@ class SerialTerminalGUI(QMainWindow):
         # Profiles table (at the top)
         self.ssh_profiles_table = QTableWidget()
         self.ssh_profiles_table.setColumnCount(5)
-        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol", "Vendor"])
+        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "IP", "Port", "Protocol", "Vendor"])
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.setColumnWidth(1, 130)
-        self.ssh_profiles_table.setColumnWidth(2, 50)
-        self.ssh_profiles_table.setColumnWidth(3, 70)
-        self.ssh_profiles_table.setColumnWidth(4, 50)
+        self.ssh_profiles_table.setColumnWidth(1, 105)
+        self.ssh_profiles_table.setColumnWidth(2, 38)
+        self.ssh_profiles_table.setColumnWidth(3, 62)
+        self.ssh_profiles_table.setColumnWidth(4, 56)
         self.ssh_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.ssh_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.ssh_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3932,19 +3932,19 @@ class SerialTerminalGUI(QMainWindow):
         """Create a clickable vendor icon widget for a profiles table"""
         btn = QPushButton()
         btn.setFlat(True)
-        btn.setFixedSize(32, 32)
+        btn.setFixedSize(36, 36)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(vendor)
         icon_path = self.get_vendor_icon_path(vendor)
-        pixmap = load_svg_pixmap(icon_path, 24)
+        pixmap = load_svg_pixmap(icon_path, 32)
         if pixmap and not pixmap.isNull():
             btn.setIcon(QIcon(pixmap))
-            btn.setIconSize(btn.size() * 0.75)
+            btn.setIconSize(QSize(28, 28))
         btn.setStyleSheet("""
             QPushButton {
                 background-color: #37474f;
                 border: none;
-                border-radius: 16px;
+                border-radius: 18px;
             }
             QPushButton:hover {
                 background-color: #546e7a;
@@ -4051,6 +4051,7 @@ class SerialTerminalGUI(QMainWindow):
             vendor = profile.get('vendor', 'Default')
             vendor_widget = self._create_vendor_icon_widget(vendor, row)
             self.ssh_profiles_table.setCellWidget(row, 4, vendor_widget)
+            self.ssh_profiles_table.setRowHeight(row, 42)
 
             # Store profile data in first column item
             self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
@@ -4182,6 +4183,7 @@ class SerialTerminalGUI(QMainWindow):
             vendor = profile.get('vendor', 'Default')
             vendor_widget = self._create_vendor_icon_widget(vendor, row, table='serial')
             self.serial_profiles_table.setCellWidget(row, 4, vendor_widget)
+            self.serial_profiles_table.setRowHeight(row, 42)
 
             self.serial_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
 
