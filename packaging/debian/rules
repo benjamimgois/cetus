@@ -22,7 +22,7 @@ override_dh_auto_install:
 	install -Dm644 assets/vendors/huawei.svg debian/omnicom/usr/share/omnicom/vendors/huawei.svg
 	install -Dm644 assets/vendors/juniper.svg debian/omnicom/usr/share/omnicom/vendors/juniper.svg
 	install -Dm644 assets/vendors/fortinet.svg debian/omnicom/usr/share/omnicom/vendors/fortinet.svg
-	install -Dm644 assets/vendors/dlink.svg debian/omnicom/usr/share/omnicom/vendors/dlink.svg
+	install -Dm644 assets/vendors/d-link.svg debian/omnicom/usr/share/omnicom/vendors/d-link.svg
 	install -Dm644 assets/vendors/h3c.svg debian/omnicom/usr/share/omnicom/vendors/h3c.svg
 	install -Dm644 assets/vendors/brocade.svg debian/omnicom/usr/share/omnicom/vendors/brocade.svg
 	install -Dm644 assets/vendors/datacom.svg debian/omnicom/usr/share/omnicom/vendors/datacom.svg

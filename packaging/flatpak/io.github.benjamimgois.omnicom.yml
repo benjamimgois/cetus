@@ -98,7 +98,7 @@ modules:
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
       - install -Dm644 assets/vendors/juniper.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/juniper.svg
       - install -Dm644 assets/vendors/fortinet.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/fortinet.svg
-      - install -Dm644 assets/vendors/dlink.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/dlink.svg
+      - install -Dm644 assets/vendors/d-link.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/d-link.svg
       - install -Dm644 assets/vendors/h3c.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/h3c.svg
       - install -Dm644 assets/vendors/brocade.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/brocade.svg
       - install -Dm644 assets/vendors/datacom.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/datacom.svg

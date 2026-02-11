@@ -1504,7 +1504,7 @@ class TerminalDialog(QDialog):
 
     def get_vendor_icon_path(self, vendor):
         """Get the path to vendor icon SVG"""
-        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
+        vendor_file = vendor.lower().replace(' ', '') + '.svg'
         path = self.get_icon_path(vendor_file, 'vendors')
         if path:
             return path
@@ -3384,7 +3384,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def get_vendor_icon_path(self, vendor):
         """Get the path to vendor icon SVG"""
-        vendor_file = vendor.lower().replace('-', '').replace(' ', '') + '.svg'
+        vendor_file = vendor.lower().replace(' ', '') + '.svg'
         # Check multiple install paths for vendors subdir
         for base in [
             '/app/share/io.github.benjamimgois.omnicom/vendors',

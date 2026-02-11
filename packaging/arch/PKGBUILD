@@ -35,7 +35,7 @@ package() {
     done
 
     # Install vendor icons
-    for vendor in generic cisco huawei juniper fortinet dlink h3c brocade datacom; do
+    for vendor in generic cisco huawei juniper fortinet d-link h3c brocade datacom; do
         install -Dm644 "assets/vendors/${vendor}.svg" "${pkgdir}/usr/share/omnicom/vendors/${vendor}.svg"
     done
 
