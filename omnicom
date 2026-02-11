@@ -433,7 +433,7 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH'):
+    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH', vendor='Default'):
         """Save an SSH connection profile"""
         profiles = self.get_ssh_profiles()
         # Update existing or add new
@@ -442,14 +442,16 @@ class ConfigManager:
                 profiles[i] = {
                     'name': name, 'host': host, 'port': port,
                     'username': username, 'auth_method': auth_method,
-                    'key_path': key_path, 'protocol': protocol
+                    'key_path': key_path, 'protocol': protocol,
+                    'vendor': vendor
                 }
                 break
         else:
             profiles.append({
                 'name': name, 'host': host, 'port': port,
                 'username': username, 'auth_method': auth_method,
-                'key_path': key_path, 'protocol': protocol
+                'key_path': key_path, 'protocol': protocol,
+                'vendor': vendor
             })
         self.set('ssh_profiles', json.dumps(profiles))
 
@@ -2263,6 +2265,7 @@ class SerialTerminalGUI(QMainWindow):
         self.open_terminals = []  # Track multiple open terminals
         self.tftp_process = None
         self._pending_profile_name = None
+        self._pending_vendor = None
         self.config = ConfigManager()
         self.init_ui()
         self.apply_styles()
@@ -3077,14 +3080,15 @@ class SerialTerminalGUI(QMainWindow):
         # Profiles table (at the top)
         self.ssh_profiles_table = QTableWidget()
         self.ssh_profiles_table.setColumnCount(5)
-        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol", "Authentication"])
+        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "Host", "Port", "Protocol", "Type"])
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_table.setColumnWidth(2, 50)
         self.ssh_profiles_table.setColumnWidth(3, 70)
+        self.ssh_profiles_table.setColumnWidth(4, 110)
         self.ssh_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.ssh_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.ssh_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3777,6 +3781,24 @@ class SerialTerminalGUI(QMainWindow):
         if key_file:
             self.ssh_key_path.setText(key_file)
 
+    def _get_vendor_list(self):
+        """Return the list of available syntax highlighting vendors"""
+        return ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet']
+
+    def _on_vendor_combo_changed(self, row, vendor):
+        """Handle vendor combobox change in SSH profiles table"""
+        item = self.ssh_profiles_table.item(row, 0)
+        if item:
+            profile = item.data(Qt.ItemDataRole.UserRole)
+            if profile:
+                profile['vendor'] = vendor
+                self.config.save_ssh_profile(
+                    profile['name'], profile['host'], profile.get('port', '22'),
+                    profile.get('username', ''), profile.get('auth_method', 'password'),
+                    profile.get('key_path', ''), profile.get('protocol', 'SSH'),
+                    vendor
+                )
+
     def refresh_ssh_profiles(self):
         """Refresh the SSH profiles table"""
         self.ssh_profiles_table.setRowCount(0)
@@ -3787,17 +3809,41 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
             self.ssh_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('host', '')))
             self.ssh_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('port', '22')))
-            
+
             # Determine protocol based on port (22=SSH, 23=Telnet, or use saved protocol)
             port = profile.get('port', '22')
             protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
             self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(protocol))
-            
-            # Show authentication method
-            auth_method = profile.get('auth_method', 'password')
-            auth_display = 'SSH Key' if auth_method == 'key' else 'Password'
-            self.ssh_profiles_table.setItem(row, 4, QTableWidgetItem(auth_display))
-            
+
+            # Vendor type combobox
+            vendor_combo = QComboBox()
+            vendor_combo.addItems(self._get_vendor_list())
+            saved_vendor = profile.get('vendor', 'Default')
+            idx = vendor_combo.findText(saved_vendor)
+            if idx >= 0:
+                vendor_combo.setCurrentIndex(idx)
+            vendor_combo.setStyleSheet("""
+                QComboBox {
+                    background-color: #e8e8e8;
+                    color: #333333;
+                    border: none;
+                    padding: 2px 4px;
+                    font-size: 9pt;
+                }
+                QComboBox::drop-down { border: none; }
+                QComboBox QAbstractItemView {
+                    background-color: #e8e8e8;
+                    color: #333333;
+                    selection-background-color: #2196F3;
+                    selection-color: white;
+                }
+            """)
+            current_row = row
+            vendor_combo.currentTextChanged.connect(
+                lambda vendor, r=current_row: self._on_vendor_combo_changed(r, vendor)
+            )
+            self.ssh_profiles_table.setCellWidget(row, 4, vendor_combo)
+
             # Store profile data in first column item
             self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
 
@@ -3850,9 +3896,13 @@ class SerialTerminalGUI(QMainWindow):
                     # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
                     self.toggle_protocol(self.protocol_ssh_radio)
                 
+                # Read vendor directly from the combobox widget in the table
+                vendor_widget = self.ssh_profiles_table.cellWidget(row, 4)
+                self._pending_vendor = vendor_widget.currentText() if vendor_widget else 'Default'
+
                 # Force UI update before connecting
                 QApplication.processEvents()
-                
+
                 # Use QTimer to delay connection slightly to ensure UI updates complete
                 QTimer.singleShot(100, self.connect_ssh)
 
@@ -4118,6 +4168,16 @@ class SerialTerminalGUI(QMainWindow):
         if self._pending_profile_name:
             terminal_dialog.set_profile_name(self._pending_profile_name)
             self._pending_profile_name = None
+
+        # Apply vendor syntax highlighting from profile
+        if hasattr(self, '_pending_vendor') and self._pending_vendor:
+            vendor = self._pending_vendor
+            terminal_dialog.terminal.set_vendor(vendor)
+            idx = terminal_dialog.vendor_combo.findText(vendor)
+            if idx >= 0:
+                terminal_dialog.vendor_combo.setCurrentIndex(idx)
+            terminal_dialog.update_vendor_icon(vendor)
+            self._pending_vendor = None
 
         # Add to open terminals and show
         self.open_terminals.append(terminal_dialog)
