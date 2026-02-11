@@ -250,7 +250,13 @@ from PyQt6.QtWidgets import (
     QMenu
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter
+
+try:
+    from PyQt6.QtSvg import QSvgRenderer
+    SVG_AVAILABLE = True
+except ImportError:
+    SVG_AVAILABLE = False
 
 try:
     from PyQt6.QtSerialPort import QSerialPortInfo
@@ -265,12 +271,64 @@ except ImportError:
     SSH_AVAILABLE = False
 
 
+def load_svg_pixmap(path, size=40):
+    """Load an SVG file as QPixmap using QSvgRenderer for reliable rendering"""
+    if not path or not os.path.exists(path):
+        return None
+    if SVG_AVAILABLE:
+        renderer = QSvgRenderer(path)
+        if renderer.isValid():
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            return pixmap
+    # Fallback to QPixmap direct loading
+    return QPixmap(path)
+
+
+def load_svg_icon(path, size=40):
+    """Load an SVG file as QIcon using QSvgRenderer for reliable rendering"""
+    pixmap = load_svg_pixmap(path, size)
+    if pixmap and not pixmap.isNull():
+        return QIcon(pixmap)
+    return None
+
+
 def get_network_interfaces():
     """Get list of network interfaces with their IP addresses"""
     interfaces = []
 
+    # Try Python-native approach first (works in Flatpak without ip command)
     try:
-        # Use ip command to get interface information
+        import fcntl
+        import struct
+        # Read interfaces from /proc/net/dev
+        with open('/proc/net/dev', 'r') as f:
+            lines = f.readlines()[2:]  # Skip header lines
+        for line in lines:
+            iface = line.split(':')[0].strip()
+            if iface == 'lo':
+                continue
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                ip = socket.inet_ntoa(fcntl.ioctl(
+                    s.fileno(),
+                    0x8915,  # SIOCGIFADDR
+                    struct.pack('256s', iface.encode('utf-8')[:15])
+                )[20:24])
+                interfaces.append((iface, ip))
+                s.close()
+            except OSError:
+                pass  # Interface might not have an IP
+        if interfaces:
+            return interfaces
+    except Exception as e:
+        print(f"Python-native interface detection failed: {e}")
+
+    # Fallback to ip command
+    try:
         result = subprocess.run(['ip', '-4', 'addr', 'show'], capture_output=True, text=True)
 
         current_iface = None
@@ -1705,18 +1763,15 @@ class TerminalDialog(QDialog):
     def update_vendor_icon(self, vendor):
         """Update the vendor icon QLabel with the appropriate SVG"""
         icon_path = self.get_vendor_icon_path(vendor)
-        pixmap = QPixmap(icon_path)
-        if not pixmap.isNull():
-            # Scale pixmap to fit the label
-            scaled_pixmap = pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            self.vendor_icon.setPixmap(scaled_pixmap)
+        pixmap = load_svg_pixmap(icon_path, 32)
+        if pixmap and not pixmap.isNull():
+            self.vendor_icon.setPixmap(pixmap)
         else:
             # Fallback to generic icon if loading fails
             fallback_path = self.get_vendor_icon_path('Default')
-            fallback_pixmap = QPixmap(fallback_path)
-            if not fallback_pixmap.isNull():
-                scaled_pixmap = fallback_pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                self.vendor_icon.setPixmap(scaled_pixmap)
+            fallback_pixmap = load_svg_pixmap(fallback_path, 32)
+            if fallback_pixmap and not fallback_pixmap.isNull():
+                self.vendor_icon.setPixmap(fallback_pixmap)
 
     def change_vendor(self, vendor):
         """Change the syntax highlighting vendor"""
@@ -2218,8 +2273,9 @@ class SerialTerminalGUI(QMainWindow):
         self.serial_tab_btn.setFixedSize(40, 40)
         # Load custom serial port icon
         serial_icon_path = self.get_tab_icon_path('serial-port-white.svg')
-        if serial_icon_path:
-            self.serial_tab_btn.setIcon(QIcon(serial_icon_path))
+        serial_icon = load_svg_icon(serial_icon_path) if serial_icon_path else None
+        if serial_icon:
+            self.serial_tab_btn.setIcon(serial_icon)
             self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.95)
         else:
             self.serial_tab_btn.setIcon(self.style().standardIcon(
@@ -2233,8 +2289,9 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_tab_btn.setFixedSize(40, 40)
         # Load custom SSH icon
         ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
-        if ssh_icon_path:
-            self.ssh_tab_btn.setIcon(QIcon(ssh_icon_path))
+        ssh_icon = load_svg_icon(ssh_icon_path) if ssh_icon_path else None
+        if ssh_icon:
+            self.ssh_tab_btn.setIcon(ssh_icon)
             self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.95)
         else:
             self.ssh_tab_btn.setIcon(self.style().standardIcon(
@@ -2247,8 +2304,9 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_tab_btn = QPushButton()
         self.tftp_tab_btn.setFixedSize(40, 40)
         tftp_icon_path = self.get_tab_icon_path('TFTP.svg')
-        if tftp_icon_path:
-            self.tftp_tab_btn.setIcon(QIcon(tftp_icon_path))
+        tftp_icon = load_svg_icon(tftp_icon_path) if tftp_icon_path else None
+        if tftp_icon:
+            self.tftp_tab_btn.setIcon(tftp_icon)
             self.tftp_tab_btn.setIconSize(self.tftp_tab_btn.size() * 0.95)
         else:
             self.tftp_tab_btn.setIcon(self.style().standardIcon(
