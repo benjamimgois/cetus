@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-1.1-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Modern and elegant graphical interface for serial communication via picocom.
+Easy and modern interface to manage network devices.
 
 <img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
