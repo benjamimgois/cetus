@@ -528,6 +528,7 @@ class TerminalWidget(QTextEdit):
         self._max_scrollback = 5000
         self._render_needed = True  # Dirty flag to avoid redundant setHtml calls
         self._in_scrollback_mode = False  # True when user is browsing history
+        self._search_active = False  # True when search is active, freezes display updates
 
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
@@ -727,6 +728,17 @@ class TerminalWidget(QTextEdit):
 
         # Send sequence to picocom/SSH
         if sequence:
+            # Exit search mode when user sends input to terminal
+            if self._search_active:
+                self._search_active = False
+                self._in_scrollback_mode = False
+                self._render_needed = True
+                self.setExtraSelections([])
+                dialog = self.parent()
+                if hasattr(dialog, 'search_input'):
+                    dialog.search_input.clear()
+                    dialog.search_status.clear()
+                    dialog._search_matches = []
             print(f"[DEBUG] Key pressed, sending: {repr(sequence)}")
             self.send_input.emit(sequence)
 
@@ -1175,6 +1187,10 @@ class TerminalWidget(QTextEdit):
         if self._scrollback_dirty:
             self._scrollback_cache = '\n'.join(self._scrollback_lines)
             self._scrollback_dirty = False
+
+        # Freeze display while search is active
+        if self._search_active:
+            return
 
         # In scrollback mode: check if user scrolled back to bottom to exit
         if self._in_scrollback_mode:
@@ -1652,6 +1668,10 @@ class TerminalDialog(QDialog):
             self.search_status.clear()
             self._search_matches = []
             self.terminal.setExtraSelections([])
+            # Exit search mode: unfreeze display and scroll to bottom
+            self.terminal._search_active = False
+            self.terminal._in_scrollback_mode = False
+            self.terminal._render_needed = True
             self.terminal.setFocus()
         else:
             super().keyPressEvent(event)
@@ -1663,7 +1683,14 @@ class TerminalDialog(QDialog):
         if not text:
             self.search_status.clear()
             self.terminal.setExtraSelections([])
+            # Exit search mode: unfreeze display and scroll to bottom
+            self.terminal._search_active = False
+            self.terminal._in_scrollback_mode = False
+            self.terminal._render_needed = True
             return
+        # Enter search mode: inject full scrollback into document and freeze updates
+        self.terminal._search_active = True
+        self.terminal._enter_scrollback_mode()
         lines = self._get_terminal_lines()
         matches = []
         lower_query = text.lower()
@@ -1753,12 +1780,10 @@ class TerminalDialog(QDialog):
 
         # Scroll to current match
         if current_sel:
+            # Move cursor to match position and scroll to it
+            current_sel.clearSelection()
             self.terminal.setTextCursor(current_sel)
             self.terminal.ensureCursorVisible()
-            # Clear cursor selection so blue highlight doesn't show
-            clear = self.terminal.textCursor()
-            clear.clearSelection()
-            self.terminal.setTextCursor(clear)
 
     def update_vendor_icon(self, vendor):
         """Update the vendor icon QLabel with the appropriate SVG"""
@@ -2256,58 +2281,48 @@ class SerialTerminalGUI(QMainWindow):
 
         # === LEFT SIDE: Vertical Tab Bar ===
         self.tab_widget = QWidget()
-        self.tab_widget.setFixedWidth(50)
+        self.tab_widget.setFixedWidth(62)
         self.tab_widget.setStyleSheet("""
             QWidget {
-                background-color: #37474f;
-                border-right: 1px solid #263238;
+                background-color: #263238;
+                border-right: 1px solid #1a2327;
             }
         """)
 
         tab_layout = QVBoxLayout()
-        tab_layout.setContentsMargins(5, 10, 5, 10)
-        tab_layout.setSpacing(10)
+        tab_layout.setContentsMargins(0, 12, 0, 12)
+        tab_layout.setSpacing(4)
 
-        # Serial tab button
-        self.serial_tab_btn = QPushButton()
-        self.serial_tab_btn.setFixedSize(40, 40)
-        # Load custom serial port icon
-        serial_icon_path = self.get_tab_icon_path('serial-port-white.svg')
-        serial_icon = load_svg_icon(serial_icon_path) if serial_icon_path else None
-        if serial_icon:
-            self.serial_tab_btn.setIcon(serial_icon)
-            self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.95)
-        else:
-            self.serial_tab_btn.setIcon(self.style().standardIcon(
-                self.style().StandardPixmap.SP_DriveHDIcon))
-        self.serial_tab_btn.setToolTip("Serial Connection")
-        self.serial_tab_btn.setCheckable(True)
-        self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(1))
+        # Style for tab buttons with left indicator bar
+        tab_btn_style = """
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid transparent;
+                border-radius: 0px;
+                padding: 10px 6px;
+                margin: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #37474f;
+                border-left: 3px solid #78909c;
+            }}
+            QPushButton:checked {{
+                background-color: #37474f;
+                border-left: 3px solid {color};
+            }}
+        """
 
-        # SSH tab button
-        self.ssh_tab_btn = QPushButton()
-        self.ssh_tab_btn.setFixedSize(40, 40)
-        # Load custom SSH icon
-        ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
-        ssh_icon = load_svg_icon(ssh_icon_path) if ssh_icon_path else None
-        if ssh_icon:
-            self.ssh_tab_btn.setIcon(ssh_icon)
-            self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.95)
-        else:
-            self.ssh_tab_btn.setIcon(self.style().standardIcon(
-                self.style().StandardPixmap.SP_ComputerIcon))
-        self.ssh_tab_btn.setToolTip("SSH Connection")
-        self.ssh_tab_btn.setCheckable(True)
-        self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(2))
+        icon_size = 36
 
         # TFTP tab button
         self.tftp_tab_btn = QPushButton()
-        self.tftp_tab_btn.setFixedSize(40, 40)
+        self.tftp_tab_btn.setFixedSize(62, 52)
         tftp_icon_path = self.get_tab_icon_path('TFTP.svg')
-        tftp_icon = load_svg_icon(tftp_icon_path) if tftp_icon_path else None
+        tftp_icon = load_svg_icon(tftp_icon_path, icon_size) if tftp_icon_path else None
         if tftp_icon:
             self.tftp_tab_btn.setIcon(tftp_icon)
-            self.tftp_tab_btn.setIconSize(self.tftp_tab_btn.size() * 0.95)
+            self.tftp_tab_btn.setIconSize(self.tftp_tab_btn.size() * 0.7)
         else:
             self.tftp_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_DriveNetIcon))
@@ -2315,26 +2330,39 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_tab_btn.setCheckable(True)
         self.tftp_tab_btn.setChecked(True)
         self.tftp_tab_btn.clicked.connect(lambda: self.switch_tab(0))
+        self.tftp_tab_btn.setStyleSheet(tab_btn_style.format(color='#4caf50'))
 
-        # Style for tab buttons
-        tab_btn_style = """
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                border-radius: 6px;
-                padding: 8px;
-            }
-            QPushButton:hover {
-                background-color: #546e7a;
-            }
-            QPushButton:checked {
-                background-color: #4caf50;
-                border: none;
-            }
-        """
-        self.serial_tab_btn.setStyleSheet(tab_btn_style)
-        self.ssh_tab_btn.setStyleSheet(tab_btn_style)
-        self.tftp_tab_btn.setStyleSheet(tab_btn_style)
+        # Serial tab button
+        self.serial_tab_btn = QPushButton()
+        self.serial_tab_btn.setFixedSize(62, 52)
+        serial_icon_path = self.get_tab_icon_path('serial-port-white.svg')
+        serial_icon = load_svg_icon(serial_icon_path, icon_size) if serial_icon_path else None
+        if serial_icon:
+            self.serial_tab_btn.setIcon(serial_icon)
+            self.serial_tab_btn.setIconSize(self.serial_tab_btn.size() * 0.7)
+        else:
+            self.serial_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_DriveHDIcon))
+        self.serial_tab_btn.setToolTip("Serial Connection")
+        self.serial_tab_btn.setCheckable(True)
+        self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(1))
+        self.serial_tab_btn.setStyleSheet(tab_btn_style.format(color='#42a5f5'))
+
+        # SSH tab button
+        self.ssh_tab_btn = QPushButton()
+        self.ssh_tab_btn.setFixedSize(62, 52)
+        ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
+        ssh_icon = load_svg_icon(ssh_icon_path, icon_size) if ssh_icon_path else None
+        if ssh_icon:
+            self.ssh_tab_btn.setIcon(ssh_icon)
+            self.ssh_tab_btn.setIconSize(self.ssh_tab_btn.size() * 0.7)
+        else:
+            self.ssh_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_ComputerIcon))
+        self.ssh_tab_btn.setToolTip("SSH Connection")
+        self.ssh_tab_btn.setCheckable(True)
+        self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(2))
+        self.ssh_tab_btn.setStyleSheet(tab_btn_style.format(color='#ffa726'))
 
         tab_layout.addWidget(self.tftp_tab_btn)
         tab_layout.addWidget(self.serial_tab_btn)
