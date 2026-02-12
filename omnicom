@@ -1661,8 +1661,8 @@ class TerminalDialog(QDialog):
         path = self.get_icon_path(vendor_file, 'vendors')
         if path:
             return path
-        # Fallback to generic
-        return self.get_icon_path('generic.svg', 'vendors') or ''
+        # Fallback to default
+        return self.get_icon_path('default.svg', 'vendors') or ''
 
     @staticmethod
     def get_vendor_reference():
@@ -4001,7 +4001,7 @@ class SerialTerminalGUI(QMainWindow):
             os.path.join(os.path.dirname(__file__), 'assets/vendors'),
             '/usr/share/omnicom/vendors',
         ]:
-            path = os.path.join(base, 'generic.svg')
+            path = os.path.join(base, 'default.svg')
             if os.path.exists(path):
                 return path
         return None

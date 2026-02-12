@@ -93,7 +93,7 @@ modules:
       - install -Dm644 assets/icons/TFTP.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/TFTP.svg
       - install -Dm644 assets/icons/serial-port-white.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/serial-port-white.svg
       - install -Dm644 assets/icons/ssh_icon.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ssh_icon.svg
-      - install -Dm644 assets/vendors/generic.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/generic.svg
+      - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
       - install -Dm644 assets/vendors/juniper.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/juniper.svg
@@ -102,7 +102,6 @@ modules:
       - install -Dm644 assets/vendors/h3c.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/h3c.svg
       - install -Dm644 assets/vendors/brocade.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/brocade.svg
       - install -Dm644 assets/vendors/datacom.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/datacom.svg
-      - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
       - install -Dm644 assets/vendors/aruba.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/aruba.svg
       - install -Dm644 assets/vendors/linux.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/linux.svg
       - install -Dm644 assets/vendors/mikrotik.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/mikrotik.svg

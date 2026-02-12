@@ -35,7 +35,7 @@ package() {
     done
 
     # Install vendor icons
-    for vendor in default generic cisco huawei juniper fortinet d-link h3c brocade datacom aruba linux mikrotik; do
+    for vendor in default cisco huawei juniper fortinet d-link h3c brocade datacom aruba linux mikrotik; do
         install -Dm644 "assets/vendors/${vendor}.svg" "${pkgdir}/usr/share/omnicom/vendors/${vendor}.svg"
     done
 
