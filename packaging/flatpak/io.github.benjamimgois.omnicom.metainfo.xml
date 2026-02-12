@@ -49,6 +49,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.3" date="2026-02-11">
+      <description>
+        <p>Vendor quick reference guide and UI improvements</p>
+        <ul>
+          <li>Add vendor quick reference guide dialog (click vendor icon in terminal)</li>
+          <li>Add new vendor icons: Linux, Aruba, MikroTik, Default</li>
+          <li>Fix D-Link vendor icon mapping</li>
+          <li>Improve dark theme styling for vendor selection menu and save dialogs</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2" date="2026-02-09">
       <description>
         <p>Project renamed from SerialCom to Omnicom</p>

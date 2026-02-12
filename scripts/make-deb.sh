@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.2"
+VERSION="1.3"
 PKGNAME="omnicom"
 
 echo "=== Omnicom Debian Package Builder ==="

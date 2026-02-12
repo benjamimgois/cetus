@@ -26,6 +26,10 @@ override_dh_auto_install:
 	install -Dm644 assets/vendors/h3c.svg debian/omnicom/usr/share/omnicom/vendors/h3c.svg
 	install -Dm644 assets/vendors/brocade.svg debian/omnicom/usr/share/omnicom/vendors/brocade.svg
 	install -Dm644 assets/vendors/datacom.svg debian/omnicom/usr/share/omnicom/vendors/datacom.svg
+	install -Dm644 assets/vendors/default.svg debian/omnicom/usr/share/omnicom/vendors/default.svg
+	install -Dm644 assets/vendors/aruba.svg debian/omnicom/usr/share/omnicom/vendors/aruba.svg
+	install -Dm644 assets/vendors/linux.svg debian/omnicom/usr/share/omnicom/vendors/linux.svg
+	install -Dm644 assets/vendors/mikrotik.svg debian/omnicom/usr/share/omnicom/vendors/mikrotik.svg
 
 	# Install desktop file
 	install -Dm644 omnicom.desktop debian/omnicom/usr/share/applications/omnicom.desktop

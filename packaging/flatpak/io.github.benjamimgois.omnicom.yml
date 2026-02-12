@@ -102,6 +102,10 @@ modules:
       - install -Dm644 assets/vendors/h3c.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/h3c.svg
       - install -Dm644 assets/vendors/brocade.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/brocade.svg
       - install -Dm644 assets/vendors/datacom.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/datacom.svg
+      - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
+      - install -Dm644 assets/vendors/aruba.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/aruba.svg
+      - install -Dm644 assets/vendors/linux.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/linux.svg
+      - install -Dm644 assets/vendors/mikrotik.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/mikrotik.svg
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/LICENSE

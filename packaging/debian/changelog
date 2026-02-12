@@ -1,3 +1,12 @@
+omnicom (1.3-1) jammy; urgency=medium
+
+  * Add vendor quick reference guide dialog (click vendor icon in terminal)
+  * Add new vendor icons: Linux, Aruba, MikroTik, Default
+  * Fix D-Link vendor icon mapping (d-link.svg)
+  * Improve dark theme styling for vendor selection menu and save dialogs
+
+ -- Benjamim Gois <benjamimgois@example.com>  Tue, 11 Feb 2026 12:00:00 -0300
+
 omnicom (1.2-1) jammy; urgency=medium
 
   * Rename project from SerialCom to Omnicom

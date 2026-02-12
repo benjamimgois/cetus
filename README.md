@@ -1,7 +1,7 @@
 # Omnicom
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
-[![Version](https://img.shields.io/badge/version-1.2-green)](https://github.com/benjamimgois/omnicom/releases)
+[![Version](https://img.shields.io/badge/version-1.3-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Easy and modern interface to manage network devices.
@@ -75,7 +75,7 @@ Easy and modern interface to manage network devices.
 
 2. Install the package:
 ```bash
-sudo dpkg -i omnicom_1.2-1_all.deb
+sudo dpkg -i omnicom_1.3-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -99,7 +99,7 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../omnicom_1.2-1_all.deb
+sudo dpkg -i ../omnicom_1.3-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -117,7 +117,7 @@ paru -S omnicom
 
 2. Install the package:
 ```bash
-sudo pacman -U omnicom-1.2-1-any.pkg.tar.zst
+sudo pacman -U omnicom-1.3-1-any.pkg.tar.zst
 ```
 
 ### Flatpak
