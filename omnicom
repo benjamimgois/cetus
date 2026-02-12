@@ -3967,9 +3967,9 @@ class SerialTerminalGUI(QMainWindow):
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background-color: #f5f5f5;
-                color: #333333;
-                border: 1px solid #d0d0d0;
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 1px solid #5a5a5a;
                 border-radius: 6px;
                 padding: 4px;
             }
@@ -4131,7 +4131,24 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Enter a host before saving")
             return
 
-        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Save Profile")
+        dialog.setLabelText("Profile name:")
+        dialog.setStyleSheet("""
+            QInputDialog { background-color: #2b2b2b; }
+            QLabel { color: #e0e0e0; font-size: 10pt; }
+            QLineEdit {
+                background-color: #3a3a3a; color: #e0e0e0;
+                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px;
+            }
+            QPushButton {
+                background-color: #4caf50; color: #ffffff;
+                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #43a047; }
+        """)
+        ok = dialog.exec()
+        name = dialog.textValue()
         if ok and name:
             auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
             protocol = 'SSH' if self.protocol_ssh_radio.isChecked() else 'Telnet'
@@ -4222,7 +4239,24 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Select a valid port before saving")
             return
 
-        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Save Profile")
+        dialog.setLabelText("Profile name:")
+        dialog.setStyleSheet("""
+            QInputDialog { background-color: #2b2b2b; }
+            QLabel { color: #e0e0e0; font-size: 10pt; }
+            QLineEdit {
+                background-color: #3a3a3a; color: #e0e0e0;
+                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px;
+            }
+            QPushButton {
+                background-color: #4caf50; color: #ffffff;
+                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #43a047; }
+        """)
+        ok = dialog.exec()
+        name = dialog.textValue()
         if ok and name:
             self.config.save_serial_profile(
                 name, port, self.baudrate.currentText(),
