@@ -12,6 +12,10 @@ import json
 import socket
 import threading
 import socketserver
+import ipaddress
+import time
+import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
     import telnetlib
     TELNET_AVAILABLE = True
@@ -323,7 +327,17 @@ def get_network_interfaces():
                     0x8915,  # SIOCGIFADDR
                     struct.pack('256s', iface.encode('utf-8')[:15])
                 )[20:24])
-                interfaces.append((iface, ip))
+                # Get subnet mask
+                try:
+                    netmask = socket.inet_ntoa(fcntl.ioctl(
+                        s.fileno(),
+                        0x891b,  # SIOCGIFNETMASK
+                        struct.pack('256s', iface.encode('utf-8')[:15])
+                    )[20:24])
+                    prefix_len = bin(int.from_bytes(socket.inet_aton(netmask), 'big')).count('1')
+                except OSError:
+                    prefix_len = 24
+                interfaces.append((iface, ip, prefix_len))
                 s.close()
             except OSError:
                 pass  # Interface might not have an IP
@@ -349,9 +363,14 @@ def get_network_interfaces():
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     ip_with_mask = parts[1]
-                    ip = ip_with_mask.split('/')[0]
+                    if '/' in ip_with_mask:
+                        ip, prefix_len = ip_with_mask.split('/', 1)
+                        prefix_len = int(prefix_len)
+                    else:
+                        ip = ip_with_mask
+                        prefix_len = 24
                     if ip != '127.0.0.1':  # Skip loopback
-                        interfaces.append((current_iface, ip))
+                        interfaces.append((current_iface, ip, prefix_len))
     except Exception as e:
         print(f"Error getting interfaces: {e}")
 
@@ -1392,6 +1411,536 @@ class TerminalWidget(QTextEdit):
             self.font_size -= 1
             self.setFont(QFont("Monospace", self.font_size))
             self._recalculate_size()
+
+
+class ScanWorker(QThread):
+    """Worker thread for network host discovery via ICMP, TCP or UDP"""
+
+    host_found = pyqtSignal(str, str, float, str, str, str)  # ip, status, latency_ms, method, mac, vendor
+    scan_progress = pyqtSignal(int)  # percentage
+    scan_finished = pyqtSignal(int)  # total hosts found
+    scan_error = pyqtSignal(str)
+
+    def __init__(self, targets, method, ports=None, timeout=1, max_threads=50):
+        super().__init__()
+        self.targets = targets  # list of IP strings
+        self.method = method    # 'ICMP', 'TCP', 'UDP'
+        self.ports = ports or []
+        self.timeout = timeout
+        self.max_threads = max_threads
+        self._stop_flag = False
+        self._found_count = 0
+
+    def stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        total = len(self.targets)
+        if total == 0:
+            self.scan_error.emit("No targets to scan")
+            return
+        completed = 0
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_threads) as pool:
+                futures = {}
+                for ip in self.targets:
+                    if self._stop_flag:
+                        break
+                    futures[pool.submit(self._scan_host, ip)] = ip
+                for future in as_completed(futures):
+                    if self._stop_flag:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        break
+                    completed += 1
+                    self.scan_progress.emit(int(completed * 100 / total))
+                    result = future.result()
+                    if result:
+                        ip, status, latency, method = result
+                        self._found_count += 1
+                        # Get MAC address and vendor
+                        mac, vendor = self._get_mac_and_vendor(ip)
+                        self.host_found.emit(ip, status, latency, method, mac, vendor)
+        except Exception as e:
+            self.scan_error.emit(str(e))
+        self.scan_finished.emit(self._found_count)
+
+    def _scan_host(self, ip):
+        if self._stop_flag:
+            return None
+        if self.method == 'ICMP':
+            return self._ping(ip)
+        elif self.method == 'TCP':
+            return self._tcp_scan(ip)
+        elif self.method == 'UDP':
+            return self._udp_scan(ip)
+        return None
+
+    def _ping(self, ip):
+        try:
+            start = time.time()
+            result = subprocess.run(
+                ['ping', '-c', '1', '-W', str(self.timeout), ip],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=self.timeout + 2
+            )
+            latency = (time.time() - start) * 1000
+            if result.returncode == 0:
+                return (ip, "Active", round(latency, 1), "ICMP")
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        return None
+
+    def _tcp_scan(self, ip):
+        open_ports = []
+        best_latency = None
+        for port in self.ports:
+            if self._stop_flag:
+                return None
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(self.timeout)
+                start = time.time()
+                err = sock.connect_ex((ip, port))
+                latency = (time.time() - start) * 1000
+                sock.close()
+                if err == 0:
+                    open_ports.append(str(port))
+                    if best_latency is None or latency < best_latency:
+                        best_latency = latency
+            except (socket.error, OSError):
+                pass
+        if open_ports:
+            status = f"TCP: {','.join(open_ports)}"
+            return (ip, status, round(best_latency, 1), "TCP")
+        return None
+
+    def _udp_scan(self, ip):
+        responded_ports = []
+        best_latency = None
+        for port in self.ports:
+            if self._stop_flag:
+                return None
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(self.timeout)
+                start = time.time()
+                sock.sendto(b'\x00', (ip, port))
+                try:
+                    sock.recvfrom(1024)
+                    latency = (time.time() - start) * 1000
+                    responded_ports.append(str(port))
+                    if best_latency is None or latency < best_latency:
+                        best_latency = latency
+                except socket.timeout:
+                    # No ICMP unreachable = port might be open (filtered)
+                    latency = (time.time() - start) * 1000
+                    responded_ports.append(f"{port}?")
+                    if best_latency is None or latency < best_latency:
+                        best_latency = latency
+                sock.close()
+            except (socket.error, OSError):
+                pass
+        if responded_ports:
+            status = f"UDP: {','.join(responded_ports)}"
+            return (ip, status, round(best_latency or 0, 1), "UDP")
+        return None
+
+    def _get_mac_address(self, ip):
+        """Get MAC address for an IP using ARP"""
+        # Small delay to let ARP cache update after the scan
+        import time
+        time.sleep(0.05)
+        
+        try:
+            # Use 'ip neigh' command
+            result = subprocess.run(
+                ['ip', 'neigh', 'show', ip],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+                text=True
+            )
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                # Parse output like: "192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"
+                parts = output.split()
+                if 'lladdr' in parts:
+                    idx = parts.index('lladdr')
+                    if idx + 1 < len(parts):
+                        mac = parts[idx + 1]
+                        # Validate MAC format (should be 17 chars with colons)
+                        if ':' in mac and len(mac) == 17:
+                            # Additional validation: check if it's a valid MAC
+                            try:
+                                octets = mac.split(':')
+                                if len(octets) == 6 and all(len(o) == 2 for o in octets):
+                                    return mac.upper()
+                            except:
+                                pass
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        
+        return ""
+
+    def _get_mac_vendor(self, mac):
+        """Lookup MAC vendor from OUI (first 3 octets)"""
+        if not mac or len(mac) < 8:
+            return "Unknown"
+        
+        # Extract OUI (first 3 octets = 6 hex digits)
+        # Remove colons and get first 6 characters
+        oui = mac.replace(':', '').upper()[:6]
+        
+        # Common vendor database (expanded)
+        vendors = {
+            # IANA and Standards
+            '00005E': 'IANA',
+            '70B3D5': 'IEEE',
+            
+            # Apple
+            '001B63': 'Apple',
+            '10FEED': 'Apple',
+            '3C0754': 'Apple',
+            '54EE75': 'Apple',
+            '6C4008': 'Apple',
+            '8C8590': 'Apple',
+            '9C5C8E': 'Apple',
+            'A0999B': 'Apple',
+            'A483E7': 'Apple',
+            'AC87A3': 'Apple',
+            'B8E856': 'Apple',
+            'BC3BAF': 'Apple',
+            'C82A14': 'Apple',
+            'D023DB': 'Apple',
+            'D49A20': 'Apple',
+            'E0ACCB': 'Apple',
+            'E4CE8F': 'Apple',
+            'F437B7': 'Apple',
+            'FC253F': 'Apple',
+            '0C7451': 'Apple',
+            '14109F': 'Apple',
+            '1C91E8': 'Apple',
+            '24A074': 'Apple',
+            '2C1F23': 'Apple',
+            '34159E': 'Apple',
+            '3C2EFF': 'Apple',
+            '40A6D9': 'Apple',
+            '44D884': 'Apple',
+            '4C7C5F': 'Apple',
+            '509EA7': 'Apple',
+            '5C5948': 'Apple',
+            '609217': 'Apple',
+            '64200C': 'Apple',
+            '68967B': 'Apple',
+            '6C4D73': 'Apple',
+            '6C709F': 'Apple',
+            '6C96CF': 'Apple',
+            '7014A6': 'Apple',
+            '7073CB': 'Apple',
+            '78A3E4': 'Apple',
+            '7CC537': 'Apple',
+            '80E650': 'Apple',
+            '8489AD': 'Apple',
+            '88E87F': 'Apple',
+            '8C006D': 'Apple',
+            '8C2DAA': 'Apple',
+            '8CF8C5': 'Apple',
+            '90840D': 'Apple',
+            '98FE94': 'Apple',
+            'A85C2C': 'Apple',
+            'AC3C0B': 'Apple',
+            'B065BD': 'Apple',
+            'B8782E': 'Apple',
+            'C0847A': 'Apple',
+            'C42C03': 'Apple',
+            'C8B5B7': 'Apple',
+            'D0E140': 'Apple',
+            'D4909C': 'Apple',
+            'D8004D': 'Apple',
+            'DC2B61': 'Apple',
+            'E0B52D': 'Apple',
+            'E80688': 'Apple',
+            'E88D28': 'Apple',
+            'F0DBE2': 'Apple',
+            'F0DCE2': 'Apple',
+            'F8D0BD': 'Apple',
+            
+            # Cisco
+            '002241': 'Cisco',
+            '485073': 'Cisco',
+            '7C2EBD': 'Cisco',
+            'DC2B2A': 'Cisco',
+            '001120': 'Cisco',
+            '0016C7': 'Cisco',
+            '001D45': 'Cisco',
+            '001E14': 'Cisco',
+            '0021A0': 'Cisco',
+            '0023EB': 'Cisco',
+            '002618': 'Cisco',
+            '0026CA': 'Cisco',
+            '00D0BA': 'Cisco',
+            '00D0BC': 'Cisco',
+            '00D0FF': 'Cisco',
+            '3C5EC4': 'Cisco',
+            '5C5015': 'Cisco',
+            '6C9C54': 'Cisco',
+            '7081EB': 'Cisco',
+            '88F031': 'Cisco',
+            'A0F84C': 'Cisco',
+            'B8BE76': 'Cisco',
+            'C471FE': 'Cisco',
+            'E4C7A2': 'Cisco',
+            
+            # Microsoft
+            '000D3A': 'Microsoft',
+            '0050F2': 'Microsoft',
+            '001DD8': 'Microsoft',
+            '7C1E52': 'Microsoft',
+            '00155D': 'Microsoft',
+            '0017FA': 'Microsoft',
+            
+            # Intel
+            '8086F2': 'Intel',
+            'F0189C': 'Intel',
+            '001E67': 'Intel',
+            '0024D7': 'Intel',
+            '00D0B7': 'Intel',
+            '3497F6': 'Intel',
+            '7085C2': 'Intel',
+            '94659C': 'Intel',
+            'A0A8CD': 'Intel',
+            'B4B686': 'Intel',
+            'D0509': 'Intel',
+            'E4028': 'Intel',
+            
+            # Samsung
+            '001599': 'Samsung',  # Found in user's network
+            '001632': 'Samsung',
+            '0018AF': 'Samsung',
+            '001D25': 'Samsung',
+            '002566': 'Samsung',
+            '0026FC': 'Samsung',
+            '34BE00': 'Samsung',
+            '38AA3C': 'Samsung',
+            '3C5A37': 'Samsung',
+            '40F520': 'Samsung',
+            '44D6E1': 'Samsung',
+            '5C0A5B': 'Samsung',
+            '68A86D': 'Samsung',
+            '78521A': 'Samsung',
+            '7C6193': 'Samsung',
+            '8C7712': 'Samsung',
+            '9C02A0': 'Samsung',
+            'A0821F': 'Samsung',
+            'B4F0AB': 'Samsung',
+            'C8F230': 'Samsung',
+            'D0176A': 'Samsung',
+            'D4E8B2': 'Samsung',
+            'E0036B': 'Samsung',  # Found in user's network
+            'E8508B': 'Samsung',
+            'EC1F72': 'Samsung',
+            
+            # Google
+            '2C3AE8': 'Google',
+            '3C5A37': 'Google',
+            '54605D': 'Google',
+            '6C198F': 'Google',
+            '74E5F9': 'Google',
+            'A4F1E8': 'Google',
+            'B4F0AB': 'Google',
+            'D8C46A': 'Google',
+            'F4F5E8': 'Google',
+            
+            # Amazon
+            '1C697A': 'Amazon',
+            '4C3275': 'Amazon',
+            '00FC8B': 'Amazon',
+            '44650D': 'Amazon',
+            '747548': 'Amazon',
+            '84D6D0': 'Amazon',
+            'A002DC': 'Amazon',
+            'F0D2F1': 'Amazon',
+            
+            # Xiaomi
+            '0C5477': 'Xiaomi',
+            '90324B': 'Xiaomi',
+            '34CE00': 'Xiaomi',
+            '3CBD3E': 'Xiaomi',  # Found in user's network
+            '50EC50': 'Xiaomi',
+            '64B473': 'Xiaomi',
+            '78022': 'Xiaomi',
+            '8CFABA': 'Xiaomi',
+            'A0E45E': 'Xiaomi',
+            'F8A45F': 'Xiaomi',
+            
+            # TP-Link
+            '001FE2': 'TP-Link',
+            '0025BC': 'TP-Link',
+            '0C8268': 'TP-Link',
+            '1C3BF3': 'TP-Link',
+            '2C3033': 'TP-Link',
+            '3C6AD2': 'TP-Link',  # Found in user's network
+            '5065F3': 'TP-Link',
+            '5C628B': 'TP-Link',
+            '6C5AB0': 'TP-Link',
+            '7C8BCA': 'TP-Link',
+            '98DAC4': 'TP-Link',
+            'A42BB0': 'TP-Link',
+            'B0487A': 'TP-Link',
+            'C06885': 'TP-Link',
+            'D84489': 'TP-Link',  # Found in user's network
+            'D8EB97': 'TP-Link',
+            'E0D362': 'TP-Link',  # Found in user's network
+            'E8DE27': 'TP-Link',
+            'F4F26D': 'TP-Link',
+            '1C61B4': 'TP-Link',
+            '2C30AA': 'TP-Link',
+            '30B49E': 'TP-Link',
+            '4C5E0C': 'TP-Link',
+            '5C8FE0': 'TP-Link',
+            '6C5AB0': 'TP-Link',
+            '7C8BCA': 'TP-Link',
+            '8C21A1': 'TP-Link',
+            '9C53CD': 'TP-Link',
+            'A0F3C1': 'TP-Link',
+            'B0BE76': 'TP-Link',
+            'C46E1F': 'TP-Link',
+            'D46E0E': 'TP-Link',
+            'E4C346': 'TP-Link',
+            'F4EC38': 'TP-Link',
+            
+            # D-Link
+            '001195': 'D-Link',
+            '0015E9': 'D-Link',
+            '001CF0': 'D-Link',
+            '001E58': 'D-Link',
+            '0022B0': 'D-Link',
+            '1C7EE5': 'D-Link',
+            '28107B': 'D-Link',
+            '3C1E04': 'D-Link',
+            '5CD998': 'D-Link',
+            '84C9B2': 'D-Link',
+            'C0A0BB': 'D-Link',
+            'CCB255': 'D-Link',
+            
+            # Hewlett Packard
+            '3CD92B': 'HP',
+            '001438': 'HP',
+            '001CC4': 'HP',
+            '001E0B': 'HP',
+            '002264': 'HP',
+            '00306E': 'HP',
+            '1C98EC': 'HP',
+            '2C27D7': 'HP',
+            '3860F9': 'HP',
+            '6C3BE5': 'HP',
+            '9C8CDC': 'HP',
+            'A0B3CC': 'HP',
+            'B499BA': 'HP',
+            'D48564': 'HP',
+            
+            # Dell
+            '001C23': 'Dell',
+            '0024E8': 'Dell',
+            '00B0D0': 'Dell',
+            '10BF48': 'Dell',
+            '14FEB5': 'Dell',
+            '18A996': 'Dell',
+            '18FB7B': 'Dell',
+            '2016B9': 'Dell',
+            '34E6AD': 'Dell',
+            '44A842': 'Dell',
+            '5C260A': 'Dell',
+            '84B153': 'Dell',
+            '90B11C': 'Dell',
+            'B8CA3A': 'Dell',
+            'D4AE52': 'Dell',
+            'F04DA2': 'Dell',
+            
+            # Huawei
+            '001E10': 'Huawei',
+            '002EC7': 'Huawei',
+            '0C37DC': 'Huawei',
+            '10C61F': 'Huawei',
+            '1C1D67': 'Huawei',
+            '28C63F': 'Huawei',
+            '34CD12': 'Huawei',
+            '3C1E04': 'Huawei',
+            '4C549': 'Huawei',
+            '5C:F9:6A': 'Huawei',
+            '6C4A85': 'Huawei',
+            '7C60AF': 'Huawei',
+            '8C34FD': 'Huawei',
+            'A4C168': 'Huawei',
+            'C81479': 'Huawei',
+            'D0C857': 'Huawei',
+            'E0979': 'Huawei',
+            
+            # VMware / Virtualization
+            '000C29': 'VMware',
+            '005056': 'VMware',
+            '001C42': 'Parallels',
+            '080027': 'VirtualBox',
+            '525400': 'QEMU/KVM',
+            
+            # Other Common
+            '0001C8': 'Thomas-Krenn',
+            '08002B': 'DEC',
+            '100000': 'Private',
+            '74C63B': 'AzureWave',
+            'F43C3B': 'FN-LINK',  # Found in user's network
+        }
+        
+        # Try exact match in local database
+        if oui in vendors:
+            return vendors[oui]
+        
+        # Check if this is a locally administered MAC address
+        # (second character of MAC is 2, 6, A, or E)
+        if mac and len(mac) >= 2:
+            second_char = mac[1].upper()
+            if second_char in ['2', '6', 'A', 'E']:
+                return "Private/Local"
+        
+        # Fallback: Try online API lookup for unknown OUIs
+        # Only try if not in a tight loop (to avoid rate limiting)
+        try:
+            import urllib.request
+            import urllib.error
+            
+            # Use macvendors.com API (free, but has rate limits)
+            url = f"https://api.macvendors.com/{mac}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Omnicom/1.0'})
+            
+            with urllib.request.urlopen(req, timeout=1) as response:
+                vendor = response.read().decode('utf-8').strip()
+                if vendor and not vendor.startswith('{"errors'):
+                    # Clean up vendor name (take first line only, remove extra info)
+                    vendor = vendor.split('\n')[0]
+                    # Limit length to 30 characters (without ellipsis)
+                    if len(vendor) > 30:
+                        vendor = vendor[:30]
+                    return vendor
+        except urllib.error.HTTPError as e:
+            # 404 = not found, 429 = rate limited
+            if e.code == 404:
+                return "Unknown"
+            # For rate limiting or other errors, just return Unknown
+            pass
+        except (urllib.error.URLError, Exception):
+            # Network error or timeout, return Unknown
+            pass
+        
+        return "Unknown"
+
+
+    def _get_mac_and_vendor(self, ip):
+        """Get MAC address and vendor for an IP"""
+        mac = self._get_mac_address(ip)
+        if mac:
+            vendor = self._get_mac_vendor(mac)
+            return mac, vendor
+        return "", "Unknown"
 
 
 class ConnectionWorker(QThread):
@@ -3095,9 +3644,26 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(2))
         self.ssh_tab_btn.setStyleSheet(tab_btn_style.format(color='#ffa726'))
 
+        # IP Scanner tab button
+        self.ipscan_tab_btn = QPushButton()
+        self.ipscan_tab_btn.setFixedSize(62, 52)
+        ipscan_icon_path = self.get_tab_icon_path('ipscan.svg')
+        ipscan_icon = load_svg_icon(ipscan_icon_path, icon_size) if ipscan_icon_path else None
+        if ipscan_icon:
+            self.ipscan_tab_btn.setIcon(ipscan_icon)
+            self.ipscan_tab_btn.setIconSize(self.ipscan_tab_btn.size() * 0.7)
+        else:
+            self.ipscan_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_DriveNetIcon))
+        self.ipscan_tab_btn.setToolTip("IP Scanner")
+        self.ipscan_tab_btn.setCheckable(True)
+        self.ipscan_tab_btn.clicked.connect(lambda: self.switch_tab(3))
+        self.ipscan_tab_btn.setStyleSheet(tab_btn_style.format(color='#ef5350'))
+
         tab_layout.addWidget(self.tftp_tab_btn)
         tab_layout.addWidget(self.serial_tab_btn)
         tab_layout.addWidget(self.ssh_tab_btn)
+        tab_layout.addWidget(self.ipscan_tab_btn)
         tab_layout.addStretch()
         self.tab_widget.setLayout(tab_layout)
 
@@ -3116,6 +3682,10 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_page = self.create_ssh_page()
         self.content_stack.addWidget(self.ssh_page)
 
+        # Create IP Scanner page (index 3)
+        self.ipscan_page = self.create_ipscan_page()
+        self.content_stack.addWidget(self.ipscan_page)
+
         # Add to main layout
         main_h_layout.addWidget(self.tab_widget)
         main_h_layout.addWidget(self.content_stack, 1)
@@ -3126,12 +3696,13 @@ class SerialTerminalGUI(QMainWindow):
         self.update_port_list()
 
     def switch_tab(self, index):
-        """Switch between TFTP, Serial and SSH tabs"""
+        """Switch between TFTP, Serial, SSH and IP Scanner tabs"""
         self.content_stack.setCurrentIndex(index)
         self.tftp_tab_btn.setChecked(index == 0)
         self.serial_tab_btn.setChecked(index == 1)
         self.ssh_tab_btn.setChecked(index == 2)
-        modes = {0: 'tftp', 1: 'serial', 2: 'ssh'}
+        self.ipscan_tab_btn.setChecked(index == 3)
+        modes = {0: 'tftp', 1: 'serial', 2: 'ssh', 3: 'ipscan'}
         self.config.set('connection_mode', modes.get(index, 'tftp'))
 
     def create_serial_page(self):
@@ -3638,6 +4209,653 @@ class SerialTerminalGUI(QMainWindow):
 
         page.setLayout(main_layout)
         return page
+
+    def create_ipscan_page(self):
+        """Create the IP Scanner page for network host discovery"""
+        page = QWidget()
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        combo_width = 200
+
+        # === Scan Configuration Group ===
+        scan_group = QGroupBox("Scan Configuration")
+        scan_layout = QFormLayout()
+        scan_layout.setVerticalSpacing(12)
+        scan_layout.setContentsMargins(15, 15, 15, 15)
+        scan_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        scan_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        # Network input: IP address + subnet mask combo
+        net_input_layout = QHBoxLayout()
+        net_input_layout.setContentsMargins(0, 0, 0, 0)
+        net_input_layout.setSpacing(4)
+
+        self.scan_network_input = QLineEdit()
+        self.scan_network_input.setFixedWidth(combo_width)
+        self.scan_network_input.setPlaceholderText("192.168.1.0")
+        self.scan_network_input.setToolTip("Network or host IP address")
+        self.scan_network_input.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 4px 10px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 10pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #ef5350;
+            }
+        """)
+
+        slash_label = QLabel("/")
+        slash_label.setFixedWidth(8)
+
+        self.scan_mask_combo = QComboBox()
+        self.scan_mask_combo.addItems(["8", "16", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "32"])
+        self.scan_mask_combo.setCurrentText("24")
+        self.scan_mask_combo.setFixedWidth(80)
+        self.scan_mask_combo.setToolTip("Subnet mask (CIDR prefix length)")
+
+        net_input_layout.addWidget(self.scan_network_input)
+        net_input_layout.addWidget(slash_label)
+        net_input_layout.addWidget(self.scan_mask_combo)
+        net_input_layout.addStretch()
+        net_widget = QWidget()
+        net_widget.setContentsMargins(0, 0, 0, 0)
+        net_widget.setLayout(net_input_layout)
+        scan_layout.addRow("Network:", net_widget)
+
+        # Auto-detect network on startup
+        self._scan_auto_detect_network()
+
+        # Method selector
+        self.scan_method_combo = QComboBox()
+        self.scan_method_combo.addItems(["ICMP", "TCP", "UDP"])
+        self.scan_method_combo.setFixedWidth(combo_width)
+        self.scan_method_combo.setToolTip("Scan method")
+        self.scan_method_combo.currentTextChanged.connect(self._scan_method_changed)
+        scan_layout.addRow("Method:", self.scan_method_combo)
+
+        # Ports input (hidden for ICMP)
+        self.scan_ports_label = QLabel("Ports:")
+        self.scan_ports_input = QLineEdit()
+        self.scan_ports_input.setFixedWidth(combo_width)
+        self.scan_ports_input.setPlaceholderText("22,80,443 or 1-1024")
+        self.scan_ports_input.setToolTip("Comma-separated ports or range (e.g. 22,80,443 or 1-1024)")
+        self.scan_ports_input.setText("22,23,80,443")
+        self.scan_ports_input.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 4px 10px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 10pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #ef5350;
+            }
+        """)
+        self.scan_ports_label.setVisible(False)
+        self.scan_ports_input.setVisible(False)
+        scan_layout.addRow(self.scan_ports_label, self.scan_ports_input)
+
+        # Timeout and threads in a row
+        options_layout = QHBoxLayout()
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(15)
+
+        timeout_label = QLabel("Timeout:")
+        self.scan_timeout_combo = QComboBox()
+        self.scan_timeout_combo.addItems(["1s", "2s", "3s", "5s"])
+        self.scan_timeout_combo.setFixedWidth(80)
+
+        threads_label = QLabel("Threads:")
+        self.scan_threads_combo = QComboBox()
+        self.scan_threads_combo.addItems(["10", "25", "50", "100"])
+        self.scan_threads_combo.setCurrentIndex(2)  # default 50
+        self.scan_threads_combo.setFixedWidth(80)
+
+        options_layout.addWidget(timeout_label)
+        options_layout.addWidget(self.scan_timeout_combo)
+        options_layout.addSpacing(10)
+        options_layout.addWidget(threads_label)
+        options_layout.addWidget(self.scan_threads_combo)
+        options_layout.addStretch()
+
+        options_widget = QWidget()
+        options_widget.setContentsMargins(0, 0, 0, 0)
+        options_widget.setLayout(options_layout)
+        scan_layout.addRow("Options:", options_widget)
+
+        scan_group.setLayout(scan_layout)
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 0, 0, 30))
+        scan_group.setGraphicsEffect(shadow)
+
+        main_layout.addWidget(scan_group)
+
+        # === SCAN Button (full-width like Connect SSH) ===
+        self.scan_btn = QPushButton("SCAN")
+        self.scan_btn.setMinimumHeight(45)
+        self.scan_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef5350;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #e53935;
+            }
+            QPushButton:pressed {
+                background-color: #c62828;
+            }
+        """)
+        self.scan_btn.clicked.connect(self._start_scan)
+        main_layout.addWidget(self.scan_btn)
+
+        # === Progress Bar ===
+        self.scan_progress_bar = self._create_styled_progress_bar()
+        main_layout.addWidget(self.scan_progress_bar)
+
+        # === Results Group ===
+        self.scan_results_group = QGroupBox("Results")
+        results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(10, 2, 10, 8)
+        results_layout.setSpacing(6)
+
+        self.scan_results_table = QTableWidget()
+        self.scan_results_table.setColumnCount(4)
+        self.scan_results_table.setHorizontalHeaderLabels(["IP Address", "Status", "Latency (ms)", "MAC Vendor"])
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.setColumnWidth(2, 100)
+        self.scan_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.scan_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.scan_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.scan_results_table.verticalHeader().setVisible(False)
+        self.scan_results_table.setSortingEnabled(True)
+        self.scan_results_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.scan_results_table.customContextMenuRequested.connect(self._scan_context_menu)
+        self.scan_results_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 9pt;
+                gridline-color: #d0d0d0;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                background-color: #e8e8e8;
+            }
+            QTableWidget::item:selected {
+                background-color: #ef5350;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 4px;
+                border: none;
+                font-weight: bold;
+                font-size: 9pt;
+            }
+        """)
+        results_layout.addWidget(self.scan_results_table)
+
+        # Action buttons
+        actions_layout = QHBoxLayout()
+        actions_layout.addStretch()
+
+        btn_style = """
+            QPushButton {
+                background-color: #78909c;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #607d8b;
+            }
+        """
+
+        self.scan_export_btn = QPushButton("Export CSV")
+        self.scan_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_export_btn.setStyleSheet(btn_style)
+        self.scan_export_btn.clicked.connect(self._scan_export_csv)
+        actions_layout.addWidget(self.scan_export_btn)
+
+        self.scan_clear_btn = QPushButton("Clear")
+        self.scan_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_clear_btn.setStyleSheet(btn_style)
+        self.scan_clear_btn.clicked.connect(self._scan_clear_results)
+        actions_layout.addWidget(self.scan_clear_btn)
+
+        actions_layout.addStretch()
+        results_layout.addLayout(actions_layout)
+
+        self.scan_results_group.setLayout(results_layout)
+
+        shadow2 = QGraphicsDropShadowEffect()
+        shadow2.setBlurRadius(15)
+        shadow2.setXOffset(0)
+        shadow2.setYOffset(2)
+        shadow2.setColor(QColor(0, 0, 0, 30))
+        self.scan_results_group.setGraphicsEffect(shadow2)
+
+        main_layout.addWidget(self.scan_results_group, 1)
+
+        # Initialize scanner state
+        self.scan_worker = None
+
+        page.setLayout(main_layout)
+        return page
+
+    def _create_styled_progress_bar(self):
+        """Create a styled progress bar for the scanner"""
+        from PyQt6.QtWidgets import QProgressBar
+        bar = QProgressBar()
+        bar.setFixedHeight(8)
+        bar.setTextVisible(False)
+        bar.setValue(0)
+        bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #e0e0e0;
+                border: none;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #ef5350;
+                border-radius: 4px;
+            }
+        """)
+        return bar
+
+    def _scan_method_changed(self, method):
+        """Show/hide ports field based on scan method"""
+        show_ports = method in ('TCP', 'UDP')
+        self.scan_ports_label.setVisible(show_ports)
+        self.scan_ports_input.setVisible(show_ports)
+
+    def _scan_auto_detect_network(self):
+        """Auto-detect the network from the first active interface"""
+        interfaces = get_network_interfaces()
+        if interfaces:
+            iface, ip, prefix_len = interfaces[0]
+            try:
+                network = ipaddress.ip_network(f"{ip}/{prefix_len}", strict=False)
+                self.scan_network_input.setText(str(network.network_address))
+                self.scan_mask_combo.setCurrentText(str(prefix_len))
+            except ValueError:
+                parts = ip.split('.')
+                if len(parts) == 4:
+                    self.scan_network_input.setText(f"{parts[0]}.{parts[1]}.{parts[2]}.0")
+                    self.scan_mask_combo.setCurrentText("24")
+
+    def _parse_ports(self, text):
+        """Parse port specification like '22,80,443' or '1-1024' into a list of ints"""
+        ports = []
+        for part in text.split(','):
+            part = part.strip()
+            if '-' in part:
+                try:
+                    start, end = part.split('-', 1)
+                    ports.extend(range(int(start), int(end) + 1))
+                except ValueError:
+                    continue
+            else:
+                try:
+                    ports.append(int(part))
+                except ValueError:
+                    continue
+        return [p for p in ports if 1 <= p <= 65535]
+
+    def _parse_targets(self, text):
+        """Parse network specification into list of IP strings"""
+        text = text.strip()
+        if not text:
+            return []
+        # Try CIDR notation first
+        try:
+            network = ipaddress.ip_network(text, strict=False)
+            return [str(ip) for ip in network.hosts()]
+        except ValueError:
+            pass
+        # Try range notation: 192.168.1.1-254
+        if '-' in text:
+            try:
+                base, end_part = text.rsplit('-', 1)
+                end_octet = int(end_part)
+                base_parts = base.split('.')
+                if len(base_parts) == 4:
+                    start_octet = int(base_parts[3])
+                    prefix = '.'.join(base_parts[:3])
+                    return [f"{prefix}.{i}" for i in range(start_octet, end_octet + 1)]
+            except (ValueError, IndexError):
+                pass
+        # Single IP
+        try:
+            ipaddress.ip_address(text)
+            return [text]
+        except ValueError:
+            return []
+
+    def _start_scan(self):
+        """Start or stop the network scan"""
+        if self.scan_worker and self.scan_worker.isRunning():
+            self.scan_worker.stop()
+            self.scan_btn.setText("Stopping...")
+            self.scan_btn.setEnabled(False)
+            return
+
+        ip_text = self.scan_network_input.text().strip()
+        if not ip_text:
+            QMessageBox.warning(self, "IP Scanner", "Please enter a network address.")
+            return
+
+        mask = self.scan_mask_combo.currentText()
+        network_text = f"{ip_text}/{mask}"
+        targets = self._parse_targets(network_text)
+        if not targets:
+            QMessageBox.warning(self, "IP Scanner", "Invalid network format.\nEnter a valid IP address.")
+            return
+
+        method = self.scan_method_combo.currentText()
+        ports = []
+        if method in ('TCP', 'UDP'):
+            ports = self._parse_ports(self.scan_ports_input.text())
+            if not ports:
+                QMessageBox.warning(self, "IP Scanner", "Please enter valid port(s) for TCP/UDP scan.")
+                return
+
+        timeout = int(self.scan_timeout_combo.currentText().replace('s', ''))
+        threads = int(self.scan_threads_combo.currentText())
+
+        # Clear previous results
+        self.scan_results_table.setSortingEnabled(False)
+        self.scan_results_table.setRowCount(0)
+        self.scan_progress_bar.setValue(0)
+        self.scan_results_group.setTitle("Results (scanning...)")
+
+        # Switch button to Stop mode
+        self.scan_btn.setText("STOP")
+        self.scan_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+
+        self.scan_worker = ScanWorker(targets, method, ports, timeout, threads)
+        self.scan_worker.host_found.connect(self._on_scan_host_found)
+        self.scan_worker.scan_progress.connect(self.scan_progress_bar.setValue)
+        self.scan_worker.scan_finished.connect(self._on_scan_finished)
+        self.scan_worker.scan_error.connect(self._on_scan_error)
+        self.scan_worker.start()
+
+    def _on_scan_host_found(self, ip, status, latency, method, mac, vendor):
+        """Add a discovered host to the results table"""
+        row = self.scan_results_table.rowCount()
+        self.scan_results_table.insertRow(row)
+
+        ip_item = QTableWidgetItem(ip)
+        # Store IP as data for proper numeric sorting
+        ip_item.setData(Qt.ItemDataRole.UserRole, sum(int(o) * (256 ** (3 - i)) for i, o in enumerate(ip.split('.'))))
+
+        self.scan_results_table.setItem(row, 0, ip_item)
+        self.scan_results_table.setItem(row, 1, QTableWidgetItem(status))
+
+        latency_item = QTableWidgetItem(f"{latency:.1f}")
+        latency_item.setData(Qt.ItemDataRole.UserRole, latency)
+        self.scan_results_table.setItem(row, 2, latency_item)
+        
+        # Add MAC vendor information (column 3, removed Method column)
+        vendor_display = f"{vendor} ({mac})" if mac else vendor
+        vendor_item = QTableWidgetItem(vendor_display)
+        # Disable ellipsis truncation
+        vendor_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.scan_results_table.setItem(row, 3, vendor_item)
+        
+        self.scan_results_group.setTitle(f"Results (scanning... {row + 1} hosts found)")
+
+
+    def _on_scan_finished(self, total_found):
+        """Handle scan completion"""
+        self.scan_results_group.setTitle(f"Results — {total_found} host{'s' if total_found != 1 else ''} found")
+        self.scan_progress_bar.setValue(100)
+        self.scan_results_table.setSortingEnabled(True)
+        self._reset_scan_button()
+
+    def _on_scan_error(self, error_msg):
+        """Handle scan error"""
+        QMessageBox.warning(self, "IP Scanner", f"Scan error: {error_msg}")
+        self._reset_scan_button()
+
+    def _reset_scan_button(self):
+        """Reset scan button to initial state"""
+        self.scan_btn.setText("SCAN")
+        self.scan_btn.setEnabled(True)
+        self.scan_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef5350;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #e53935;
+            }
+            QPushButton:pressed {
+                background-color: #c62828;
+            }
+        """)
+
+    def _scan_export_csv(self):
+        """Export scan results to CSV file"""
+        if self.scan_results_table.rowCount() == 0:
+            QMessageBox.information(self, "IP Scanner", "No results to export.")
+            return
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Scan Results", os.path.expanduser("~/scan_results.csv"),
+            "CSV Files (*.csv)")
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["IP Address", "Status", "Latency (ms)", "MAC Vendor"])
+                for row in range(self.scan_results_table.rowCount()):
+                    writer.writerow([
+                        self.scan_results_table.item(row, col).text()
+                        for col in range(4)
+                    ])
+            QMessageBox.information(self, "IP Scanner", f"Results exported to:\n{file_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "IP Scanner", f"Export failed: {e}")
+
+
+    def _scan_clear_results(self):
+        """Clear scan results"""
+        self.scan_results_table.setRowCount(0)
+        self.scan_progress_bar.setValue(0)
+        self.scan_results_group.setTitle("Results")
+
+    def _scan_context_menu(self, pos):
+        """Show context menu for scan results table"""
+        item = self.scan_results_table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        ip = self.scan_results_table.item(row, 0).text()
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #e8e8e8;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #d0d0d0;
+                margin: 4px 8px;
+            }
+        """)
+
+        http_action = menu.addAction("Open in Browser (HTTP)")
+        https_action = menu.addAction("Open in Browser (HTTPS)")
+        menu.addSeparator()
+        ssh_action = menu.addAction("Connect via SSH")
+        telnet_action = menu.addAction("Connect via Telnet")
+        menu.addSeparator()
+        copy_action = menu.addAction("Copy IP Address")
+
+        action = menu.exec(self.scan_results_table.viewport().mapToGlobal(pos))
+
+        if action == http_action:
+            import webbrowser
+            webbrowser.open(f"http://{ip}")
+        elif action == https_action:
+            import webbrowser
+            webbrowser.open(f"https://{ip}")
+        elif action == ssh_action:
+            self._scan_open_connection(ip, 'ssh')
+        elif action == telnet_action:
+            self._scan_open_connection(ip, 'telnet')
+        elif action == copy_action:
+            QApplication.clipboard().setText(ip)
+
+    def _scan_open_connection(self, host, protocol):
+        """Open SSH or Telnet connection to a host from scan results"""
+        if protocol == 'ssh':
+            if not SSH_AVAILABLE:
+                QMessageBox.critical(self, "Error",
+                    "paramiko library is not installed.\n\nInstall with: pip install paramiko")
+                return
+            port = "22"
+        else:
+            if not TELNET_AVAILABLE:
+                QMessageBox.critical(self, "Error",
+                    "telnetlib is not available.\n\nInstall with: pip install standard-telnetlib")
+                return
+            port = "23"
+
+        # Ask for username and password
+        login_dialog = QDialog(self)
+        login_dialog.setWindowTitle(f"{protocol.upper()} — {host}")
+        login_dialog.setModal(True)
+        login_dialog.setFixedSize(350, 200)
+        login_dialog.setStyleSheet("""
+            QDialog { background-color: #f0f0f0; }
+            QLabel { color: #333333; font-size: 10pt; }
+            QLineEdit {
+                background-color: #ffffff; color: #333333;
+                border: 1px solid #d0d0d0; border-radius: 6px;
+                padding: 6px 10px; font-size: 10pt;
+            }
+            QLineEdit:focus { border: 2px solid #ef5350; }
+            QPushButton {
+                background-color: #ef5350; color: white;
+                border: none; border-radius: 6px;
+                padding: 8px 16px; font-weight: bold; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #e53935; }
+            QPushButton#cancelBtn { background-color: #9e9e9e; }
+            QPushButton#cancelBtn:hover { background-color: #757575; }
+        """)
+
+        dlg_layout = QVBoxLayout()
+        dlg_layout.setSpacing(8)
+
+        port_layout = QHBoxLayout()
+        port_label = QLabel("Port:")
+        port_input = QLineEdit(port)
+        port_input.setFixedWidth(80)
+        port_layout.addWidget(port_label)
+        port_layout.addWidget(port_input)
+        port_layout.addStretch()
+        dlg_layout.addLayout(port_layout)
+
+        username_input = QLineEdit()
+        username_input.setPlaceholderText("Username")
+        dlg_layout.addWidget(username_input)
+
+        password_input = QLineEdit()
+        password_input.setPlaceholderText("Password")
+        password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        dlg_layout.addWidget(password_input)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        ok_btn = QPushButton("Connect")
+        ok_btn.clicked.connect(login_dialog.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("cancelBtn")
+        cancel_btn.clicked.connect(login_dialog.reject)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        dlg_layout.addLayout(btn_layout)
+
+        login_dialog.setLayout(dlg_layout)
+
+        if login_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        username = username_input.text().strip()
+        password = password_input.text()
+        port = port_input.text().strip()
+
+        if protocol == 'ssh' and not username:
+            QMessageBox.warning(self, "Warning", "Username is required for SSH.")
+            return
+
+        # Launch connection via ConnectionWorker
+        self._pending_profile_name = None
+        self.connection_worker = ConnectionWorker(
+            protocol, host, port, username, password
+        )
+        self.connection_worker.connection_ready.connect(self.on_connection_ready)
+        self.connection_worker.connection_failed.connect(self.on_connection_failed)
+        self.connection_worker.start()
 
     def create_ssh_page(self):
         """Create the SSH connection configuration page"""
@@ -4215,7 +5433,7 @@ class SerialTerminalGUI(QMainWindow):
         interfaces = get_network_interfaces()
 
         if interfaces:
-            for iface, ip in interfaces:
+            for iface, ip, *_ in interfaces:
                 self.tftp_interface.addItem(f"{iface} ({ip})", ip)
         else:
             self.tftp_interface.addItem("No interfaces found", "")

@@ -8,8 +8,7 @@ Homepage: https://github.com/benjamimgois/omnicom
 
 Package: omnicom
 Architecture: all
-Depends: python3 (>= 3.10), python3-pyqt6, python3-pyte, python3-paramiko, picocom, ${misc:Depends}
-Recommends: python3-standard-telnetlib
+Depends: python3 (>= 3.10), python3-pyqt6, python3-pyte, python3-paramiko, python3-standard-telnetlib, picocom, ${misc:Depends}
 Description: Modern graphical interface for serial communication
  Omnicom is a modern and elegant graphical interface for serial
  communication via picocom, with support for SSH and Telnet connections.

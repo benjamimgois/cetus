@@ -1,0 +1,10 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Omnicom
+Comment=Interface gráfica para comunicação serial
+Exec=/usr/bin/omnicom
+Icon=omnicom
+Terminal=false
+Categories=System;Utility;
