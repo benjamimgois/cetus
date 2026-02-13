@@ -3537,7 +3537,8 @@ class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"Omnicom v{VERSION}")
-        self.setFixedSize(600, 780)
+        self.setMinimumSize(600, 780)
+        self.resize(600, 780)
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
         self.tftp_process = None
@@ -4577,6 +4578,8 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.snmp_results_table.verticalHeader().setVisible(False)
         self.snmp_results_table.setSortingEnabled(True)
+        self.snmp_results_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.snmp_results_table.customContextMenuRequested.connect(self._snmp_context_menu)
         self.snmp_results_table.setStyleSheet("""
             QTableWidget {
                 background-color: #e8e8e8;
@@ -4609,7 +4612,7 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.addWidget(self.snmp_results_group, 1)
 
         # Execute button (full-width at bottom)
-        self.snmp_execute_btn = QPushButton("EXECUTE QUERY")
+        self.snmp_execute_btn = QPushButton("SNMP WALK")
         self.snmp_execute_btn.setMinimumHeight(45)
         self.snmp_execute_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
         self.snmp_execute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -4820,7 +4823,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def _on_snmp_finished(self, message, success):
         """Handle SNMP query completion"""
-        self.snmp_execute_btn.setText("EXECUTE QUERY")
+        self.snmp_execute_btn.setText("SNMP WALK")
         self.snmp_execute_btn.setEnabled(True)
         self.snmp_results_table.setSortingEnabled(True)
         if success:
@@ -4829,6 +4832,51 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.snmp_results_group.setTitle(f"Results — {message}")
 
+    def _snmp_context_menu(self, pos):
+        """Show context menu for SNMP results table"""
+        item = self.snmp_results_table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        oid = self.snmp_results_table.item(row, 0).text()
+        value = self.snmp_results_table.item(row, 1).text()
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #e8e8e8;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #d0d0d0;
+                margin: 4px 8px;
+            }
+        """)
+
+        copy_oid_action = menu.addAction("Copy OID")
+        copy_value_action = menu.addAction("Copy Value")
+        menu.addSeparator()
+        copy_both_action = menu.addAction("Copy OID = Value")
+
+        action = menu.exec(self.snmp_results_table.viewport().mapToGlobal(pos))
+
+        if action == copy_oid_action:
+            QApplication.clipboard().setText(oid)
+        elif action == copy_value_action:
+            QApplication.clipboard().setText(value)
+        elif action == copy_both_action:
+            QApplication.clipboard().setText(f"{oid} = {value}")
 
     def _create_styled_progress_bar(self):
         """Create a styled progress bar for the scanner"""
@@ -4993,6 +5041,12 @@ class SerialTerminalGUI(QMainWindow):
 
         latency_item = QTableWidgetItem(f"{latency:.1f}")
         latency_item.setData(Qt.ItemDataRole.UserRole, latency)
+        if latency >= 100:
+            latency_item.setForeground(QColor("#F44336"))
+        elif latency >= 50:
+            latency_item.setForeground(QColor("#FF9800"))
+        else:
+            latency_item.setForeground(QColor("#4CAF50"))
         self.scan_results_table.setItem(row, 2, latency_item)
         
         # Add MAC vendor information (column 3, removed Method column)
