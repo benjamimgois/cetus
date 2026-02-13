@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-1.3-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Easy and modern interface to manage network devices.
+Easy and modern interface to manage network devices — Serial, SSH, Telnet, IP Scanner and SNMP.
 
 <img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
@@ -43,6 +43,20 @@ Easy and modern interface to manage network devices.
 - Adjustable font size
 - Full keyboard support including special keys and control sequences
 
+### IP Scanner
+- Network host discovery with ICMP, TCP and UDP scan methods
+- Configurable subnet mask, ports, timeout and threads
+- Real-time results with IP, status, latency and MAC vendor detection
+- Sortable results table with export to CSV
+- Progress indicator on the scan button
+
+### SNMP Queries
+- SNMP GET and WALK operations (v1 and v2c)
+- Real-time streaming results displayed in a sortable table (OID, Value, Type)
+- Automatic SNMP value type classification (Integer, String, Counter, TimeTicks, etc.)
+- Walk progress indicator on the execute button
+- Limit of 1000 entries per walk to prevent UI overload
+
 ### TFTP Server
 - Built-in TFTP server for firmware transfers
 - Network interface auto-detection
@@ -61,6 +75,7 @@ Easy and modern interface to manage network devices.
 ### Python Dependencies
 - **pyte** - Terminal emulator (VT100/ANSI)
 - **paramiko** - SSH protocol support (optional, for SSH connections)
+- **pysnmp** - SNMP protocol support (optional, for SNMP queries)
 - **standard-telnetlib** - Telnet protocol support (Python 3.13+)
 
 > **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information. 
@@ -144,15 +159,15 @@ flatpak run io.github.benjamimgois.omnicom
 ```bash
 # Arch Linux / Manjaro
 sudo pacman -S python-pyqt6 qt6-serialport picocom
-pip install pyte paramiko
+pip install pyte paramiko pysnmp
 
 # Fedora / RHEL
 sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom
-pip3 install pyte paramiko
+pip3 install pyte paramiko pysnmp
 
 # Debian / Ubuntu (manual installation)
 sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom
-pip3 install pyte paramiko
+pip3 install pyte paramiko pysnmp
 
 # Python 3.13+ users also need:
 pip3 install standard-telnetlib
@@ -213,8 +228,29 @@ python3 omnicom
 4. Enter port (default: 23)
 5. Click "CONNECT TELNET"
 
-> **Note**: Telnet does not require authentication in the UI - credentials are typically 
+> **Note**: Telnet does not require authentication in the UI - credentials are typically
 > requested by the remote device after connection.
+
+### IP Scanner
+
+1. Click the IP Scan tab
+2. Enter target network (e.g. 192.168.1.0)
+3. Select subnet mask (default: /24)
+4. Choose scan method (ICMP, TCP or UDP)
+5. Click "SCAN" — the button shows progress as "Scanning X%"
+6. Results appear in real-time with IP, status, latency and MAC vendor
+7. Export results to CSV or right-click for options
+
+### SNMP Query
+
+1. Click the SNMP tab
+2. Enter host IP address
+3. Select SNMP version (v1 or v2c)
+4. Enter community string (default: public)
+5. Select query type (snmpwalk or snmpget)
+6. Enter OID (optional for walk, defaults to .1.3.6.1.2.1)
+7. Click "EXECUTE QUERY" — the button shows progress as "Walking X%"
+8. Results stream in real-time to the table with OID, Value and Type columns
 
 ### picocom Commands
 

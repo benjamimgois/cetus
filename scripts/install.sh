@@ -66,8 +66,19 @@ else
     echo "   ✓ picocom already installed: $(picocom --help | head -n1)"
 fi
 
+# Install Python dependencies
+echo "4. Checking Python dependencies..."
+for pkg in pyte paramiko pysnmp; do
+    if ! python3 -c "import $pkg" 2>/dev/null; then
+        echo "   Installing $pkg..."
+        pip3 install --user "$pkg"
+    else
+        echo "   ✓ $pkg already installed"
+    fi
+done
+
 # Add user to dialout group
-echo "4. Configuring permissions..."
+echo "5. Configuring permissions..."
 if groups $USER | grep -q dialout; then
     echo "   ✓ User is already in dialout group"
 else
@@ -78,7 +89,7 @@ else
 fi
 
 # Install .desktop file
-echo "5. Installing menu shortcut..."
+echo "6. Installing menu shortcut..."
 mkdir -p ~/.local/share/applications
 cp omnicom.desktop ~/.local/share/applications/
 echo "   ✓ Shortcut installed at ~/.local/share/applications/"

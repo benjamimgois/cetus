@@ -65,6 +65,19 @@ modules:
         url: https://files.pythonhosted.org/packages/33/85/a1808451ac0b36c61dffe8aea21e45c64ba7da28f6cb0d269171298c6281/standard_telnetlib-3.13.0-py3-none-any.whl
         sha256: b268060a3220c80c7887f2ad9df91cd81e865f0c5052332b81d80ffda8677691
 
+  - name: python3-pysnmp
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "pysnmp" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/58/2b/c6113f47e87173ed5fbb67e92e1b297a0e16a5e58bb498a1e36c2ce6c97f/pyasn1-0.6.2-py3-none-any.whl
+        sha256: 1eb26d860996a18e9b6ed05e7aae0e9fc21619fcee6af91cca9bad4fbea224bf
+      - type: file
+        url: https://files.pythonhosted.org/packages/4c/c1/059be5b3a0ae81f8e4e16e44d01237a0b70a97ce9e4cf75c76dfe38f564b/pysnmp-7.1.22-py3-none-any.whl
+        sha256: 57e704a6ba2bbf571d16cd5dc08b89bb3fa0ebeb5f4f26b87fececad3b3de7a6
+
   - name: picocom
     buildsystem: simple
     build-commands:
@@ -93,6 +106,8 @@ modules:
       - install -Dm644 assets/icons/TFTP.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/TFTP.svg
       - install -Dm644 assets/icons/serial-port-white.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/serial-port-white.svg
       - install -Dm644 assets/icons/ssh_icon.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ssh_icon.svg
+      - install -Dm644 assets/icons/ipscan.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ipscan.svg
+      - install -Dm644 assets/icons/snmp.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/snmp.svg
       - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
