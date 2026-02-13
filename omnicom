@@ -4370,10 +4370,6 @@ class SerialTerminalGUI(QMainWindow):
 
         main_layout.addWidget(scan_group)
 
-        # === Progress Bar ===
-        self.scan_progress_bar = self._create_styled_progress_bar()
-        main_layout.addWidget(self.scan_progress_bar)
-
         # === Results Group ===
         self.scan_results_group = QGroupBox("Results")
         results_layout = QVBoxLayout()
@@ -4957,11 +4953,10 @@ class SerialTerminalGUI(QMainWindow):
         # Clear previous results
         self.scan_results_table.setSortingEnabled(False)
         self.scan_results_table.setRowCount(0)
-        self.scan_progress_bar.setValue(0)
         self.scan_results_group.setTitle("Results (scanning...)")
 
-        # Switch button to Stop mode
-        self.scan_btn.setText("STOP")
+        # Switch button to scanning mode
+        self.scan_btn.setText("Scanning 0%")
         self.scan_btn.setStyleSheet("""
             QPushButton {
                 background-color: #757575;
@@ -4979,7 +4974,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self.scan_worker = ScanWorker(targets, method, ports, timeout, threads)
         self.scan_worker.host_found.connect(self._on_scan_host_found)
-        self.scan_worker.scan_progress.connect(self.scan_progress_bar.setValue)
+        self.scan_worker.scan_progress.connect(lambda p: self.scan_btn.setText(f"Scanning {p}%"))
         self.scan_worker.scan_finished.connect(self._on_scan_finished)
         self.scan_worker.scan_error.connect(self._on_scan_error)
         self.scan_worker.start()
@@ -5013,7 +5008,6 @@ class SerialTerminalGUI(QMainWindow):
     def _on_scan_finished(self, total_found):
         """Handle scan completion"""
         self.scan_results_group.setTitle(f"Results — {total_found} host{'s' if total_found != 1 else ''} found")
-        self.scan_progress_bar.setValue(100)
         self.scan_results_table.setSortingEnabled(True)
         self._reset_scan_button()
 
@@ -5071,7 +5065,6 @@ class SerialTerminalGUI(QMainWindow):
     def _scan_clear_results(self):
         """Clear scan results"""
         self.scan_results_table.setRowCount(0)
-        self.scan_progress_bar.setValue(0)
         self.scan_results_group.setTitle("Results")
 
     def _scan_context_menu(self, pos):
