@@ -4083,31 +4083,8 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.tftp_browse_btn.clicked.connect(self.browse_tftp_directory)
 
-        self.tftp_btn = QPushButton("Start TFTP")
-        self.tftp_btn.setFixedHeight(28)
-        self.tftp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.tftp_btn.clicked.connect(self.toggle_tftp_server)
-        self.tftp_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                padding: 4px 16px;
-            }
-            QPushButton:hover {
-                background-color: #7B1FA2;
-            }
-            QPushButton:pressed {
-                background-color: #4A148C;
-            }
-        """)
-
         tftp_dir_layout.addWidget(self.tftp_directory)
         tftp_dir_layout.addWidget(self.tftp_browse_btn)
-        tftp_dir_layout.addSpacing(8)
-        tftp_dir_layout.addWidget(self.tftp_btn)
         tftp_dir_layout.addStretch()
 
         tftp_dir_widget = QWidget()
@@ -4232,6 +4209,31 @@ class SerialTerminalGUI(QMainWindow):
         # Load initial file list
         self.refresh_tftp_files()
 
+        # Start TFTP button (full-width at bottom)
+        self.tftp_btn = QPushButton("START TFTP")
+        self.tftp_btn.setMinimumHeight(45)
+        self.tftp_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.tftp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tftp_btn.clicked.connect(self.toggle_tftp_server)
+        self.tftp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton:pressed {
+                background-color: #4A148C;
+            }
+        """)
+        main_layout.addWidget(self.tftp_btn)
+
         page.setLayout(main_layout)
         return page
 
@@ -4239,16 +4241,16 @@ class SerialTerminalGUI(QMainWindow):
         """Create the IP Scanner page for network host discovery"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         combo_width = 200
 
         # === Scan Configuration Group ===
         scan_group = QGroupBox("Scan Configuration")
         scan_layout = QFormLayout()
-        scan_layout.setVerticalSpacing(12)
-        scan_layout.setContentsMargins(15, 15, 15, 15)
+        scan_layout.setVerticalSpacing(8)
+        scan_layout.setContentsMargins(10, 10, 10, 10)
         scan_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         scan_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -4264,8 +4266,8 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_network_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 4px 10px;
+                border-radius: 4px;
+                padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
                 font-size: 10pt;
@@ -4314,8 +4316,8 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_ports_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 4px 10px;
+                border-radius: 4px;
+                padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
                 font-size: 10pt;
@@ -4357,6 +4359,7 @@ class SerialTerminalGUI(QMainWindow):
         scan_layout.addRow("Options:", options_widget)
 
         scan_group.setLayout(scan_layout)
+        scan_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
@@ -4366,31 +4369,6 @@ class SerialTerminalGUI(QMainWindow):
         scan_group.setGraphicsEffect(shadow)
 
         main_layout.addWidget(scan_group)
-
-        # === SCAN Button (full-width like Connect SSH) ===
-        self.scan_btn = QPushButton("SCAN")
-        self.scan_btn.setMinimumHeight(45)
-        self.scan_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef5350;
-                color: #ffffff;
-                border: none;
-                border-radius: 8px;
-                padding: 12px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton:hover {
-                background-color: #e53935;
-            }
-            QPushButton:pressed {
-                background-color: #c62828;
-            }
-        """)
-        self.scan_btn.clicked.connect(self._start_scan)
-        main_layout.addWidget(self.scan_btn)
 
         # === Progress Bar ===
         self.scan_progress_bar = self._create_styled_progress_bar()
@@ -4479,6 +4457,7 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.addLayout(actions_layout)
 
         self.scan_results_group.setLayout(results_layout)
+        self.scan_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         shadow2 = QGraphicsDropShadowEffect()
         shadow2.setBlurRadius(15)
@@ -4492,6 +4471,31 @@ class SerialTerminalGUI(QMainWindow):
         # Initialize scanner state
         self.scan_worker = None
 
+        # === SCAN Button (full-width at bottom) ===
+        self.scan_btn = QPushButton("SCAN")
+        self.scan_btn.setMinimumHeight(45)
+        self.scan_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef5350;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #e53935;
+            }
+            QPushButton:pressed {
+                background-color: #c62828;
+            }
+        """)
+        self.scan_btn.clicked.connect(self._start_scan)
+        main_layout.addWidget(self.scan_btn)
+
         page.setLayout(main_layout)
         return page
 
@@ -4499,20 +4503,20 @@ class SerialTerminalGUI(QMainWindow):
         """Create the SNMP query page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         # Connection group
         conn_group = QGroupBox("SNMP Connection")
         conn_layout = QFormLayout()
-        conn_layout.setVerticalSpacing(12)
-        conn_layout.setContentsMargins(15, 15, 15, 15)
+        conn_layout.setVerticalSpacing(8)
+        conn_layout.setContentsMargins(10, 10, 10, 10)
 
         snmp_line_edit_style = """
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 4px 10px;
+                border-radius: 4px;
+                padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
                 font-size: 10pt;
@@ -4537,13 +4541,14 @@ class SerialTerminalGUI(QMainWindow):
         conn_layout.addRow("Community:", self.snmp_community_input)
 
         conn_group.setLayout(conn_layout)
+        conn_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(conn_group)
 
         # Query group
         query_group = QGroupBox("Query Configuration")
         query_layout = QFormLayout()
-        query_layout.setVerticalSpacing(12)
-        query_layout.setContentsMargins(15, 15, 15, 15)
+        query_layout.setVerticalSpacing(8)
+        query_layout.setContentsMargins(10, 10, 10, 10)
 
         self.snmp_query_type_combo = QComboBox()
         self.snmp_query_type_combo.addItems(["snmpwalk", "snmpget"])
@@ -4555,58 +4560,83 @@ class SerialTerminalGUI(QMainWindow):
         query_layout.addRow("OID:", self.snmp_oid_input)
 
         query_group.setLayout(query_layout)
+        query_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(query_group)
 
-        # Execute button
+        # Results
+        self.snmp_results_group = QGroupBox("Results")
+        results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(10, 2, 10, 8)
+        results_layout.setSpacing(6)
+
+        self.snmp_results_table = QTableWidget()
+        self.snmp_results_table.setColumnCount(3)
+        self.snmp_results_table.setHorizontalHeaderLabels(["OID", "Value", "Type"])
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.snmp_results_table.setColumnWidth(2, 65)
+        self.snmp_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.snmp_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.snmp_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.snmp_results_table.verticalHeader().setVisible(False)
+        self.snmp_results_table.setSortingEnabled(True)
+        self.snmp_results_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 8pt;
+                gridline-color: #d0d0d0;
+            }
+            QTableWidget::item {
+                padding: 2px;
+                background-color: #e8e8e8;
+            }
+            QTableWidget::item:selected {
+                background-color: #FF9800;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 2px;
+                border: none;
+                font-weight: bold;
+                font-size: 8pt;
+            }
+        """)
+        results_layout.addWidget(self.snmp_results_table)
+        self.snmp_results_group.setLayout(results_layout)
+        self.snmp_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        main_layout.addWidget(self.snmp_results_group, 1)
+
+        # Execute button (full-width at bottom)
         self.snmp_execute_btn = QPushButton("EXECUTE QUERY")
         self.snmp_execute_btn.setMinimumHeight(45)
+        self.snmp_execute_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.snmp_execute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snmp_execute_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800;
-                color: white;
+                color: #ffffff;
                 border: none;
                 border-radius: 8px;
+                padding: 12px;
                 font-weight: bold;
                 font-size: 11pt;
             }
             QPushButton:hover {
                 background-color: #F57C00;
             }
-        """)
-        self.snmp_execute_btn.clicked.connect(self.execute_snmp_query)
-        main_layout.addWidget(self.snmp_execute_btn)
-
-        # Results
-        results_group = QGroupBox("Results")
-        results_layout = QVBoxLayout()
-        self.snmp_results_text = QTextEdit()
-        self.snmp_results_text.setReadOnly(True)
-        self.snmp_results_text.setFont(QFont("Monospace", 9))
-        self.snmp_results_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #263238;
-                color: #ECEFF1;
-                border: 1px solid #37474f;
-                border-radius: 6px;
-                padding: 8px;
+            QPushButton:pressed {
+                background-color: #E65100;
             }
         """)
-        results_layout.addWidget(self.snmp_results_text)
-        results_group.setLayout(results_layout)
-        main_layout.addWidget(results_group, 1)
-
-        # Status
-        status_layout = QHBoxLayout()
-        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.snmp_status_led = QLabel("●")
-        self.snmp_status_led.setStyleSheet("color: #FF9800; font-size: 14px;")
-        self.snmp_status_label = QLabel("Ready for SNMP queries")
-        self.snmp_status_label.setStyleSheet("color: #FF9800; font-size: 10pt;")
-        status_layout.addWidget(self.snmp_status_led)
-        status_layout.addWidget(self.snmp_status_label)
-        status_widget = QWidget()
-        status_widget.setLayout(status_layout)
-        main_layout.addWidget(status_widget)
+        self.snmp_execute_btn.clicked.connect(self.execute_snmp_query)
+        self.snmp_execute_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        main_layout.addWidget(self.snmp_execute_btn)
 
         page.setLayout(main_layout)
         return page
@@ -4622,29 +4652,37 @@ class SerialTerminalGUI(QMainWindow):
         
         # Validation
         if not host:
-            self.snmp_results_text.setPlainText("Error: Host is required")
+            self.snmp_results_table.setRowCount(0)
+            self.snmp_results_group.setTitle("Results — Error: Host is required")
             return
-        
+
         # OID is required only for snmpget, optional for snmpwalk
         if query_type == "snmpget" and not oid:
-            self.snmp_results_text.setPlainText("Error: OID is required for snmpget")
+            self.snmp_results_table.setRowCount(0)
+            self.snmp_results_group.setTitle("Results — Error: OID is required for snmpget")
             return
-        
+
         # Use default OID for snmpwalk if not specified
         if query_type == "snmpwalk" and not oid:
             oid = ".1.3.6.1.2.1"  # Default: walk entire MIB-2 tree
-        
-        # Update status
-        self.snmp_status_label.setText(f"Executing {query_type}...")
-        self.snmp_status_led.setStyleSheet("color: #FFA726; font-size: 14px;")
-        self.snmp_results_text.setPlainText(f"Querying {host}...\n")
+
+        # Update UI
+        self.snmp_results_group.setTitle(f"Results (executing {query_type}...)")
+        self.snmp_results_table.setRowCount(0)
+        self.snmp_execute_btn.setEnabled(False)
+        if query_type == "snmpwalk":
+            self.snmp_execute_btn.setText("Walking 0%")
+        else:
+            self.snmp_execute_btn.setText("Querying...")
         
         # Execute query in background thread
         from PyQt6.QtCore import QThread, pyqtSignal
         
         class SNMPWorker(QThread):
-            result_ready = pyqtSignal(str, bool)  # result, success
-            
+            row_received = pyqtSignal(str, str, str)  # oid, value, type
+            progress = pyqtSignal(int)  # percentage 0-100
+            finished_result = pyqtSignal(str, bool)  # message, success
+
             def __init__(self, host, port, oid, query_type, version, community):
                 super().__init__()
                 self.host = host
@@ -4653,7 +4691,29 @@ class SerialTerminalGUI(QMainWindow):
                 self.query_type = query_type
                 self.version = version
                 self.community = community
-            
+
+            @staticmethod
+            def _classify_type(value):
+                """Classify SNMP value type"""
+                type_name = type(value).__name__
+                type_map = {
+                    'Integer': 'Integer', 'Integer32': 'Integer',
+                    'Counter32': 'Counter32', 'Counter64': 'Counter64',
+                    'Gauge32': 'Gauge32', 'Unsigned32': 'Unsigned',
+                    'TimeTicks': 'TimeTicks', 'IpAddress': 'IpAddress',
+                    'OctetString': 'String', 'DisplayString': 'String',
+                    'ObjectIdentity': 'OID', 'ObjectIdentifier': 'OID',
+                    'Bits': 'Bits', 'Opaque': 'Opaque',
+                }
+                return type_map.get(type_name, type_name)
+
+            def _emit_varbind(self, varBind):
+                self.row_received.emit(
+                    str(varBind[0]),
+                    str(varBind[1]),
+                    SNMPWorker._classify_type(varBind[1])
+                )
+
             def run(self):
                 try:
                     import asyncio
@@ -4662,18 +4722,18 @@ class SerialTerminalGUI(QMainWindow):
                         ContextData, ObjectType, ObjectIdentity,
                         get_cmd, walk_cmd
                     )
-                    
+
                     async def do_snmp_query():
-                        # Determine SNMP version
                         if self.version == "v1":
                             mp_model = 0
                         elif self.version == "v2c":
                             mp_model = 1
                         else:
-                            return "SNMPv3 not yet implemented", False
-                        
-                        results = []
-                        
+                            self.finished_result.emit("SNMPv3 not yet implemented", False)
+                            return
+
+                        count = 0
+
                         try:
                             engine = SnmpEngine()
                             target = await UdpTransportTarget.create(
@@ -4681,9 +4741,8 @@ class SerialTerminalGUI(QMainWindow):
                                 timeout=2.0,
                                 retries=1
                             )
-                            
+
                             if self.query_type == "snmpget":
-                                # SNMP GET
                                 errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                                     engine,
                                     CommunityData(self.community, mpModel=mp_model),
@@ -4691,18 +4750,19 @@ class SerialTerminalGUI(QMainWindow):
                                     ContextData(),
                                     ObjectType(ObjectIdentity(self.oid))
                                 )
-                                
+
                                 if errorIndication:
-                                    return f"Error: {errorIndication}", False
+                                    self.finished_result.emit(f"Error: {errorIndication}", False)
+                                    return
                                 elif errorStatus:
-                                    return f"Error: {errorStatus.prettyPrint()} at {errorIndex and varBinds[int(errorIndex) - 1][0] or '?'}", False
+                                    self.finished_result.emit(f"Error: {errorStatus.prettyPrint()} at {errorIndex and varBinds[int(errorIndex) - 1][0] or '?'}", False)
+                                    return
                                 else:
                                     for varBind in varBinds:
-                                        results.append(f"{varBind[0]} = {varBind[1]}")
-                            
+                                        self._emit_varbind(varBind)
+                                        count += 1
+
                             else:  # snmpwalk
-                                # SNMP WALK
-                                count = 0
                                 async for (errorIndication, errorStatus, errorIndex, varBinds) in walk_cmd(
                                     engine,
                                     CommunityData(self.community, mpModel=mp_model),
@@ -4712,67 +4772,66 @@ class SerialTerminalGUI(QMainWindow):
                                     lexicographicMode=False
                                 ):
                                     if errorIndication:
-                                        return f"Error: {errorIndication}", False
+                                        self.finished_result.emit(f"Error: {errorIndication}", False)
+                                        return
                                     elif errorStatus:
-                                        return f"Error: {errorStatus.prettyPrint()} at {errorIndex and varBinds[int(errorIndex) - 1][0] or '?'}", False
+                                        self.finished_result.emit(f"Error: {errorStatus.prettyPrint()} at {errorIndex and varBinds[int(errorIndex) - 1][0] or '?'}", False)
+                                        return
                                     else:
                                         for varBind in varBinds:
-                                            results.append(f"{varBind[0]} = {varBind[1]}")
+                                            self._emit_varbind(varBind)
                                             count += 1
-                                            if count >= 1000:  # Limit to prevent overwhelming UI
-                                                results.append("\n... (truncated at 1000 entries)")
+                                            self.progress.emit(min(count * 100 // 1000, 99))
+                                            if count >= 1000:
                                                 break
-                                    
                                     if count >= 1000:
                                         break
-                            
-                            if results:
-                                parts = [
-                                    f"SNMP {self.query_type.upper()} Results",
-                                    "=" * 60,
-                                    f"Host: {self.host}:{self.port}",
-                                    f"Version: {self.version}",
-                                    f"Community: {self.community}",
-                                    f"OID: {self.oid}",
-                                    "=" * 60,
-                                    "",
-                                    "\n".join(results),
-                                    f"\nTotal: {len(results)} entries"
-                                ]
-                                output = "\n".join(parts)
-                                return output, True
+
+                            if count > 0:
+                                self.finished_result.emit("", True)
                             else:
-                                return "No results returned", False
-                        
+                                self.finished_result.emit("No results returned", False)
+
                         finally:
                             engine.close_dispatcher()
-                    
-                    # Run async function in event loop
-                    result, success = asyncio.run(do_snmp_query())
-                    self.result_ready.emit(result, success)
-                
+
+                    asyncio.run(do_snmp_query())
+
                 except ImportError as e:
-                    self.result_ready.emit(
+                    self.finished_result.emit(
                         f"Error: pysnmp not installed or import failed\n\n{str(e)}\n\nInstall with: pip install pysnmp",
                         False
                     )
                 except Exception as e:
-                    self.result_ready.emit(f"Error: {str(e)}", False)
+                    self.finished_result.emit(f"Error: {str(e)}", False)
 
                 # Create and start worker
+        self.snmp_results_table.setSortingEnabled(False)
         self.snmp_worker = SNMPWorker(host, port, oid, query_type, version, community)
-        self.snmp_worker.result_ready.connect(self._on_snmp_result)
+        self.snmp_worker.row_received.connect(self._on_snmp_row)
+        self.snmp_worker.progress.connect(lambda p: self.snmp_execute_btn.setText(f"Walking {p}%"))
+        self.snmp_worker.finished_result.connect(self._on_snmp_finished)
         self.snmp_worker.start()
     
-    def _on_snmp_result(self, result, success):
-        """Handle SNMP query results"""
-        self.snmp_results_text.setPlainText(result)
+    def _on_snmp_row(self, oid, value, vtype):
+        """Append a single SNMP result row to the table"""
+        row = self.snmp_results_table.rowCount()
+        self.snmp_results_table.insertRow(row)
+        self.snmp_results_table.setItem(row, 0, QTableWidgetItem(oid))
+        self.snmp_results_table.setItem(row, 1, QTableWidgetItem(value))
+        self.snmp_results_table.setItem(row, 2, QTableWidgetItem(vtype))
+        self.snmp_results_group.setTitle(f"Results — {row + 1} entries")
+
+    def _on_snmp_finished(self, message, success):
+        """Handle SNMP query completion"""
+        self.snmp_execute_btn.setText("EXECUTE QUERY")
+        self.snmp_execute_btn.setEnabled(True)
+        self.snmp_results_table.setSortingEnabled(True)
         if success:
-            self.snmp_status_label.setText("Query completed successfully")
-            self.snmp_status_led.setStyleSheet("color: #4CAF50; font-size: 14px;")
+            count = self.snmp_results_table.rowCount()
+            self.snmp_results_group.setTitle(f"Results — {count} entries")
         else:
-            self.snmp_status_label.setText("Query failed")
-            self.snmp_status_led.setStyleSheet("color: #F44336; font-size: 14px;")
+            self.snmp_results_group.setTitle(f"Results — {message}")
 
 
     def _create_styled_progress_bar(self):
@@ -5322,6 +5381,7 @@ class SerialTerminalGUI(QMainWindow):
         shadow.setYOffset(2)
         shadow.setColor(QColor(0, 0, 0, 30))
         ssh_group.setGraphicsEffect(shadow)
+        ssh_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         main_layout.addWidget(ssh_group)
 
@@ -5431,9 +5491,30 @@ class SerialTerminalGUI(QMainWindow):
         shadow3.setColor(QColor(0, 0, 0, 30))
         profiles_group.setGraphicsEffect(shadow3)
 
-        main_layout.addWidget(profiles_group, 1)  # stretch factor 1 to expand
+        profiles_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        main_layout.addWidget(profiles_group, 1)
 
-        # Connect SSH button
+        # SSH Status
+        ssh_status_layout = QHBoxLayout()
+        ssh_status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ssh_status_layout.setSpacing(8)
+
+        self.ssh_status_led = QLabel("●")
+        self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+        self.ssh_status_led.setVisible(False)
+        self.ssh_status_label = QLabel("")
+        self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+
+        ssh_status_layout.addWidget(self.ssh_status_led)
+        ssh_status_layout.addWidget(self.ssh_status_label)
+
+        self.ssh_status_widget = QWidget()
+        self.ssh_status_widget.setLayout(ssh_status_layout)
+        self.ssh_status_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.ssh_status_widget.setVisible(False)
+        main_layout.addWidget(self.ssh_status_widget)
+
+        # Connect SSH button (full-width at bottom)
         self.ssh_connect_btn = QPushButton("CONNECT SSH")
         self.ssh_connect_btn.setMinimumHeight(45)
         self.ssh_connect_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -5456,25 +5537,8 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         self.ssh_connect_btn.clicked.connect(self.connect_ssh)
+        self.ssh_connect_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(self.ssh_connect_btn)
-
-        # SSH Status
-        ssh_status_layout = QHBoxLayout()
-        ssh_status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ssh_status_layout.setSpacing(8)
-
-        self.ssh_status_led = QLabel("●")
-        self.ssh_status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
-
-        self.ssh_status_label = QLabel("Ready for SSH connection")
-        self.ssh_status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
-
-        ssh_status_layout.addWidget(self.ssh_status_led)
-        ssh_status_layout.addWidget(self.ssh_status_label)
-
-        ssh_status_widget = QWidget()
-        ssh_status_widget.setLayout(ssh_status_layout)
-        main_layout.addWidget(ssh_status_widget)
 
         page.setLayout(main_layout)
 
@@ -5831,7 +5895,7 @@ class SerialTerminalGUI(QMainWindow):
             self.tftp_process.terminate()
             self.tftp_process.wait()
             self.tftp_process = None
-            self.tftp_btn.setText("Start TFTP")
+            self.tftp_btn.setText("START TFTP")
             self.tftp_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #2196F3;
@@ -5973,7 +6037,7 @@ class SerialTerminalGUI(QMainWindow):
                 self.tftp_process = None
                 return
 
-            self.tftp_btn.setText("Stop TFTP")
+            self.tftp_btn.setText("STOP TFTP")
             self.tftp_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #f44336;
@@ -6503,6 +6567,8 @@ class SerialTerminalGUI(QMainWindow):
                 password = password_input.text()
 
         # Update status
+        self.ssh_status_widget.setVisible(True)
+        self.ssh_status_led.setVisible(True)
         self.ssh_status_label.setText("Connecting...")
         self.ssh_status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
         self.ssh_status_led.setStyleSheet("color: #ff9800; font-size: 14px;")
