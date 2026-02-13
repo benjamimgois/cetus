@@ -3610,7 +3610,7 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_tab_btn.setCheckable(True)
         self.tftp_tab_btn.setChecked(True)
         self.tftp_tab_btn.clicked.connect(lambda: self.switch_tab(0))
-        self.tftp_tab_btn.setStyleSheet(tab_btn_style.format(color='#4caf50'))
+        self.tftp_tab_btn.setStyleSheet(tab_btn_style.format(color='#9C27B0'))
 
         # Serial tab button
         self.serial_tab_btn = QPushButton()
@@ -3626,7 +3626,7 @@ class SerialTerminalGUI(QMainWindow):
         self.serial_tab_btn.setToolTip("Serial Connection")
         self.serial_tab_btn.setCheckable(True)
         self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(1))
-        self.serial_tab_btn.setStyleSheet(tab_btn_style.format(color='#42a5f5'))
+        self.serial_tab_btn.setStyleSheet(tab_btn_style.format(color='#2196F3'))
 
         # SSH tab button
         self.ssh_tab_btn = QPushButton()
@@ -3642,7 +3642,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_tab_btn.setToolTip("SSH Connection")
         self.ssh_tab_btn.setCheckable(True)
         self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(2))
-        self.ssh_tab_btn.setStyleSheet(tab_btn_style.format(color='#ffa726'))
+        self.ssh_tab_btn.setStyleSheet(tab_btn_style.format(color='#4CAF50'))
 
         # IP Scanner tab button
         self.ipscan_tab_btn = QPushButton()
@@ -3762,7 +3762,7 @@ class SerialTerminalGUI(QMainWindow):
         velocity_label = QLabel("Baud Rate:")
         velocity_font = QFont("Sans Serif", 10, QFont.Weight.Bold)
         velocity_label.setFont(velocity_font)
-        velocity_label.setStyleSheet("color: #2e7d32;")
+        velocity_label.setStyleSheet("color: #1976D2;")
 
         self.baudrate = QComboBox()
         self.baudrate.addItems([
@@ -3774,12 +3774,12 @@ class SerialTerminalGUI(QMainWindow):
         self.baudrate.setToolTip("Communication speed in bits per second")
         self.baudrate.setStyleSheet("""
             QComboBox {
-                border: 2px solid #4caf50;
-                background-color: #f1f8e9;
+                border: 2px solid #2196F3;
+                background-color: #E3F2FD;
             }
             QComboBox:hover {
-                border: 2px solid #2e7d32;
-                background-color: #e8f5e9;
+                border: 2px solid #1976D2;
+                background-color: #BBDEFB;
             }
         """)
         comm_layout.addRow(velocity_label, self.baudrate)
@@ -3946,7 +3946,7 @@ class SerialTerminalGUI(QMainWindow):
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connect_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4caf50;
+                background-color: #2196F3;
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
@@ -3955,10 +3955,10 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton:hover {
-                background-color: #43a047;
+                background-color: #1976D2;
             }
             QPushButton:pressed {
-                background-color: #388e3c;
+                background-color: #0D47A1;
             }
         """)
         self.connect_btn.clicked.connect(self.connect)
@@ -3970,10 +3970,10 @@ class SerialTerminalGUI(QMainWindow):
         status_layout.setSpacing(8)
 
         self.status_led = QLabel("●")
-        self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+        self.status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
 
         self.status_label = QLabel("Ready to connect")
-        self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
+        self.status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
 
         status_layout.addWidget(self.status_led)
         status_layout.addWidget(self.status_label)
@@ -4067,7 +4067,7 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_btn.clicked.connect(self.toggle_tftp_server)
         self.tftp_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2196F3;
+                background-color: #9C27B0;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -4075,7 +4075,10 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 4px 16px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: #7B1FA2;
+            }
+            QPushButton:pressed {
+                background-color: #4A148C;
             }
         """)
 
@@ -5419,8 +5422,8 @@ class SerialTerminalGUI(QMainWindow):
         if ports:
             self.port.addItems(ports)
             self.status_label.setText(f"{len(ports)} port(s) found")
-            self.status_label.setStyleSheet("color: #4caf50; font-size: 10pt;")
-            self.status_led.setStyleSheet("color: #4caf50; font-size: 14px;")
+            self.status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
+            self.status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
         else:
             self.port.addItem("No ports found")
             self.status_label.setText("No serial ports available")
