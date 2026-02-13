@@ -12,7 +12,12 @@ import json
 import socket
 import threading
 import socketserver
-import telnetlib
+try:
+    import telnetlib
+    TELNET_AVAILABLE = True
+except ImportError:
+    telnetlib = None
+    TELNET_AVAILABLE = False
 from pathlib import Path
 
 # Application version
@@ -1364,9 +1369,11 @@ class TerminalWidget(QTextEdit):
         # Account for padding (10px on each side from stylesheet)
         viewport = self.viewport()
         available_width = viewport.width() - 20
-        available_height = viewport.height()
+        available_height = viewport.height() - 20  # top + bottom padding
         cols = max(40, int(available_width / char_width))
-        rows = max(10, int(available_height / char_height))
+        # Match the HTML line-height: 1.2 used in render_screen
+        line_height = char_height * 1.2
+        rows = max(10, int(available_height / line_height))
         if cols != self.screen.columns or rows != self.screen.lines:
             self.screen.resize(rows, cols)
             self._render_needed = True
@@ -1407,7 +1414,9 @@ class ConnectionWorker(QThread):
         try:
             if self.connection_type == 'telnet':
                 # Establish Telnet connection
-                import telnetlib
+                if not TELNET_AVAILABLE:
+                    self.connection_failed.emit("telnetlib is not available.\nInstall with: pip install standard-telnetlib")
+                    return
                 telnet_client = telnetlib.Telnet(self.host, int(self.port), timeout=10)
                 self.connection_ready.emit('telnet', telnet_client, None, 
                                           (self.host, self.port, self.username))
@@ -2834,6 +2843,10 @@ Router#_\r
 
     def start_telnet(self, host, port, username=None):
         """Start Telnet connection"""
+        if not TELNET_AVAILABLE:
+            self.terminal.append_output("[ERROR] telnetlib not available\n")
+            self.terminal.append_output("Install with: pip install standard-telnetlib\n")
+            return False
         self.connection_type = 'telnet'
         self.setWindowTitle(f"Omnicom Terminal - Telnet: {host}")
 
