@@ -7,6 +7,7 @@ Version: 1.3
 import sys
 import os
 import subprocess
+import shutil
 import glob
 import json
 import socket
@@ -1414,20 +1415,22 @@ class TerminalWidget(QTextEdit):
 
 
 class ScanWorker(QThread):
-    """Worker thread for network host discovery via ICMP, TCP or UDP"""
+    """Worker thread for network host discovery via ICMP, TCP, UDP or ARP"""
 
-    host_found = pyqtSignal(str, str, float, str, str, str)  # ip, status, latency_ms, method, mac, vendor
+    host_found = pyqtSignal(str, str, float, str, str, str, str)  # ip, status, latency_ms, method, mac, vendor, hostname
     scan_progress = pyqtSignal(int)  # percentage
     scan_finished = pyqtSignal(int)  # total hosts found
     scan_error = pyqtSignal(str)
 
-    def __init__(self, targets, method, ports=None, timeout=1, max_threads=50):
+    def __init__(self, targets, method, ports=None, timeout=1, max_threads=50, sudo_password=None, dns_lookup=False):
         super().__init__()
         self.targets = targets  # list of IP strings
-        self.method = method    # 'ICMP', 'TCP', 'UDP'
+        self.method = method    # 'ICMP', 'TCP', 'UDP', 'ARP'
         self.ports = ports or []
         self.timeout = timeout
         self.max_threads = max_threads
+        self.sudo_password = sudo_password
+        self.dns_lookup = dns_lookup
         self._stop_flag = False
         self._found_count = 0
 
@@ -1455,11 +1458,16 @@ class ScanWorker(QThread):
                     self.scan_progress.emit(int(completed * 100 / total))
                     result = future.result()
                     if result:
-                        ip, status, latency, method = result
+                        ip, status, latency, method = result[:4]
                         self._found_count += 1
-                        # Get MAC address and vendor
-                        mac, vendor = self._get_mac_and_vendor(ip)
-                        self.host_found.emit(ip, status, latency, method, mac, vendor)
+                        # For ARP scan, MAC comes from arping output
+                        if method == 'ARP' and len(result) > 4:
+                            mac = result[4]
+                            vendor = self._get_mac_vendor(mac) if mac else "Unknown"
+                        else:
+                            mac, vendor = self._get_mac_and_vendor(ip)
+                        hostname = self._resolve_hostname(ip) if self.dns_lookup else ""
+                        self.host_found.emit(ip, status, latency, method, mac, vendor, hostname)
         except Exception as e:
             self.scan_error.emit(str(e))
         self.scan_finished.emit(self._found_count)
@@ -1473,6 +1481,8 @@ class ScanWorker(QThread):
             return self._tcp_scan(ip)
         elif self.method == 'UDP':
             return self._udp_scan(ip)
+        elif self.method == 'ARP':
+            return self._arp_scan(ip)
         return None
 
     def _ping(self, ip):
@@ -1544,6 +1554,55 @@ class ScanWorker(QThread):
             status = f"UDP: {','.join(responded_ports)}"
             return (ip, status, round(best_latency or 0, 1), "UDP")
         return None
+
+    def _arp_scan(self, ip):
+        """Discover host using ARP (Layer 2) via arping"""
+        try:
+            cmd = ['arping', '-c', '1', '-w', str(self.timeout), ip]
+            stdin_data = None
+            if self.sudo_password:
+                cmd = ['sudo', '-S'] + cmd
+                stdin_data = self.sudo_password + '\n'
+            result = subprocess.run(
+                cmd,
+                input=stdin_data,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=self.timeout + 2, text=True
+            )
+            if result.returncode == 0:
+                # Parse: "Unicast reply from 192.168.1.1 [AA:BB:CC:DD:EE:FF]  1.234ms"
+                for line in result.stdout.splitlines():
+                    if 'reply from' in line.lower() or 'unicast' in line.lower():
+                        mac = ""
+                        latency = 0.0
+                        # Extract MAC from [XX:XX:XX:XX:XX:XX]
+                        bracket_start = line.find('[')
+                        bracket_end = line.find(']')
+                        if bracket_start != -1 and bracket_end != -1:
+                            mac = line[bracket_start + 1:bracket_end].upper()
+                        # Extract latency (e.g. "1.234ms")
+                        parts = line.split()
+                        for part in parts:
+                            if part.lower().endswith('ms'):
+                                try:
+                                    latency = float(part[:-2])
+                                except ValueError:
+                                    pass
+                        return (ip, "Active", round(latency, 1), "ARP", mac)
+        except FileNotFoundError:
+            # arping not installed
+            return None
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        return None
+
+    def _resolve_hostname(self, ip):
+        """Resolve IP address to hostname via reverse DNS lookup"""
+        try:
+            hostname, _, _ = socket.gethostbyaddr(ip)
+            return hostname
+        except (socket.herror, socket.gaierror, OSError):
+            return ""
 
     def _get_mac_address(self, ip):
         """Get MAC address for an IP using ARP"""
@@ -3549,6 +3608,12 @@ class SerialTerminalGUI(QMainWindow):
         self.apply_styles()
         self.load_settings()
 
+    def _enable_table_tooltips(self, table):
+        """Enable automatic tooltips on table cells showing full text on hover"""
+        table.setMouseTracking(True)
+        table.cellEntered.connect(lambda row, col, t=table:
+            t.setToolTip(t.item(row, col).text() if t.item(row, col) else ""))
+
     def init_ui(self):
         """Initialize the user interface with vertical tabs"""
         # Central widget
@@ -3901,6 +3966,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         profiles_layout.addWidget(self.serial_profiles_table)
+        self._enable_table_tooltips(self.serial_profiles_table)
 
         serial_btn_layout = QHBoxLayout()
         serial_btn_layout.setSpacing(8)
@@ -4153,6 +4219,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         files_layout.addWidget(self.tftp_files_table)
+        self._enable_table_tooltips(self.tftp_files_table)
 
         # Refresh button
         refresh_btn_layout = QHBoxLayout()
@@ -4301,7 +4368,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Method selector
         self.scan_method_combo = QComboBox()
-        self.scan_method_combo.addItems(["ICMP", "TCP", "UDP"])
+        self.scan_method_combo.addItems(["ICMP", "TCP", "UDP", "ARP"])
         self.scan_method_combo.setFixedWidth(combo_width)
         self.scan_method_combo.setToolTip("Scan method")
         self.scan_method_combo.currentTextChanged.connect(self._scan_method_changed)
@@ -4331,7 +4398,7 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_ports_input.setVisible(False)
         scan_layout.addRow(self.scan_ports_label, self.scan_ports_input)
 
-        # Timeout and threads in a row
+        # Timeout and DNS option in a row
         options_layout = QHBoxLayout()
         options_layout.setContentsMargins(0, 0, 0, 0)
         options_layout.setSpacing(15)
@@ -4341,17 +4408,35 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_timeout_combo.addItems(["1s", "2s", "3s", "5s"])
         self.scan_timeout_combo.setFixedWidth(80)
 
-        threads_label = QLabel("Threads:")
-        self.scan_threads_combo = QComboBox()
-        self.scan_threads_combo.addItems(["10", "25", "50", "100"])
-        self.scan_threads_combo.setCurrentIndex(2)  # default 50
-        self.scan_threads_combo.setFixedWidth(80)
+        self.scan_dns_checkbox = QCheckBox("DNS Lookup")
+        self.scan_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS (slower)")
+        self.scan_dns_checkbox.setChecked(False)
+        self.scan_dns_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #333333;
+                font-size: 10pt;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                background-color: #f5f5f5;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ef5350;
+                border-color: #ef5350;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #ef5350;
+            }
+        """)
 
         options_layout.addWidget(timeout_label)
         options_layout.addWidget(self.scan_timeout_combo)
         options_layout.addSpacing(10)
-        options_layout.addWidget(threads_label)
-        options_layout.addWidget(self.scan_threads_combo)
+        options_layout.addWidget(self.scan_dns_checkbox)
         options_layout.addStretch()
 
         options_widget = QWidget()
@@ -4378,13 +4463,15 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(6)
 
         self.scan_results_table = QTableWidget()
-        self.scan_results_table.setColumnCount(4)
-        self.scan_results_table.setHorizontalHeaderLabels(["IP Address", "Status", "Latency (ms)", "MAC Vendor"])
+        self.scan_results_table.setColumnCount(5)
+        self.scan_results_table.setHorizontalHeaderLabels(["IP Address", "Status", "Latency (ms)", "Hostname", "MAC Vendor"])
         self.scan_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.scan_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.scan_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.scan_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.scan_results_table.setColumnWidth(2, 100)
+        self.scan_results_table.setColumnHidden(3, True)
         self.scan_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.scan_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.scan_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -4419,6 +4506,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         results_layout.addWidget(self.scan_results_table)
+        self._enable_table_tooltips(self.scan_results_table)
 
         # Action buttons
         actions_layout = QHBoxLayout()
@@ -4607,6 +4695,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         results_layout.addWidget(self.snmp_results_table)
+        self._enable_table_tooltips(self.snmp_results_table)
         self.snmp_results_group.setLayout(results_layout)
         self.snmp_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         main_layout.addWidget(self.snmp_results_group, 1)
@@ -4967,6 +5056,53 @@ class SerialTerminalGUI(QMainWindow):
         except ValueError:
             return []
 
+    def _ask_sudo_password(self, message):
+        """Show dialog to ask for sudo password. Returns password or None if cancelled."""
+        password_dialog = QDialog(self)
+        password_dialog.setWindowTitle("Sudo Password Required")
+        password_dialog.setModal(True)
+        password_dialog.setFixedSize(420, 160)
+        password_dialog.setStyleSheet("""
+            QDialog { background-color: #f5f5f5; }
+            QLabel { color: #333333; font-size: 10pt; }
+            QLineEdit {
+                background-color: #ffffff; color: #333333;
+                border: 1px solid #d0d0d0; border-radius: 6px;
+                padding: 8px; font-size: 10pt;
+            }
+            QLineEdit:focus { border: 2px solid #ef5350; }
+            QPushButton {
+                background-color: #ef5350; color: #ffffff;
+                border: none; border-radius: 6px;
+                padding: 8px 16px; font-weight: bold; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #e53935; }
+            QPushButton#cancelButton { background-color: #78909c; color: #ffffff; }
+            QPushButton#cancelButton:hover { background-color: #607d8b; }
+        """)
+        dlg_layout = QVBoxLayout()
+        dlg_layout.addWidget(QLabel(message))
+        password_input = QLineEdit()
+        password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        password_input.setPlaceholderText("Password")
+        dlg_layout.addWidget(password_input)
+        btn_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(password_dialog.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setObjectName("cancelButton")
+        cancel_button.clicked.connect(password_dialog.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_button)
+        btn_layout.addWidget(cancel_button)
+        dlg_layout.addLayout(btn_layout)
+        password_dialog.setLayout(dlg_layout)
+
+        if password_dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        password = password_input.text()
+        return password if password else None
+
     def _start_scan(self):
         """Start or stop the network scan"""
         if self.scan_worker and self.scan_worker.isRunning():
@@ -4996,7 +5132,49 @@ class SerialTerminalGUI(QMainWindow):
                 return
 
         timeout = int(self.scan_timeout_combo.currentText().replace('s', ''))
-        threads = int(self.scan_threads_combo.currentText())
+        threads = 50
+
+        # ARP scan requires root privileges for arping
+        sudo_password = None
+        if method == 'ARP':
+            # Check if arping is available
+            if not shutil.which('arping'):
+                QMessageBox.warning(self, "IP Scanner",
+                    "arping not found.\nInstall with: sudo pacman -S iputils")
+                return
+            # Test if arping works without sudo
+            try:
+                test = subprocess.run(
+                    ['arping', '-c', '1', '-w', '1', targets[0]],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    timeout=3, text=True
+                )
+                if test.returncode != 0 and 'ermit' in (test.stderr or ''):
+                    raise PermissionError
+            except (PermissionError, subprocess.TimeoutExpired, OSError):
+                # Need sudo - ask for password
+                sudo_password = self._ask_sudo_password(
+                    "ARP scan requires root privileges.\nPlease enter your sudo password:")
+                if sudo_password is None:
+                    return
+                # Validate sudo password
+                try:
+                    validate = subprocess.run(
+                        ['sudo', '-S', '-v'],
+                        input=sudo_password + '\n',
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=5, text=True
+                    )
+                    if validate.returncode != 0:
+                        QMessageBox.warning(self, "IP Scanner", "Invalid sudo password.")
+                        return
+                except Exception:
+                    QMessageBox.warning(self, "IP Scanner", "Failed to validate sudo password.")
+                    return
+
+        # Show/hide Hostname column based on DNS checkbox
+        dns_lookup = self.scan_dns_checkbox.isChecked()
+        self.scan_results_table.setColumnHidden(3, not dns_lookup)
 
         # Clear previous results
         self.scan_results_table.setSortingEnabled(False)
@@ -5020,14 +5198,14 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
-        self.scan_worker = ScanWorker(targets, method, ports, timeout, threads)
+        self.scan_worker = ScanWorker(targets, method, ports, timeout, threads, sudo_password, dns_lookup)
         self.scan_worker.host_found.connect(self._on_scan_host_found)
         self.scan_worker.scan_progress.connect(lambda p: self.scan_btn.setText(f"Scanning {p}%"))
         self.scan_worker.scan_finished.connect(self._on_scan_finished)
         self.scan_worker.scan_error.connect(self._on_scan_error)
         self.scan_worker.start()
 
-    def _on_scan_host_found(self, ip, status, latency, method, mac, vendor):
+    def _on_scan_host_found(self, ip, status, latency, method, mac, vendor, hostname):
         """Add a discovered host to the results table"""
         row = self.scan_results_table.rowCount()
         self.scan_results_table.insertRow(row)
@@ -5048,14 +5226,18 @@ class SerialTerminalGUI(QMainWindow):
         else:
             latency_item.setForeground(QColor("#4CAF50"))
         self.scan_results_table.setItem(row, 2, latency_item)
-        
-        # Add MAC vendor information (column 3, removed Method column)
+
+        # Hostname column
+        hostname_item = QTableWidgetItem(hostname)
+        hostname_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.scan_results_table.setItem(row, 3, hostname_item)
+
+        # MAC vendor column
         vendor_display = f"{vendor} ({mac})" if mac else vendor
         vendor_item = QTableWidgetItem(vendor_display)
-        # Disable ellipsis truncation
         vendor_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.scan_results_table.setItem(row, 3, vendor_item)
-        
+        self.scan_results_table.setItem(row, 4, vendor_item)
+
         self.scan_results_group.setTitle(f"Results (scanning... {row + 1} hosts found)")
 
 
@@ -5105,11 +5287,11 @@ class SerialTerminalGUI(QMainWindow):
         try:
             with open(file_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["IP Address", "Status", "Latency (ms)", "MAC Vendor"])
+                writer.writerow(["IP Address", "Status", "Latency (ms)", "Hostname", "MAC Vendor"])
                 for row in range(self.scan_results_table.rowCount()):
                     writer.writerow([
                         self.scan_results_table.item(row, col).text()
-                        for col in range(4)
+                        for col in range(5)
                     ])
             QMessageBox.information(self, "IP Scanner", f"Results exported to:\n{file_path}")
         except Exception as e:
@@ -5483,6 +5665,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         profiles_layout.addWidget(self.ssh_profiles_table)
+        self._enable_table_tooltips(self.ssh_profiles_table)
 
         # Buttons row (centered, below table)
         btn_layout = QHBoxLayout()
