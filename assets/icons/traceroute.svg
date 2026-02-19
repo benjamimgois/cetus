@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Transformed by: SVG Repo Mixer Tools -->
+
+<svg
+   width="919"
+   height="800"
+   viewBox="0 0 27.57 24"
+   version="1.1"
+   fill="#000000"
+   id="svg1"
+   sodipodi:docname="traceroute.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1">
+    <rect
+       x="-78.097626"
+       y="-38.047558"
+       width="1041.3016"
+       height="1041.3016"
+       id="rect2" />
+  </defs>
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.499375"
+     inkscape:cx="482.60325"
+     inkscape:cy="633.79224"
+     inkscape:window-width="1920"
+     inkscape:window-height="1008"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="SVGRepo_iconCarrier" />
+  <g
+     id="SVGRepo_bgCarrier"
+     stroke-width="0" />
+  <g
+     id="SVGRepo_tracerCarrier"
+     stroke-linecap="round"
+     stroke-linejoin="round" />
+  <g
+     id="SVGRepo_iconCarrier">
+    <title
+       id="title1">route_line</title>
+    <g
+       id="页面-1"
+       stroke="none"
+       stroke-width="1"
+       fill="none"
+       fill-rule="evenodd"
+       transform="matrix(0.83729662,0,0,0.83729662,3.7233041,0)">
+      <g
+         id="Map"
+         transform="translate(-288)">
+        <g
+           id="route_line"
+           transform="translate(288)">
+          <path
+             d="M 24,0 V 24 H 0 V 0 Z m -11.40651,23.257841 -0.01155,0.0017 -0.07106,0.03553 -0.019,0.0037 v 0 l -0.01516,-0.0037 -0.07106,-0.03553 c -0.0098,-0.0031 -0.01861,-4.89e-4 -0.02351,0.0054 l -0.0041,0.01092 -0.01709,0.427279 0.005,0.02039 0.01101,0.01222 0.103573,0.07398 0.01487,0.0039 v 0 l 0.01177,-0.0039 0.103575,-0.07398 0.0126,-0.01604 v 0 l 0.0034,-0.01656 -0.01709,-0.427279 c -0.002,-0.01013 -0.0085,-0.01653 -0.01607,-0.01799 z m 0.264901,-0.112555 -0.01384,0.002 -0.184705,0.09235 -0.01,0.01024 v 0 l -0.0027,0.01121 0.0179,0.429528 0.0048,0.01278 v 0 l 0.0085,0.0071 0.200954,0.09275 c 0.01209,0.0037 0.02289,-2.52e-4 0.02849,-0.008 l 0.004,-0.01406 -0.03415,-0.614631 c -0.0024,-0.01194 -0.01027,-0.01953 -0.01929,-0.02125 z m -0.715344,0.002 c -0.0098,-0.0049 -0.02087,-0.002 -0.02741,0.0053 l -0.0057,0.01394 -0.03415,0.614631 c -6.39e-4,0.0115 0.007,0.0207 0.01688,0.0234 l 0.01561,-0.0013 0.200955,-0.09275 0.0094,-0.0081 v 0 l 0.0039,-0.0118 0.0179,-0.429528 -0.0032,-0.01259 v 0 l -0.0095,-0.0089 z"
+             id="MingCute"
+             fill-rule="nonzero" />
+          <path
+             d="m 18,16 c 1.6569,0 3,1.3431 3,3 0,1.6569 -1.3431,3 -3,3 -1.6569,0 -3,-1.3431 -3,-3 0,-1.6569 1.3431,-3 3,-3 z M 15.5,4 C 17.9853,4 20,6.01472 20,8.5 20,10.9853 17.9853,13 15.5,13 h -7 C 7.11929,13 6,14.1193 6,15.5 6,16.8807 7.11929,18 8.5,18 H 13 c 0.5523,0 1,0.4477 1,1 0,0.5523 -0.4477,1 -1,1 H 8.5 C 6.01472,20 4,17.9853 4,15.5 4,13.0147 6.01472,11 8.5,11 h 7 C 16.8807,11 18,9.88071 18,8.5 18,7.11929 16.8807,6 15.5,6 H 11 C 10.4477,6 10,5.55228 10,5 10,4.44772 10.4477,4 11,4 Z M 18,18 c -0.5523,0 -1,0.4477 -1,1 0,0.5523 0.4477,1 1,1 0.5523,0 1,-0.4477 1,-1 0,-0.5523 -0.4477,-1 -1,-1 z M 6,2 C 7.65685,2 9,3.34315 9,5 9,6.65685 7.65685,8 6,8 4.34315,8 3,6.65685 3,5 3,3.34315 4.34315,2 6,2 Z M 6,4 C 5.44772,4 5,4.44772 5,5 5,5.55228 5.44772,6 6,6 6.55228,6 7,5.55228 7,5 7,4.44772 6.55228,4 6,4 Z"
+             id="形状"
+             fill="#ffffff" />
+        </g>
+      </g>
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-size:5.76px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0188305"
+       x="0.23880492"
+       y="23.647278"
+       id="text1"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         style="font-size:5.76px;fill:#ffffff;stroke-width:0.0188305"
+         x="0.23880492"
+         y="23.647278">TRACERT</tspan></text>
+    <text
+       xml:space="preserve"
+       transform="scale(0.03)"
+       id="text2"
+       style="font-size:117.333px;writing-mode:lr-tb;direction:ltr;white-space:pre;shape-inside:url(#rect2);fill:#000080" />
+  </g>
+</svg>
