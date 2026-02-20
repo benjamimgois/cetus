@@ -4465,14 +4465,15 @@ class SerialTerminalGUI(QMainWindow):
         self.update_port_list()
 
     def switch_tab(self, index):
-        """Switch between TFTP, Serial, SSH, IP Scanner and SNMP tabs"""
+        """Switch between TFTP, Serial, SSH, IP Scanner, SNMP and Traceroute tabs"""
         self.content_stack.setCurrentIndex(index)
         self.tftp_tab_btn.setChecked(index == 0)
         self.serial_tab_btn.setChecked(index == 1)
         self.ssh_tab_btn.setChecked(index == 2)
         self.ipscan_tab_btn.setChecked(index == 3)
         self.snmp_tab_btn.setChecked(index == 4)
-        modes = {0: 'tftp', 1: 'serial', 2: 'ssh', 3: 'ipscan', 4: 'snmp'}
+        self.traceroute_tab_btn.setChecked(index == 5)
+        modes = {0: 'tftp', 1: 'serial', 2: 'ssh', 3: 'ipscan', 4: 'snmp', 5: 'traceroute'}
         self.config.set('connection_mode', modes.get(index, 'tftp'))
 
     def create_serial_page(self):
