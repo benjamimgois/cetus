@@ -2272,6 +2272,147 @@ class TracerouteWorker(QThread):
         return None
 
 
+class MtrWorker(QThread):
+    """Worker thread for MTR (My Traceroute) — continuous per-hop latency monitoring"""
+
+    hop_discovered = pyqtSignal(int, str, str)                      # hop_num, ip, hostname
+    hop_updated    = pyqtSignal(int, float, float, float, float, float, int)
+                                                                     # hop_num, loss%, avg, best, worst, stdev, sent
+    cycle_complete = pyqtSignal(int)                                 # cycle_num
+    mtr_error      = pyqtSignal(str)
+    mtr_finished   = pyqtSignal()
+
+    def __init__(self, target, max_hops=30, interval=1, dns_lookup=True, cycles=0):
+        super().__init__()
+        self.target     = target
+        self.max_hops   = max_hops
+        self.interval   = interval
+        self.dns_lookup = dns_lookup
+        self.cycles     = cycles       # 0 = continuous
+        self._stop_flag = False
+
+    def stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        import statistics as _stats
+
+        cmd = ['mtr', '--raw']
+        if not self.dns_lookup:
+            cmd.append('-n')
+        if self.cycles > 0:
+            cmd.extend(['-c', str(self.cycles)])
+        cmd.extend(['-m', str(self.max_hops), '--interval', str(self.interval), self.target])
+
+        # Per-hop state
+        sent      = {}   # hop_num → int
+        recv      = {}   # hop_num → int
+        latencies = {}   # hop_num → [float ms]
+        ip_map    = {}   # hop_num → str
+        host_map  = {}   # hop_num → str
+        discovered = set()
+        cycle_num = 0
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1
+            )
+
+            for line in process.stdout:
+                if self._stop_flag:
+                    process.terminate()
+                    break
+
+                parts = line.strip().split()
+                if len(parts) < 3:
+                    continue
+
+                kind    = parts[0]
+                hop_num = int(parts[1])
+                value   = parts[2]
+
+                if kind == 'x':
+                    # Probe sent to hop_num
+                    sent[hop_num] = sent.get(hop_num, 0) + 1
+                    if hop_num == 0:
+                        cycle_num += 1
+                        self.cycle_complete.emit(cycle_num)
+
+                elif kind == 'h':
+                    # Hop IP discovered
+                    ip_map[hop_num] = value
+                    if hop_num not in host_map:
+                        host_map[hop_num] = value
+                    if hop_num not in discovered:
+                        discovered.add(hop_num)
+                        recv[hop_num] = 0
+                        latencies[hop_num] = []
+                        self.hop_discovered.emit(hop_num, value, host_map[hop_num])
+
+                elif kind == 'd':
+                    # DNS hostname resolved
+                    host_map[hop_num] = value
+                    # Re-emit hop_discovered to update hostname in table
+                    self.hop_discovered.emit(hop_num, ip_map.get(hop_num, value), value)
+
+                elif kind == 'p':
+                    # Probe response: latency in microseconds
+                    lat_ms = int(value) / 1000.0
+                    recv[hop_num] = recv.get(hop_num, 0) + 1
+                    if hop_num not in latencies:
+                        latencies[hop_num] = []
+                    latencies[hop_num].append(lat_ms)
+
+                    lats = latencies[hop_num]
+                    s    = sent.get(hop_num, 1)
+                    r    = recv[hop_num]
+                    loss = (s - r) / s * 100.0
+                    avg  = sum(lats) / len(lats)
+                    best = min(lats)
+                    worst = max(lats)
+                    stdev = _stats.stdev(lats) if len(lats) > 1 else 0.0
+                    self.hop_updated.emit(hop_num, loss, avg, best, worst, stdev, s)
+
+            process.wait()
+            stderr_out = process.stderr.read()
+            if process.returncode != 0 and stderr_out and not self._stop_flag:
+                low = stderr_out.lower()
+                if 'permission' in low or 'not permitted' in low:
+                    self.mtr_error.emit(
+                        "MTR requires elevated privileges for ICMP.\n\n"
+                        "Run Omnicom with: sudo python3 omnicom\n"
+                        "Or install mtr with setuid bit: sudo chmod u+s /usr/bin/mtr"
+                    )
+                    return
+                elif stderr_out.strip():
+                    self.mtr_error.emit(f"MTR error: {stderr_out.strip()}")
+                    return
+
+        except FileNotFoundError:
+            self.mtr_error.emit(
+                "mtr command not found.\n\n"
+                "Install with:\n"
+                "  Arch/CachyOS: sudo pacman -S mtr\n"
+                "  Debian/Ubuntu: sudo apt install mtr"
+            )
+            return
+        except PermissionError:
+            self.mtr_error.emit(
+                "MTR requires elevated privileges.\n\n"
+                "Run Omnicom with: sudo python3 omnicom"
+            )
+            return
+        except Exception as e:
+            self.mtr_error.emit(f"MTR error: {e}")
+            return
+
+        self.mtr_finished.emit()
+
+
 class RouteVisualizationWidget(QWidget):
     """Custom widget for visualizing traceroute hops as horizontal bars"""
 
@@ -5358,7 +5499,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Method selector (ICMP/TCP/UDP) - below Target
         self.traceroute_method_combo = QComboBox()
-        self.traceroute_method_combo.addItems(["ICMP", "TCP", "UDP"])
+        self.traceroute_method_combo.addItems(["ICMP", "TCP", "UDP", "MTR"])
         self.traceroute_method_combo.setCurrentText("ICMP")
         self.traceroute_method_combo.setFixedWidth(combo_width)
         self.traceroute_method_combo.setToolTip("Traceroute method: ICMP (default), TCP (specific port), UDP (specific port)")
@@ -5376,6 +5517,28 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_port_label.setVisible(False)
         self.traceroute_port_input.setVisible(False)
         config_layout.addRow(self.traceroute_port_label, self.traceroute_port_input)
+
+        # MTR Interval (hidden by default, shown when MTR is selected)
+        self.mtr_interval_label = QLabel("Interval:")
+        self.mtr_interval_combo = QComboBox()
+        self.mtr_interval_combo.addItems(["1s", "2s", "5s"])
+        self.mtr_interval_combo.setCurrentText("1s")
+        self.mtr_interval_combo.setFixedWidth(85)
+        self.mtr_interval_combo.setToolTip("Probe interval between cycles")
+        self.mtr_interval_label.setVisible(False)
+        self.mtr_interval_combo.setVisible(False)
+        config_layout.addRow(self.mtr_interval_label, self.mtr_interval_combo)
+
+        # MTR Cycles (hidden by default)
+        self.mtr_cycles_label = QLabel("Cycles:")
+        self.mtr_cycles_combo = QComboBox()
+        self.mtr_cycles_combo.addItems(["\u221e (continuous)", "10", "20", "50", "100"])
+        self.mtr_cycles_combo.setCurrentText("\u221e (continuous)")
+        self.mtr_cycles_combo.setFixedWidth(160)
+        self.mtr_cycles_combo.setToolTip("Number of probe cycles (∞ = run until stopped)")
+        self.mtr_cycles_label.setVisible(False)
+        self.mtr_cycles_combo.setVisible(False)
+        config_layout.addRow(self.mtr_cycles_label, self.mtr_cycles_combo)
 
         # Max Hops + Timeout + DNS Lookup inline
         options_inline_widget = QWidget()
@@ -5867,12 +6030,25 @@ class SerialTerminalGUI(QMainWindow):
             QApplication.clipboard().setText(f"{oid} = {value}")
 
     def _start_traceroute(self):
-        """Start or stop traceroute operation"""
-        # Check if already running - toggle to stop
+        """Start or stop traceroute / MTR operation"""
+        # Check if MTR is already running - toggle to stop
+        if hasattr(self, 'mtr_worker') and self.mtr_worker and self.mtr_worker.isRunning():
+            self.mtr_worker.stop()
+            self.traceroute_btn.setText("Stopping...")
+            self.traceroute_btn.setEnabled(False)
+            return
+
+        # Check if traceroute is already running - toggle to stop
         if hasattr(self, 'traceroute_worker') and self.traceroute_worker and self.traceroute_worker.isRunning():
             self.traceroute_worker.stop()
             self.traceroute_btn.setText("Stopping...")
             self.traceroute_btn.setEnabled(False)
+            return
+
+        # Branch to MTR if selected
+        method = self.traceroute_method_combo.currentText()
+        if method == 'MTR':
+            self._start_mtr()
             return
 
         # Validate input
@@ -6039,6 +6215,206 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
+    # ─── MTR methods ──────────────────────────────────────────────────────────
+
+    def _start_mtr(self):
+        """Start MTR monitoring session"""
+        target = self.traceroute_target_input.text().strip()
+        if not target:
+            QMessageBox.warning(self, "MTR", "Please enter a target host or IP address.")
+            return
+
+        interval = int(self.mtr_interval_combo.currentText().rstrip('s'))
+        cycles_text = self.mtr_cycles_combo.currentText()
+        cycles = 0 if "\u221e" in cycles_text else int(cycles_text)
+        max_hops = int(self.traceroute_max_hops_combo.currentText())
+        dns_lookup = self.traceroute_dns_checkbox.isChecked()
+
+        self.traceroute_results_table.setSortingEnabled(False)
+        self.traceroute_results_table.setRowCount(0)
+        self._switch_table_to_mtr_mode()
+        self.traceroute_viz_widget.clear()
+        self._mtr_hop_rows = {}      # hop_num (0-indexed) → row index
+        self._mtr_target  = target
+        self._mtr_cycle   = 0
+
+        self.traceroute_results_group.setTitle(f"MTR — monitoring route to {target}…")
+
+        # Button → STOP MTR (grey)
+        self.traceroute_btn.setText("STOP MTR")
+        self.traceroute_btn.setEnabled(True)
+        self.traceroute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover { background-color: #616161; }
+            QPushButton:pressed { background-color: #424242; }
+        """)
+
+        self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, cycles)
+        self.mtr_worker.hop_discovered.connect(self._on_mtr_hop_discovered)
+        self.mtr_worker.hop_updated.connect(self._on_mtr_hop_updated)
+        self.mtr_worker.cycle_complete.connect(self._on_mtr_cycle)
+        self.mtr_worker.mtr_error.connect(self._on_mtr_error)
+        self.mtr_worker.mtr_finished.connect(self._on_mtr_finished)
+        self.mtr_worker.start()
+
+    def _on_mtr_hop_discovered(self, hop_num, ip, hostname):
+        """Insert or update a hop row in the MTR table"""
+        t = self.traceroute_results_table
+        # Update hostname if row already exists
+        if hop_num in self._mtr_hop_rows:
+            row = self._mtr_hop_rows[hop_num]
+            t.item(row, 1).setText(ip)
+            t.item(row, 2).setText(hostname)
+            return
+
+        # New hop — insert row
+        row = t.rowCount()
+        t.insertRow(row)
+        self._mtr_hop_rows[hop_num] = row
+
+        hop_item = QTableWidgetItem(str(hop_num + 1))   # display 1-indexed
+        hop_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        t.setItem(row, 0, hop_item)
+        t.setItem(row, 1, QTableWidgetItem(ip))
+        t.setItem(row, 2, QTableWidgetItem(hostname))
+
+        for col in range(3, 9):
+            placeholder = QTableWidgetItem("—")
+            placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            t.setItem(row, col, placeholder)
+
+    def _on_mtr_hop_updated(self, hop_num, loss_pct, avg, best, worst, stdev, sent):
+        """Update statistics for an existing MTR hop row"""
+        if hop_num not in self._mtr_hop_rows:
+            return
+        row = self._mtr_hop_rows[hop_num]
+        t   = self.traceroute_results_table
+
+        def _lat_color(ms):
+            if ms < 20:   return QColor("#4CAF50")
+            if ms < 50:   return QColor("#FFC107")
+            if ms < 100:  return QColor("#FF9800")
+            return QColor("#F44336")
+
+        def _loss_color(pct):
+            if pct == 0:   return QColor("#4CAF50")
+            if pct < 5:    return QColor("#FFC107")
+            if pct < 20:   return QColor("#FF9800")
+            return QColor("#F44336")
+
+        def _cell(text, color=None, align=Qt.AlignmentFlag.AlignCenter):
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(align)
+            if color:
+                item.setForeground(color)
+            return item
+
+        loss_item = _cell(f"{loss_pct:.1f}%", _loss_color(loss_pct))
+        snt_item  = _cell(str(sent))
+        avg_item  = _cell(f"{avg:.1f}", _lat_color(avg))
+        best_item = _cell(f"{best:.1f}", _lat_color(best))
+        wrst_item = _cell(f"{worst:.1f}", _lat_color(worst))
+        stdev_item = _cell(f"{stdev:.1f}")
+
+        t.setItem(row, 3, loss_item)
+        t.setItem(row, 4, snt_item)
+        t.setItem(row, 5, avg_item)
+        t.setItem(row, 6, best_item)
+        t.setItem(row, 7, wrst_item)
+        t.setItem(row, 8, stdev_item)
+
+        # Keep visualization widget updated with current avg latency
+        ip = t.item(row, 1).text() if t.item(row, 1) else "*"
+        hostname = t.item(row, 2).text() if t.item(row, 2) else ip
+        display_hop = hop_num + 1
+        # Update existing hop or add — use a dict to avoid duplicates
+        existing = next((i for i, h in enumerate(self.traceroute_viz_widget.hops)
+                         if h[0] == display_hop), None)
+        if existing is not None:
+            self.traceroute_viz_widget.hops[existing] = (display_hop, ip, hostname, avg)
+            self.traceroute_viz_widget.update()
+        else:
+            self.traceroute_viz_widget.add_hop(display_hop, ip, hostname, avg)
+
+    def _on_mtr_cycle(self, cycle_num):
+        """Update title with current cycle count"""
+        self._mtr_cycle = cycle_num
+        target = getattr(self, '_mtr_target', '')
+        self.traceroute_results_group.setTitle(
+            f"MTR — cycle {cycle_num} → {target}"
+        )
+
+    def _on_mtr_error(self, msg):
+        """Handle MTR error"""
+        QMessageBox.warning(self, "MTR", msg)
+        self._reset_mtr_button()
+
+    def _on_mtr_finished(self):
+        """Handle MTR completion (fixed cycles reached or stopped)"""
+        cycles = getattr(self, '_mtr_cycle', 0)
+        target = getattr(self, '_mtr_target', '')
+        self.traceroute_results_group.setTitle(
+            f"MTR — {cycles} cycle{'s' if cycles != 1 else ''} to {target}"
+        )
+        self._reset_mtr_button()
+
+    def _reset_mtr_button(self):
+        """Reset button to 'START MTR' state (keeps MTR table columns)"""
+        self.traceroute_btn.setText("START MTR")
+        self.traceroute_btn.setEnabled(True)
+        self.traceroute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00BCD4;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover { background-color: #00ACC1; }
+            QPushButton:pressed { background-color: #0097A7; }
+        """)
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _switch_table_to_mtr_mode(self):
+        """Switch the traceroute results table to 9-column MTR statistics mode"""
+        t = self.traceroute_results_table
+        t.setColumnCount(9)
+        t.setHorizontalHeaderLabels(
+            ["Hop", "IP Address", "Hostname", "Loss%", "Snt", "Avg", "Best", "Wrst", "StDev"]
+        )
+        hdr = t.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for col in range(3, 9):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            t.setColumnWidth(col, 72)
+        t.setColumnWidth(0, 50)
+
+    def _switch_table_to_traceroute_mode(self):
+        """Restore the results table to standard 4-column traceroute mode"""
+        t = self.traceroute_results_table
+        t.setColumnCount(4)
+        t.setHorizontalHeaderLabels(["Hop", "IP Address", "Hostname", "Latency (ms)"])
+        hdr = t.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        t.setColumnWidth(0, 60)
+        t.setColumnWidth(3, 100)
+
     def _traceroute_export_csv(self):
         """Export traceroute results to CSV file"""
         if self.traceroute_results_table.rowCount() == 0:
@@ -6068,10 +6444,12 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Traceroute", f"Export failed: {e}")
 
     def _traceroute_clear_results(self):
-        """Clear traceroute results"""
+        """Clear traceroute / MTR results"""
         self.traceroute_results_table.setRowCount(0)
         self.traceroute_viz_widget.clear()
         self.traceroute_results_group.setTitle("Results")
+        self._mtr_hop_rows = {}
+        self._mtr_cycle = 0
 
     def _show_route_visualization_dialog(self):
         """Open a dialog showing the route visualization with full space"""
@@ -6226,10 +6604,31 @@ class SerialTerminalGUI(QMainWindow):
             QApplication.clipboard().setText(f"Hop {hop_num}: {ip} ({hostname}) — {latency}")
 
     def _traceroute_method_changed(self, method):
-        """Show/hide port field based on traceroute method"""
-        show_port = method in ('TCP', 'UDP')
-        self.traceroute_port_label.setVisible(show_port)
-        self.traceroute_port_input.setVisible(show_port)
+        """Show/hide fields and switch table columns based on selected method"""
+        is_mtr  = (method == 'MTR')
+        is_port = method in ('TCP', 'UDP')
+
+        # Port row (TCP/UDP only)
+        self.traceroute_port_label.setVisible(is_port)
+        self.traceroute_port_input.setVisible(is_port)
+
+        # MTR-specific options
+        self.mtr_interval_label.setVisible(is_mtr)
+        self.mtr_interval_combo.setVisible(is_mtr)
+        self.mtr_cycles_label.setVisible(is_mtr)
+        self.mtr_cycles_combo.setVisible(is_mtr)
+
+        # Switch table columns and button label
+        if is_mtr:
+            self.traceroute_results_table.setRowCount(0)
+            self._switch_table_to_mtr_mode()
+            self.traceroute_btn.setText("START MTR")
+        else:
+            self.traceroute_results_table.setRowCount(0)
+            self._switch_table_to_traceroute_mode()
+            self.traceroute_btn.setText("TRACEROUTE")
+            # Restore normal button style in case it was grey from MTR
+            self._reset_traceroute_button()
 
         # Update default port based on method
         if method == 'TCP':
