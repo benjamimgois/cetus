@@ -36,7 +36,7 @@
      inkscape:cx="482.60325"
      inkscape:cy="633.79224"
      inkscape:window-width="1920"
-     inkscape:window-height="1008"
+     inkscape:window-height="1012"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
@@ -58,7 +58,7 @@
        stroke-width="1"
        fill="none"
        fill-rule="evenodd"
-       transform="matrix(0.83729662,0,0,0.83729662,3.7233041,0)">
+       transform="matrix(1.1001252,0,0,0.70463079,0.47924895,0)">
       <g
          id="Map"
          transform="translate(-288)">
@@ -78,15 +78,15 @@
     </g>
     <text
        xml:space="preserve"
-       style="font-size:5.76px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0188305"
-       x="0.23880492"
-       y="23.647278"
+       style="font-size:6.52871px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0213435"
+       x="0.35126781"
+       y="23.699667"
        id="text1"><tspan
          sodipodi:role="line"
          id="tspan1"
-         style="font-size:5.76px;fill:#ffffff;stroke-width:0.0188305"
-         x="0.23880492"
-         y="23.647278">TRACERT</tspan></text>
+         style="font-size:6.52871px;fill:#ffffff;stroke-width:0.0213435"
+         x="0.35126781"
+         y="23.699667">TRACERT</tspan></text>
     <text
        xml:space="preserve"
        transform="scale(0.03)"

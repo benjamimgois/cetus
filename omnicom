@@ -4119,17 +4119,23 @@ class SerialTerminalGUI(QMainWindow):
         """Create the serial connection configuration page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         # Standard width for all comboboxes
         combo_width = 200
 
         # Port configuration group
         port_group = QGroupBox("Port Configuration")
+        port_outer = QHBoxLayout()
+        port_outer.setContentsMargins(8, 5, 8, 6)
+        port_outer.setSpacing(12)
+
+        # Left: Type and Port form fields
+        port_form_widget = QWidget()
         port_layout = QFormLayout()
-        port_layout.setVerticalSpacing(8)
-        port_layout.setContentsMargins(10, 10, 10, 10)
+        port_layout.setVerticalSpacing(4)
+        port_layout.setContentsMargins(0, 0, 0, 0)
         port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         port_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -4148,7 +4154,37 @@ class SerialTerminalGUI(QMainWindow):
         self.port.setToolTip("Select the serial port to connect")
         port_layout.addRow("Port:", self.port)
 
-        port_group.setLayout(port_layout)
+        port_form_widget.setLayout(port_layout)
+        port_outer.addWidget(port_form_widget)
+        port_outer.addStretch()
+
+        # Right: Debug Mode checkbox
+        self.debug_checkbox = QCheckBox("Debug Mode")
+        self.debug_checkbox.setToolTip("Simulate Cisco router — enable to test terminal without a real device")
+        self.debug_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #606060;
+                font-size: 9pt;
+                spacing: 4px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                background-color: #f5f5f5;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #2196F3;
+                border-color: #2196F3;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #2196F3;
+            }
+        """)
+        port_outer.addWidget(self.debug_checkbox, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        port_group.setLayout(port_outer)
 
         # Add shadow effect to port group
         shadow1 = QGraphicsDropShadowEffect()
@@ -4163,14 +4199,14 @@ class SerialTerminalGUI(QMainWindow):
         # Communication parameters group
         comm_group = QGroupBox("Communication Parameters")
         comm_layout = QFormLayout()
-        comm_layout.setVerticalSpacing(8)
-        comm_layout.setContentsMargins(10, 10, 10, 10)
+        comm_layout.setVerticalSpacing(4)
+        comm_layout.setContentsMargins(8, 5, 8, 6)
         comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         comm_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # Baud Rate - MAIN FIELD (highlighted)
         velocity_label = QLabel("Baud Rate:")
-        velocity_font = QFont("Sans Serif", 10, QFont.Weight.Bold)
+        velocity_font = QFont("Sans Serif", 9, QFont.Weight.Bold)
         velocity_label.setFont(velocity_font)
         velocity_label.setStyleSheet("color: #1976D2;")
 
@@ -4344,13 +4380,25 @@ class SerialTerminalGUI(QMainWindow):
 
         main_layout.addWidget(profiles_group, 1)
 
-        # Debug mode checkbox
-        self.debug_checkbox = QCheckBox("Debug Mode (simulate Cisco router)")
-        self.debug_checkbox.setToolTip("Enable to test terminal without a real device")
-        self.debug_checkbox.setStyleSheet("color: #606060; font-size: 9pt;")
-        main_layout.addWidget(self.debug_checkbox)
+        # Status with LED indicator (above connect button)
+        status_layout = QHBoxLayout()
+        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_layout.setSpacing(8)
 
-        # Connect button
+        self.status_led = QLabel("●")
+        self.status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
+
+        self.status_label = QLabel("Ready to connect")
+        self.status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
+
+        status_layout.addWidget(self.status_led)
+        status_layout.addWidget(self.status_label)
+
+        status_widget = QWidget()
+        status_widget.setLayout(status_layout)
+        main_layout.addWidget(status_widget)
+
+        # Connect button (bottom)
         self.connect_btn = QPushButton("CONNECT")
         self.connect_btn.setMinimumHeight(40)
         self.connect_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -4375,24 +4423,6 @@ class SerialTerminalGUI(QMainWindow):
         self.connect_btn.clicked.connect(self.connect)
         main_layout.addWidget(self.connect_btn)
 
-        # Status with LED indicator
-        status_layout = QHBoxLayout()
-        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status_layout.setSpacing(8)
-
-        self.status_led = QLabel("●")
-        self.status_led.setStyleSheet("color: #2196F3; font-size: 14px;")
-
-        self.status_label = QLabel("Ready to connect")
-        self.status_label.setStyleSheet("color: #2196F3; font-size: 10pt;")
-
-        status_layout.addWidget(self.status_led)
-        status_layout.addWidget(self.status_label)
-
-        status_widget = QWidget()
-        status_widget.setLayout(status_layout)
-        main_layout.addWidget(status_widget)
-
         page.setLayout(main_layout)
 
         # Load saved serial profiles
@@ -4404,16 +4434,16 @@ class SerialTerminalGUI(QMainWindow):
         """Create the TFTP server configuration page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         combo_width = 200
 
         # TFTP Server group
         tftp_group = QGroupBox("TFTP Server")
         tftp_layout = QFormLayout()
-        tftp_layout.setVerticalSpacing(12)
-        tftp_layout.setContentsMargins(15, 15, 15, 15)
+        tftp_layout.setVerticalSpacing(4)
+        tftp_layout.setContentsMargins(8, 5, 8, 6)
         tftp_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         tftp_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -4444,10 +4474,10 @@ class SerialTerminalGUI(QMainWindow):
             QLineEdit {
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
-                padding: 4px 10px;
+                padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
         """)
 
@@ -4631,16 +4661,16 @@ class SerialTerminalGUI(QMainWindow):
         """Create the IP Scanner page for network host discovery"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         combo_width = 200
 
         # === Scan Configuration Group ===
         scan_group = QGroupBox("Scan Configuration")
         scan_layout = QFormLayout()
-        scan_layout.setVerticalSpacing(8)
-        scan_layout.setContentsMargins(10, 10, 10, 10)
+        scan_layout.setVerticalSpacing(4)
+        scan_layout.setContentsMargins(8, 5, 8, 6)
         scan_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         scan_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -4660,7 +4690,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
             QLineEdit:focus {
                 border: 2px solid #ef5350;
@@ -4710,7 +4740,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
             QLineEdit:focus {
                 border: 2px solid #ef5350;
@@ -4736,12 +4766,12 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_dns_checkbox.setStyleSheet("""
             QCheckBox {
                 color: #333333;
-                font-size: 10pt;
-                spacing: 6px;
+                font-size: 9pt;
+                spacing: 4px;
             }
             QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 border: 1px solid #d0d0d0;
                 border-radius: 3px;
                 background-color: #f5f5f5;
@@ -4910,14 +4940,14 @@ class SerialTerminalGUI(QMainWindow):
         """Create the SNMP query page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         # Connection group
         conn_group = QGroupBox("SNMP Connection")
         conn_layout = QFormLayout()
-        conn_layout.setVerticalSpacing(8)
-        conn_layout.setContentsMargins(10, 10, 10, 10)
+        conn_layout.setVerticalSpacing(4)
+        conn_layout.setContentsMargins(8, 5, 8, 6)
 
         snmp_line_edit_style = """
             QLineEdit {
@@ -4926,7 +4956,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
             QLineEdit:focus {
                 border: 2px solid #FF9800;
@@ -4938,14 +4968,31 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_host_input.setStyleSheet(snmp_line_edit_style)
         conn_layout.addRow("Host:", self.snmp_host_input)
 
-        self.snmp_version_combo = QComboBox()
-        self.snmp_version_combo.addItems(["v2c", "v1", "v3"])
-        conn_layout.addRow("Version:", self.snmp_version_combo)
+        # Community + Version inline
+        community_version_widget = QWidget()
+        community_version_layout = QHBoxLayout()
+        community_version_layout.setContentsMargins(0, 0, 0, 0)
+        community_version_layout.setSpacing(6)
 
         self.snmp_community_input = QLineEdit()
         self.snmp_community_input.setText("public")
         self.snmp_community_input.setStyleSheet(snmp_line_edit_style)
-        conn_layout.addRow("Community:", self.snmp_community_input)
+
+        version_sep = QLabel("version:")
+        version_sep.setStyleSheet("color: #888888; font-size: 9pt;")
+        version_sep.setFixedWidth(52)
+
+        self.snmp_version_combo = QComboBox()
+        self.snmp_version_combo.addItems(["v2c", "v1", "v3"])
+        self.snmp_version_combo.setFixedWidth(100)
+        self.snmp_version_combo.setToolTip("SNMP version")
+
+        community_version_layout.addWidget(self.snmp_community_input)
+        community_version_layout.addWidget(version_sep)
+        community_version_layout.addWidget(self.snmp_version_combo)
+        community_version_layout.addStretch()
+        community_version_widget.setLayout(community_version_layout)
+        conn_layout.addRow("Community:", community_version_widget)
 
         conn_group.setLayout(conn_layout)
         conn_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -4954,8 +5001,8 @@ class SerialTerminalGUI(QMainWindow):
         # Query group
         query_group = QGroupBox("Query Configuration")
         query_layout = QFormLayout()
-        query_layout.setVerticalSpacing(8)
-        query_layout.setContentsMargins(10, 10, 10, 10)
+        query_layout.setVerticalSpacing(4)
+        query_layout.setContentsMargins(8, 5, 8, 6)
 
         self.snmp_query_type_combo = QComboBox()
         self.snmp_query_type_combo.addItems(["snmpwalk", "snmpget"])
@@ -5055,16 +5102,16 @@ class SerialTerminalGUI(QMainWindow):
         """Create the Traceroute page for route discovery and visualization"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         combo_width = 200
 
         # === Traceroute Configuration Group ===
         config_group = QGroupBox("Traceroute Configuration")
         config_layout = QFormLayout()
-        config_layout.setVerticalSpacing(8)
-        config_layout.setContentsMargins(10, 10, 10, 10)
+        config_layout.setVerticalSpacing(4)
+        config_layout.setContentsMargins(8, 5, 8, 6)
         config_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         config_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -5075,7 +5122,7 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
             QLineEdit:focus {
                 border: 2px solid #00BCD4;
@@ -5090,23 +5137,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_target_input.setStyleSheet(traceroute_line_edit_style)
         config_layout.addRow("Target:", self.traceroute_target_input)
 
-        # Max hops combo
-        self.traceroute_max_hops_combo = QComboBox()
-        self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
-        self.traceroute_max_hops_combo.setCurrentText("30")
-        self.traceroute_max_hops_combo.setFixedWidth(combo_width)
-        self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
-        config_layout.addRow("Max Hops:", self.traceroute_max_hops_combo)
-
-        # Timeout combo
-        self.traceroute_timeout_combo = QComboBox()
-        self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
-        self.traceroute_timeout_combo.setCurrentText("5s")
-        self.traceroute_timeout_combo.setFixedWidth(combo_width)
-        self.traceroute_timeout_combo.setToolTip("Timeout per hop")
-        config_layout.addRow("Timeout:", self.traceroute_timeout_combo)
-
-        # Method selector (ICMP/TCP/UDP)
+        # Method selector (ICMP/TCP/UDP) - below Target
         self.traceroute_method_combo = QComboBox()
         self.traceroute_method_combo.addItems(["ICMP", "TCP", "UDP"])
         self.traceroute_method_combo.setCurrentText("ICMP")
@@ -5127,19 +5158,42 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_port_input.setVisible(False)
         config_layout.addRow(self.traceroute_port_label, self.traceroute_port_input)
 
-        # DNS Lookup checkbox
+        # Max Hops + Timeout + DNS Lookup inline
+        options_inline_widget = QWidget()
+        options_inline_layout = QHBoxLayout()
+        options_inline_layout.setContentsMargins(0, 0, 0, 0)
+        options_inline_layout.setSpacing(6)
+
+        hops_label = QLabel("Max Hops:")
+        hops_label.setStyleSheet("color: #555555; font-size: 9pt;")
+
+        self.traceroute_max_hops_combo = QComboBox()
+        self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
+        self.traceroute_max_hops_combo.setCurrentText("30")
+        self.traceroute_max_hops_combo.setFixedWidth(85)
+        self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
+
+        timeout_label = QLabel("Timeout:")
+        timeout_label.setStyleSheet("color: #555555; font-size: 9pt;")
+
+        self.traceroute_timeout_combo = QComboBox()
+        self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
+        self.traceroute_timeout_combo.setCurrentText("5s")
+        self.traceroute_timeout_combo.setFixedWidth(75)
+        self.traceroute_timeout_combo.setToolTip("Timeout per hop")
+
         self.traceroute_dns_checkbox = QCheckBox("DNS Lookup")
         self.traceroute_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS")
         self.traceroute_dns_checkbox.setChecked(True)
         self.traceroute_dns_checkbox.setStyleSheet("""
             QCheckBox {
                 color: #333333;
-                font-size: 10pt;
-                spacing: 6px;
+                font-size: 9pt;
+                spacing: 4px;
             }
             QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 border: 1px solid #d0d0d0;
                 border-radius: 3px;
                 background-color: #f5f5f5;
@@ -5152,7 +5206,15 @@ class SerialTerminalGUI(QMainWindow):
                 border-color: #00BCD4;
             }
         """)
-        config_layout.addRow("Options:", self.traceroute_dns_checkbox)
+
+        options_inline_layout.addWidget(hops_label)
+        options_inline_layout.addWidget(self.traceroute_max_hops_combo)
+        options_inline_layout.addWidget(timeout_label)
+        options_inline_layout.addWidget(self.traceroute_timeout_combo)
+        options_inline_layout.addWidget(self.traceroute_dns_checkbox)
+        options_inline_layout.addStretch()
+        options_inline_widget.setLayout(options_inline_layout)
+        config_layout.addRow("Options:", options_inline_widget)
 
         config_group.setLayout(config_layout)
         config_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -5167,33 +5229,8 @@ class SerialTerminalGUI(QMainWindow):
 
         main_layout.addWidget(config_group)
 
-        # === Route Visualization Group ===
-        viz_group = QGroupBox("Route Visualization")
-        viz_layout = QVBoxLayout()
-        viz_layout.setContentsMargins(10, 10, 10, 10)
-        viz_layout.setSpacing(6)
-
-        # Create the custom visualization widget
+        # Hidden data store for hop visualization (not added to any layout)
         self.traceroute_viz_widget = RouteVisualizationWidget()
-
-        # Wrap in scroll area
-        viz_scroll = QScrollArea()
-        viz_scroll.setWidget(self.traceroute_viz_widget)
-        viz_scroll.setWidgetResizable(True)
-        viz_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        viz_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        viz_scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: #f5f5f5;
-            }
-        """)
-
-        viz_layout.addWidget(viz_scroll)
-        viz_group.setLayout(viz_layout)
-        viz_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-
-        main_layout.addWidget(viz_group)
 
         # === Results Group ===
         self.traceroute_results_group = QGroupBox("Results")
@@ -5286,6 +5323,34 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_clear_btn.setStyleSheet(btn_style)
         self.traceroute_clear_btn.clicked.connect(self._traceroute_clear_results)
         actions_layout.addWidget(self.traceroute_clear_btn)
+
+        # Route Visualization icon button
+        viz_icon_path = self.get_tab_icon_path('traceroute.svg')
+        viz_icon = load_svg_icon(viz_icon_path, 18) if viz_icon_path else None
+        self.traceroute_viz_btn = QPushButton()
+        self.traceroute_viz_btn.setToolTip("Route Visualization")
+        self.traceroute_viz_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_viz_btn.setFixedSize(32, 32)
+        if viz_icon:
+            self.traceroute_viz_btn.setIcon(viz_icon)
+            self.traceroute_viz_btn.setIconSize(QSize(18, 18))
+        else:
+            self.traceroute_viz_btn.setText("⊞")
+        self.traceroute_viz_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00BCD4;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #00ACC1;
+            }
+            QPushButton:pressed {
+                background-color: #0097A7;
+            }
+        """)
+        self.traceroute_viz_btn.clicked.connect(self._show_route_visualization_dialog)
+        actions_layout.addWidget(self.traceroute_viz_btn)
 
         actions_layout.addStretch()
         results_layout.addLayout(actions_layout)
@@ -5765,6 +5830,63 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_results_table.setRowCount(0)
         self.traceroute_viz_widget.clear()
         self.traceroute_results_group.setTitle("Results")
+
+    def _show_route_visualization_dialog(self):
+        """Open a dialog showing the route visualization with full space"""
+        dialog = QDialog(self)
+        target = self.traceroute_target_input.text().strip()
+        dialog.setWindowTitle(f"Route Visualization — {target}" if target else "Route Visualization")
+        dialog.resize(720, 520)
+        dialog.setMinimumSize(500, 380)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # Populate a fresh widget with current hop data
+        viz = RouteVisualizationWidget()
+        viz.setMinimumHeight(300)
+        viz.setMaximumHeight(16777215)  # unrestricted in dialog
+        for hop in self.traceroute_viz_widget.hops:
+            viz.add_hop(*hop)
+
+        scroll = QScrollArea()
+        scroll.setWidget(viz)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: #f5f5f5; }")
+        layout.addWidget(scroll)
+
+        if not self.traceroute_viz_widget.hops:
+            empty_label = QLabel("No route data yet — run a traceroute first.")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_label.setStyleSheet("color: #888888; font-size: 10pt;")
+            layout.addWidget(empty_label)
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #78909c;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #607d8b; }
+        """)
+        close_btn.clicked.connect(dialog.accept)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.setLayout(layout)
+        dialog.exec()
 
     def _traceroute_context_menu(self, pos):
         """Show context menu for traceroute results table"""
@@ -6317,8 +6439,8 @@ class SerialTerminalGUI(QMainWindow):
         """Create the SSH connection configuration page"""
         page = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(10, 8, 10, 8)
 
         combo_width = 200
 
@@ -6330,20 +6452,20 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
-                font-size: 10pt;
+                font-size: 9pt;
             }
         """
 
         # === Remote Connection Group ===
         ssh_group = QGroupBox("Remote Connection")
         ssh_layout = QFormLayout()
-        ssh_layout.setVerticalSpacing(8)
-        ssh_layout.setContentsMargins(10, 10, 10, 10)
+        ssh_layout.setVerticalSpacing(4)
+        ssh_layout.setContentsMargins(8, 5, 8, 6)
         ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Protocol selection (SSH/Telnet)
         radio_style = """
-            QRadioButton { color: #333333; font-size: 10pt; }
+            QRadioButton { color: #333333; font-size: 9pt; }
             QRadioButton::indicator {
                 width: 14px;
                 height: 14px;
@@ -6376,21 +6498,33 @@ class SerialTerminalGUI(QMainWindow):
         protocol_widget.setLayout(protocol_layout)
         ssh_layout.addRow("Protocol:", protocol_widget)
 
-        # Host
+        # Host + Port inline
+        host_port_widget = QWidget()
+        host_port_layout = QHBoxLayout()
+        host_port_layout.setContentsMargins(0, 0, 0, 0)
+        host_port_layout.setSpacing(4)
+
         self.ssh_host = QLineEdit()
-        self.ssh_host.setFixedWidth(combo_width)
         self.ssh_host.setPlaceholderText("192.168.1.1 or hostname")
         self.ssh_host.setToolTip("SSH/Telnet server hostname or IP address")
         self.ssh_host.setStyleSheet(line_edit_style)
-        ssh_layout.addRow("Host:", self.ssh_host)
 
-        # Port
+        port_sep = QLabel(":")
+        port_sep.setStyleSheet("color: #888888;")
+        port_sep.setFixedWidth(8)
+
         self.ssh_port = QLineEdit()
-        self.ssh_port.setFixedWidth(80)
+        self.ssh_port.setFixedWidth(55)
         self.ssh_port.setText("22")
         self.ssh_port.setToolTip("SSH/Telnet port (default: 22 for SSH, 23 for Telnet)")
         self.ssh_port.setStyleSheet(line_edit_style)
-        ssh_layout.addRow("Port:", self.ssh_port)
+
+        host_port_layout.addWidget(self.ssh_host)
+        host_port_layout.addWidget(port_sep)
+        host_port_layout.addWidget(self.ssh_port)
+        host_port_layout.addStretch()
+        host_port_widget.setLayout(host_port_layout)
+        ssh_layout.addRow("Host:", host_port_widget)
 
         # Username
         self.ssh_username = QLineEdit()
@@ -6412,7 +6546,7 @@ class SerialTerminalGUI(QMainWindow):
         # SSH Key checkbox (for SSH only)
         self.use_ssh_key = QCheckBox("Use SSH Key instead of password")
         self.use_ssh_key.setStyleSheet("""
-            QCheckBox { color: #333333; font-size: 10pt; }
+            QCheckBox { color: #333333; font-size: 9pt; }
             QCheckBox::indicator {
                 width: 14px;
                 height: 14px;
