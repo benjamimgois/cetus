@@ -1,3 +1,18 @@
+omnicom (1.4-1) jammy; urgency=medium
+
+  * Add Traceroute / MTR tab with graphical route visualization
+  * Redesign route visualization with glowing neon bars and hover effects
+  * Redesign latency graph with premium dark/neon aesthetic
+  * Add new icons for route graphics tab
+  * Improve SNMP results table with context menu and clearer button labels
+  * Enhance ARP scanning with hostname resolution and improved UI
+  * Add automatic cap_net_raw capability configuration for traceroute binary
+  * Improve TFTP and SNMP UI elements for better usability and aesthetics
+  * Add SNMP icon in PNG and SVG formats
+  * Optimize GUI layout and tab navigation
+
+ -- Benjamim Gois <benjamimgois@example.com>  Sat, 21 Feb 2026 20:00:00 -0300
+
 omnicom (1.3-1) jammy; urgency=medium
 
   * Add vendor quick reference guide dialog (click vendor icon in terminal)

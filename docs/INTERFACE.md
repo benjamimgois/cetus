@@ -1,4 +1,4 @@
-# Graphical Interface - Application Visual Guide
+# Graphical Interface - Application Visual Guide (v1.4)
 
 ## Window Layout
 
@@ -125,3 +125,61 @@ When you click CONNECT:
    - Requests sudo password
    - Starts serial communication
    - Ctrl+A Ctrl+X to exit
+
+## Traceroute / MTR Tab (v1.4)
+
+The Traceroute/MTR tab provides graphical real-time route visualization between the local machine and a target host.
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Traceroute / MTR                                       │
+├──────────────────────────────┬──────────────────────────┤
+│  Target: [_______________]   │  [TRACE]  [MTR]         │
+├──────────────────────────────┴──────────────────────────┤
+│                                                         │
+│  Route Visualization (neon glowing bars)                │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Hop 1 ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  █  │  │
+│  │  Hop 2 ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  █        │  │
+│  │  Hop 3 ●━━━━━━━━━━━━━━━━━━━━━  █                │  │
+│  │  ...                                             │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  Latency Graph (dark/neon aesthetic)                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  ms                                               │  │
+│  │  100 ┤           ╭─╮                              │  │
+│  │   50 ┤  ╭──╮  ╭──╯ ╰──╮                          │  │
+│  │    0 ┼──╯  ╰──╯        ╰──────────────────────── │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Route Visualization Features
+
+- Each hop is represented as a **glowing neon bar** with hover effects
+- Bar length represents relative latency (longer = higher latency)
+- Hover over a hop to see details: IP, hostname, latency, packet loss
+- Color intensity changes based on latency level
+
+### MTR Mode
+
+In MTR mode the route refreshes continuously, providing live statistics:
+
+| Hop | IP Address    | Hostname         | Loss% | Avg ms |
+|-----|---------------|------------------|-------|--------|
+| 1   | 192.168.1.1   | router.local     | 0%    | 1.2    |
+| 2   | 10.0.0.1      | isp-gateway      | 0%    | 8.4    |
+| 3   | 203.0.113.5   | backbone-01      | 2%    | 22.1   |
+
+### Permissions
+
+The traceroute binary requires `cap_net_raw` for TCP/UDP probe types.
+Omnicom automatically configures this when starting the traceroute tab:
+
+```bash
+# Applied automatically by Omnicom:
+sudo setcap cap_net_raw+ep $(which traceroute)
+```

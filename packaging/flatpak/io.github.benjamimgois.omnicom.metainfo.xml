@@ -49,6 +49,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4" date="2026-02-21">
+      <description>
+        <p>Traceroute / MTR visualization and network improvements</p>
+        <ul>
+          <li>Add Traceroute / MTR tab with graphical route visualization</li>
+          <li>Redesign route visualization with glowing neon bars and hover effects</li>
+          <li>Redesign latency graph with premium dark/neon aesthetic</li>
+          <li>Add new icons for route graphics tab</li>
+          <li>Improve SNMP results table with context menu and clearer button labels</li>
+          <li>Enhance ARP scanning with hostname resolution and improved UI</li>
+          <li>Add automatic cap_net_raw capability configuration for traceroute binary</li>
+          <li>Optimize GUI layout and tab navigation</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3" date="2026-02-11">
       <description>
         <p>Vendor quick reference guide and UI improvements</p>

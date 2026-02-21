@@ -72,10 +72,10 @@ modules:
         --prefix=${FLATPAK_DEST} "pysnmp" --no-build-isolation
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/58/2b/c6113f47e87173ed5fbb67e92e1b297a0e16a5e58bb498a1e36c2ce6c97f/pyasn1-0.6.2-py3-none-any.whl
+        url: https://files.pythonhosted.org/packages/44/b5/a96872e5184f354da9c84ae119971a0a4c221fe9b27a4d94bd43f2596727/pyasn1-0.6.2-py3-none-any.whl
         sha256: 1eb26d860996a18e9b6ed05e7aae0e9fc21619fcee6af91cca9bad4fbea224bf
       - type: file
-        url: https://files.pythonhosted.org/packages/4c/c1/059be5b3a0ae81f8e4e16e44d01237a0b70a97ce9e4cf75c76dfe38f564b/pysnmp-7.1.22-py3-none-any.whl
+        url: https://files.pythonhosted.org/packages/25/da/9b6bc9517f6a69d03b70f43c4cfd1cca6289fdccabcf648204f2b0c6bc9b/pysnmp-7.1.22-py3-none-any.whl
         sha256: 57e704a6ba2bbf571d16cd5dc08b89bb3fa0ebeb5f4f26b87fececad3b3de7a6
 
   - name: picocom

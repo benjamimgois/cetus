@@ -4,7 +4,7 @@
 
 set -e
 
-VERSION="1.3"
+VERSION="1.4"
 PKGNAME="omnicom"
 ARCH="all"
 BUILD_DIR="build-deb/${PKGNAME}_${VERSION}-1_${ARCH}"

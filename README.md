@@ -1,10 +1,10 @@
 # Omnicom
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
-[![Version](https://img.shields.io/badge/version-1.3-green)](https://github.com/benjamimgois/omnicom/releases)
+[![Version](https://img.shields.io/badge/version-1.4-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Easy and modern interface to manage network devices — Serial, SSH, Telnet, IP Scanner and SNMP.
+Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner and SNMP.
 
 <img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
@@ -45,10 +45,18 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, IP 
 
 ### IP Scanner
 - Network host discovery with ICMP, TCP and UDP scan methods
+- **ARP Scanning** with hostname resolution and MAC vendor detection
 - Configurable subnet mask, ports, timeout and threads
 - Real-time results with IP, status, latency and MAC vendor detection
 - Sortable results table with export to CSV
 - Progress indicator on the scan button
+
+### Traceroute / MTR
+- Graphical route visualization with glowing neon bars and hop details
+- **MTR (My Traceroute)** for continuous real-time path monitoring
+- Latency graph with premium dark/neon aesthetic
+- Automatic `cap_net_raw` capability configuration for TCP/UDP probes
+- Packet loss and latency statistics per hop
 
 ### SNMP Queries
 - SNMP GET and WALK operations (v1 and v2c)
@@ -90,7 +98,7 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, IP 
 
 2. Install the package:
 ```bash
-sudo dpkg -i omnicom_1.3-1_all.deb
+sudo dpkg -i omnicom_1.4-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -114,7 +122,7 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../omnicom_1.3-1_all.deb
+sudo dpkg -i ../omnicom_1.4-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -132,7 +140,7 @@ paru -S omnicom
 
 2. Install the package:
 ```bash
-sudo pacman -U omnicom-1.3-1-any.pkg.tar.zst
+sudo pacman -U omnicom-1.4-1-any.pkg.tar.zst
 ```
 
 ### Flatpak
