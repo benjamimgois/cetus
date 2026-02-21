@@ -2,9 +2,9 @@
 <!-- Uploaded to: SVG Repo, www.svgrepo.com, Transformed by: SVG Repo Mixer Tools -->
 
 <svg
-   width="919"
+   width="1034"
    height="800"
-   viewBox="0 0 27.57 24"
+   viewBox="0 0 31.02 24"
    version="1.1"
    fill="#000000"
    id="svg1"
@@ -61,7 +61,7 @@
        transform="matrix(1.1001252,0,0,0.70463079,0.47924895,0)">
       <g
          id="Map"
-         transform="translate(-288)">
+         transform="translate(-286.36177,0.51154529)">
         <g
            id="route_line"
            transform="translate(288)">
@@ -78,19 +78,19 @@
     </g>
     <text
        xml:space="preserve"
-       style="font-size:6.52871px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0213435"
-       x="0.35126781"
-       y="23.699667"
+       style="font-size:7.2px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0213435"
+       x="-0.0091827586"
+       y="23.759743"
        id="text1"><tspan
          sodipodi:role="line"
          id="tspan1"
-         style="font-size:6.52871px;fill:#ffffff;stroke-width:0.0213435"
-         x="0.35126781"
-         y="23.699667">TRACERT</tspan></text>
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:7.2px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';fill:#ffffff;stroke-width:0.0213435"
+         x="-0.0091827586"
+         y="23.759743">TRACERT</tspan></text>
     <text
        xml:space="preserve"
        transform="scale(0.03)"
        id="text2"
-       style="font-size:117.333px;writing-mode:lr-tb;direction:ltr;white-space:pre;shape-inside:url(#rect2);fill:#000080" />
+       style="font-size:117.333px;writing-mode:lr-tb;direction:ltr;white-space:pre;shape-inside:url(#rect2);display:inline;fill:#000080" />
   </g>
 </svg>
