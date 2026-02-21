@@ -2159,7 +2159,10 @@ class TracerouteWorker(QThread):
             stderr_output = process.stderr.read()
             if process.returncode != 0 and stderr_output:
                 # Check for common permission errors
-                if 'Permission denied' in stderr_output or 'Operation not permitted' in stderr_output:
+                if any(msg in stderr_output for msg in (
+                        'Permission denied', 'Operation not permitted',
+                        'not permitted', 'privileges',
+                        'Operação não permitida', 'Permissão negada')):
                     if self.method in ('TCP', 'UDP'):
                         self.route_error.emit(f"{self.method} traceroute requires root privileges.\n\n"
                                              f"Run Omnicom with: sudo python3 omnicom\n"
@@ -6080,6 +6083,11 @@ class SerialTerminalGUI(QMainWindow):
                 QMessageBox.warning(self, "Traceroute", "Invalid port number. Please enter a valid integer.")
                 return
 
+        # For TCP/UDP, check if traceroute has raw socket capability; grant it if needed
+        if method in ('TCP', 'UDP'):
+            if not self._ensure_traceroute_cap_net_raw():
+                return  # User cancelled or wrong password
+
         # Clear previous results
         self.traceroute_results_table.setSortingEnabled(False)
         self.traceroute_results_table.setRowCount(0)
@@ -6729,6 +6737,69 @@ class SerialTerminalGUI(QMainWindow):
             return [text]
         except ValueError:
             return []
+
+    def _ensure_traceroute_cap_net_raw(self):
+        """Ensure traceroute binary has cap_net_raw for TCP/UDP probes.
+
+        Returns True if capability is already set or was successfully granted.
+        Returns False if the user cancelled or the password was wrong.
+        """
+        # Only check once per session
+        if getattr(self, '_traceroute_cap_granted', False):
+            return True
+
+        # Check current capabilities of the traceroute binary
+        traceroute_bin = '/usr/bin/traceroute'
+        try:
+            result = subprocess.run(
+                ['getcap', traceroute_bin],
+                capture_output=True, text=True, timeout=5
+            )
+            if 'cap_net_raw' in result.stdout:
+                self._traceroute_cap_granted = True
+                return True
+        except FileNotFoundError:
+            # getcap not available, proceed and let traceroute fail naturally
+            return True
+        except Exception:
+            pass
+
+        # Need to grant capability — ask for sudo password
+        password = self._ask_sudo_password(
+            "TCP/UDP traceroute requires raw socket access (cap_net_raw).\n"
+            "This needs to be configured once with root privileges.\n\n"
+            "Please enter your sudo password:"
+        )
+        if password is None:
+            return False  # User cancelled
+
+        # Run: sudo -S setcap cap_net_raw+ep /usr/bin/traceroute
+        try:
+            proc = subprocess.run(
+                ['sudo', '-S', 'setcap', 'cap_net_raw+ep', traceroute_bin],
+                input=password + '\n',
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode == 0:
+                self._traceroute_cap_granted = True
+                return True
+            else:
+                err = proc.stderr.strip()
+                if 'incorrect password' in err.lower() or 'authentication failure' in err.lower() or '3 incorrect' in err.lower():
+                    QMessageBox.warning(self, "Traceroute", "Incorrect sudo password.\nTCP/UDP traceroute cancelled.")
+                else:
+                    QMessageBox.warning(
+                        self, "Traceroute",
+                        f"Failed to set traceroute capability.\n\n{err or 'Unknown error.'}\n\n"
+                        "Try running manually:\n  sudo setcap cap_net_raw+ep /usr/bin/traceroute"
+                    )
+                return False
+        except subprocess.TimeoutExpired:
+            QMessageBox.warning(self, "Traceroute", "Timed out while trying to set capability.")
+            return False
+        except Exception as e:
+            QMessageBox.warning(self, "Traceroute", f"Error: {e}")
+            return False
 
     def _ask_sudo_password(self, message):
         """Show dialog to ask for sudo password. Returns password or None if cancelled."""
