@@ -262,7 +262,7 @@ from PyQt6.QtWidgets import (
     QMenu, QScrollArea
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
 
 try:
     from PyQt6.QtSvg import QSvgRenderer
@@ -2416,116 +2416,270 @@ class MtrWorker(QThread):
         self.mtr_finished.emit()
 
 
+
 class RouteVisualizationWidget(QWidget):
-    """Custom widget for visualizing traceroute hops as horizontal bars"""
+    """Custom widget for visualizing traceroute hops as glowing neon bars on a dark background."""
+
+    # Latency → (bar color, glow color)
+    _PALETTE = [
+        (20,  "#00E676", "#00FF88"),   # fast   – neon green
+        (50,  "#FFEA00", "#FFD740"),   # ok     – neon yellow
+        (100, "#FF6D00", "#FF9100"),   # slow   – neon orange
+        (float("inf"), "#FF1744", "#FF6E40"),  # bad – neon red
+    ]
+    _TIMEOUT_COLOR = ("#546E7A", "#607D8B")
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.hops = []  # List of (hop_num, ip, hostname, latency)
-        self.setMinimumHeight(200)
-        self.setMaximumHeight(250)
-        self.setStyleSheet("background-color: #f5f5f5; border: 1px solid #d0d0d0; border-radius: 6px;")
+        self.hops = []
+        self._hovered_row = None
+        self.setMinimumHeight(220)
+        self.setMaximumHeight(320)
+        self.setMouseTracking(True)
+        self.setStyleSheet("background: transparent;")
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+    def _colors(self, latency, ip):
+        if latency == 0 or ip == "*":
+            return self._TIMEOUT_COLOR
+        for threshold, bar, glow in [(t, b, g) for t, b, g in self._PALETTE]:
+            if latency < threshold:
+                return bar, glow
+        return self._PALETTE[-1][1], self._PALETTE[-1][2]
 
     def add_hop(self, hop_num, ip, hostname, latency):
-        """Add a hop to the visualization"""
         self.hops.append((hop_num, ip, hostname, latency))
-        self.update()  # Trigger repaint
-
-    def clear(self):
-        """Clear all hops"""
-        self.hops = []
         self.update()
 
-    def paintEvent(self, event):
-        """Draw the hop visualization"""
-        super().paintEvent(event)
+    def clear(self):
+        self.hops = []
+        self._hovered_row = None
+        self.update()
 
+    # ── mouse ────────────────────────────────────────────────────────────────
+    def _row_rect(self, index, bar_h, spacing, y0):
+        y = y0 + index * (bar_h + spacing)
+        return y, y + bar_h
+
+    def mouseMoveEvent(self, event):
         if not self.hops:
             return
+        PAD_L, PAD_T = 14, 14
+        num_hops = len(self.hops)
+        avail_h = self.height() - PAD_T * 2
+        bar_h = max(18, min(32, (avail_h - (num_hops - 1) * 6) // max(num_hops, 1)))
+        spacing = 6
+        my = event.position().y()
+        old = self._hovered_row
+        self._hovered_row = None
+        for i in range(num_hops):
+            y_top, y_bot = self._row_rect(i, bar_h, spacing, PAD_T)
+            if y_top <= my <= y_bot:
+                self._hovered_row = i
+                break
+        if self._hovered_row != old:
+            self.update()
 
+    def leaveEvent(self, _event):
+        if self._hovered_row is not None:
+            self._hovered_row = None
+            self.update()
+
+    # ── paint ────────────────────────────────────────────────────────────────
+    def paintEvent(self, event):
+        super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-        # Calculate dimensions
-        width = self.width() - 20
-        height = self.height() - 20
-        x_offset = 10
-        y_offset = 10
+        W, H = self.width(), self.height()
 
-        # Calculate bar height based on number of hops
+        # ── background: dark gradient ────────────────────────────────────────
+        bg = QLinearGradient(0, 0, 0, H)
+        bg.setColorAt(0.0, QColor("#1A1F2E"))
+        bg.setColorAt(1.0, QColor("#0D1117"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(0, 0, W, H, 12, 12)
+
+        # subtle border
+        border_pen = QPen(QColor("#2A3040"))
+        border_pen.setWidth(1)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(0, 0, W - 1, H - 1, 12, 12)
+
+        if not self.hops:
+            # Placeholder
+            painter.setPen(QColor("#3A4460"))
+            painter.setFont(QFont("Sans Serif", 10))
+            painter.drawText(0, 0, W, H, Qt.AlignmentFlag.AlignCenter,
+                             "Run traceroute to see the route visualization")
+            painter.end()
+            return
+
+        PAD_L   = 14
+        PAD_R   = 14
+        PAD_T   = 14
         num_hops = len(self.hops)
-        bar_height = max(12, min(25, (height - (num_hops - 1) * 4) // num_hops))
-        spacing = 4
+        avail_h = H - PAD_T * 2
+        bar_h   = max(18, min(32, (avail_h - (num_hops - 1) * 6) // max(num_hops, 1)))
+        spacing = 6
 
-        # Find max latency for scaling
-        max_latency = max((hop[3] for hop in self.hops if hop[3] > 0), default=100)
-        max_latency = max(max_latency, 100)  # Minimum scale of 100ms
+        # label column widths
+        HOP_COL  = 32   # circle badge
+        BAR_L    = PAD_L + HOP_COL + 8
+        BAR_AVAIL = W - BAR_L - PAD_R - 180  # reserve right side for text
 
-        # Draw each hop as a horizontal bar
+        # max latency for scaling
+        max_lat = max((h[3] for h in self.hops if h[3] > 0 and h[1] != "*"), default=100)
+        max_lat = max(max_lat, 1)
+
         for i, (hop_num, ip, hostname, latency) in enumerate(self.hops):
-            y = y_offset + i * (bar_height + spacing)
+            y = PAD_T + i * (bar_h + spacing)
+            is_hovered = (self._hovered_row == i)
+            bar_col, glow_col = self._colors(latency, ip)
+            is_timeout = (latency == 0 or ip == "*")
 
-            # Determine color based on latency
-            if latency == 0 or ip == "*":
-                color = QColor("#9E9E9E")  # Gray for timeout
-                bar_width = 30
-            elif latency < 20:
-                color = QColor("#4CAF50")  # Green
-                bar_width = int((latency / max_latency) * width)
-            elif latency < 50:
-                color = QColor("#FFC107")  # Yellow
-                bar_width = int((latency / max_latency) * width)
-            elif latency < 100:
-                color = QColor("#FF9800")  # Orange
-                bar_width = int((latency / max_latency) * width)
+            # ── hop circle ───────────────────────────────────────────────────
+            cx = PAD_L + HOP_COL // 2
+            cy = int(y + bar_h / 2)
+            r  = bar_h // 2 - 1
+            circle_grad = QRadialGradient(cx - r//3, cy - r//3, r * 2)
+            circle_grad.setColorAt(0.0, QColor(bar_col).lighter(130))
+            circle_grad.setColorAt(1.0, QColor(bar_col).darker(160))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(circle_grad)
+            painter.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # hop number text
+            painter.setPen(QColor("#FFFFFF"))
+            painter.setFont(QFont("Sans Serif", 7, QFont.Weight.Bold))
+            painter.drawText(cx - r, cy - r, r * 2, r * 2,
+                             Qt.AlignmentFlag.AlignCenter, str(hop_num))
+
+            # ── bar ──────────────────────────────────────────────────────────
+            if is_timeout:
+                bar_w = max(40, BAR_AVAIL // 8)
             else:
-                color = QColor("#F44336")  # Red
-                bar_width = int((latency / max_latency) * width)
+                bar_w = max(40, int((latency / max_lat) * BAR_AVAIL))
 
-            bar_width = max(bar_width, 30)  # Minimum bar width
+            bar_x = BAR_L
+            bar_y = int(y + (bar_h - max(bar_h - 6, 8)) / 2)
+            bar_rh = max(bar_h - 6, 8)
+            bar_radius = bar_rh // 2
 
-            # Draw bar
-            painter.fillRect(x_offset, y, bar_width, bar_height, color)
+            # glow shadow layers (only when not timeout)
+            if not is_timeout:
+                for glow_r, alpha in [(6, 18), (4, 30), (2, 55)]:
+                    glow_c = QColor(glow_col)
+                    glow_c.setAlpha(alpha)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(glow_c)
+                    painter.drawRoundedRect(
+                        bar_x - glow_r, bar_y - glow_r,
+                        bar_w + glow_r * 2, bar_rh + glow_r * 2,
+                        bar_radius + glow_r, bar_radius + glow_r
+                    )
 
-            # Draw text label
-            if ip == "*":
-                label = f"Hop {hop_num}: * * *"
+            # bar gradient fill
+            bar_grad = QLinearGradient(bar_x, 0, bar_x + bar_w, 0)
+            if is_timeout:
+                bar_grad.setColorAt(0.0, QColor("#374151"))
+                bar_grad.setColorAt(1.0, QColor("#1F2937"))
             else:
-                display_name = hostname if hostname and hostname != ip else ip
-                if len(display_name) > 25:
-                    display_name = display_name[:22] + "..."
-                label = f"Hop {hop_num}: {display_name} — {latency:.1f}ms"
+                c1 = QColor(glow_col)
+                c1.setAlpha(230)
+                c2 = QColor(bar_col)
+                c2.setAlpha(180)
+                bar_grad.setColorAt(0.0, c1)
+                bar_grad.setColorAt(1.0, c2)
 
-            painter.setPen(QColor("#333333"))
-            font = painter.font()
-            font.setPointSize(8)
-            painter.setFont(font)
-            painter.drawText(x_offset + bar_width + 8, y + bar_height - 3, label)
+            # hovered: brighten slightly
+            if is_hovered and not is_timeout:
+                bar_grad.setColorAt(0.0, QColor(glow_col).lighter(115))
+                bar_grad.setColorAt(1.0, QColor(bar_col).lighter(115))
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bar_grad)
+            painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_rh, bar_radius, bar_radius)
+
+            # highlight stripe (top edge)
+            if not is_timeout:
+                hi = QLinearGradient(bar_x, bar_y, bar_x + bar_w, bar_y)
+                hi.setColorAt(0.0, QColor(255, 255, 255, 55))
+                hi.setColorAt(1.0, QColor(255, 255, 255, 0))
+                painter.setBrush(hi)
+                painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_rh // 2, bar_radius, bar_radius)
+
+            # ── text label ───────────────────────────────────────────────────
+            text_x = bar_x + bar_w + 10
+            text_w = W - text_x - PAD_R
+
+            if is_timeout:
+                label_main = "* * *  (no response)"
+                painter.setPen(QColor("#546E7A"))
+                painter.setFont(QFont("Sans Serif", 8))
+            else:
+                display = hostname if hostname and hostname != ip else ip
+                if len(display) > 28:
+                    display = display[:25] + "…"
+                lat_str = f"{latency:.1f} ms"
+                label_main = f"{display}"
+                # draw latency badge
+                badge_col = QColor(bar_col)
+                badge_col.setAlpha(30)
+                lat_font = QFont("Monospace", 8, QFont.Weight.Bold)
+                painter.setFont(lat_font)
+                lat_w = painter.fontMetrics().horizontalAdvance(lat_str) + 14
+                lat_x = W - PAD_R - lat_w
+                lat_y = int(y + (bar_h - 18) / 2)
+                # badge background
+                badge_bg = QColor(bar_col)
+                badge_bg.setAlpha(35)
+                painter.setBrush(badge_bg)
+                _border_c = QColor(bar_col)
+                _border_c.setAlpha(120)
+                badge_border = QPen(_border_c)
+                painter.setPen(badge_border)
+                painter.drawRoundedRect(lat_x, lat_y, lat_w, 18, 9, 9)
+                painter.setPen(QColor(glow_col))
+                painter.drawText(lat_x, lat_y, lat_w, 18,
+                                 Qt.AlignmentFlag.AlignCenter, lat_str)
+
+                painter.setPen(QColor("#C9D1E0") if not is_hovered else QColor("#FFFFFF"))
+                painter.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold if is_hovered else QFont.Weight.Normal))
+
+            painter.drawText(text_x, int(y), min(text_w, W - text_x - 80), bar_h,
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                             label_main)
 
         painter.end()
 
 
 class LatencyGraphWidget(QWidget):
-    """Widget that draws traceroute hop latencies as a smooth line chart"""
+    """Widget that draws traceroute hop latencies as a smooth neon line chart on dark background."""
 
-    _THRESHOLDS = [(20, "#4CAF50"), (50, "#FFC107"), (100, "#FF9800"), (float("inf"), "#F44336")]
+    _THRESHOLDS = [(20, "#00E676", "#00FF88"),
+                   (50, "#FFEA00", "#FFD740"),
+                   (100, "#FF6D00", "#FF9100"),
+                   (float("inf"), "#FF1744", "#FF6E40")]
 
     def __init__(self, hops, parent=None):
         super().__init__(parent)
-        self.hops = hops  # list of (hop_num, ip, hostname, latency)
+        self.hops = hops
         self.setMinimumSize(420, 300)
-        self.setStyleSheet("background-color: #f8f8f8;")
+        self.setStyleSheet("background: transparent;")
         self.setMouseTracking(True)
-        self._hovered = None  # index into valid hops list
+        self._hovered = None
 
     def _color(self, lat):
-        for threshold, color in self._THRESHOLDS:
+        for threshold, bar, glow in self._THRESHOLDS:
             if lat < threshold:
-                return QColor(color)
-        return QColor("#F44336")
+                return QColor(bar), QColor(glow)
+        return QColor(self._THRESHOLDS[-1][1]), QColor(self._THRESHOLDS[-1][2])
 
     def mouseMoveEvent(self, event):
-        L, R, T, B = 70, 24, 28, 54
+        L, R, T, B = 72, 20, 32, 58
         W = self.width() - L - R
         H = self.height() - T - B
         valid = [(hn, lat) for hn, ip, _, lat in self.hops if lat > 0 and ip != "*"]
@@ -2557,171 +2711,222 @@ class LatencyGraphWidget(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-        L, R, T, B = 70, 24, 28, 54   # margins: left, right, top, bottom
-        W = self.width() - L - R
-        H = self.height() - T - B
+        W_total, H_total = self.width(), self.height()
 
-        valid = [(hn, ip, hostname, lat) for hn, ip, hostname, lat in self.hops if lat > 0 and ip != "*"]
+        # ── dark background ──────────────────────────────────────────────────
+        bg = QLinearGradient(0, 0, 0, H_total)
+        bg.setColorAt(0.0, QColor("#1A1F2E"))
+        bg.setColorAt(1.0, QColor("#0D1117"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(0, 0, W_total, H_total, 12, 12)
+
+        border_pen = QPen(QColor("#2A3040"))
+        border_pen.setWidth(1)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(0, 0, W_total - 1, H_total - 1, 12, 12)
+
+        L, R, T, B = 72, 20, 32, 58
+        W = W_total - L - R
+        H = H_total - T - B
+
+        valid = [(hn, ip, hostname, lat) for hn, ip, hostname, lat in self.hops
+                 if lat > 0 and ip != "*"]
         all_lats = [lat for _, _, _, lat in valid]
         total_lat = sum(all_lats)
         max_hop = max((hn for hn, _, _, _ in self.hops), default=1)
         max_lat = max(all_lats, default=100) * 1.18
         max_lat = max(max_lat, 10)
 
-        def px(hop_num):
-            return L + (hop_num - 1) / max(max_hop - 1, 1) * W
+        def px(hn):
+            return L + (hn - 1) / max(max_hop - 1, 1) * W
 
         def py(lat):
             return T + H - (lat / max_lat) * H
 
-        # --- Grid & Y axis labels ---
+        # ── grid lines ───────────────────────────────────────────────────────
         grid_steps = 5
         for i in range(grid_steps + 1):
             frac = i / grid_steps
-            y = T + H - frac * H
+            y_g = T + H - frac * H
             val = frac * max_lat
-            painter.setPen(QColor("#e0e0e0"))
-            painter.drawLine(L, int(y), L + W, int(y))
-            painter.setPen(QColor("#888888"))
-            painter.setFont(QFont("Sans Serif", 7))
-            painter.drawText(0, int(y) - 8, L - 5, 16,
+            grid_pen = QPen(QColor("#1E2A3A"))
+            grid_pen.setWidth(1)
+            painter.setPen(grid_pen)
+            painter.drawLine(L, int(y_g), L + W, int(y_g))
+            painter.setPen(QColor("#3A4460"))
+            painter.setFont(QFont("Monospace", 7))
+            painter.drawText(0, int(y_g) - 8, L - 8, 16,
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              f"{val:.0f}")
 
-        # --- Axes ---
-        painter.setPen(QColor("#bbbbbb"))
+        # ── axes ─────────────────────────────────────────────────────────────
+        axis_pen = QPen(QColor("#2A3A50"))
+        axis_pen.setWidth(1)
+        painter.setPen(axis_pen)
         painter.drawLine(L, T, L, T + H)
         painter.drawLine(L, T + H, L + W, T + H)
 
-        # --- Y axis title (rotated) ---
+        # ── Y label ──────────────────────────────────────────────────────────
         painter.save()
-        painter.setPen(QColor("#666666"))
+        painter.setPen(QColor("#4A6080"))
         painter.setFont(QFont("Sans Serif", 8))
-        painter.translate(13, T + H // 2)
+        painter.translate(12, T + H // 2)
         painter.rotate(-90)
         painter.drawText(-50, -8, 100, 16, Qt.AlignmentFlag.AlignCenter, "Latency (ms)")
         painter.restore()
 
-        # --- X axis labels ---
-        painter.setPen(QColor("#888888"))
-        painter.setFont(QFont("Sans Serif", 7))
+        # ── X axis labels ────────────────────────────────────────────────────
+        painter.setPen(QColor("#4A6080"))
+        painter.setFont(QFont("Monospace", 7))
         for hop_num, ip, _, _ in self.hops:
-            x = px(hop_num)
-            painter.drawText(int(x) - 15, T + H + 4, 30, 14,
+            x_g = px(hop_num)
+            painter.drawText(int(x_g) - 15, T + H + 4, 30, 14,
                              Qt.AlignmentFlag.AlignCenter, str(hop_num))
-        painter.setPen(QColor("#666666"))
+        painter.setPen(QColor("#3A4460"))
         painter.setFont(QFont("Sans Serif", 8))
         painter.drawText(L, T + H + 20, W, 14, Qt.AlignmentFlag.AlignCenter, "Hop")
 
-        # --- Timeout markers ---
+        # ── timeout markers ──────────────────────────────────────────────────
         for hop_num, ip, _, lat in self.hops:
             if lat <= 0 or ip == "*":
-                x = px(hop_num)
-                saved_pen = painter.pen()
-                p = painter.pen()
-                p.setColor(QColor("#cccccc"))
-                p.setStyle(Qt.PenStyle.DashLine)
-                p.setWidth(1)
-                painter.setPen(p)
-                painter.drawLine(int(x), T, int(x), T + H)
-                painter.setPen(saved_pen)
-                painter.setFont(QFont("Sans Serif", 7))
-                painter.setPen(QColor("#aaaaaa"))
-                painter.drawText(int(x) - 10, T + H + 4, 20, 14,
+                x_g = px(hop_num)
+                dash_pen = QPen(QColor("#2A3A50"))
+                dash_pen.setStyle(Qt.PenStyle.DashLine)
+                dash_pen.setWidth(1)
+                painter.setPen(dash_pen)
+                painter.drawLine(int(x_g), T, int(x_g), T + H)
+                painter.setPen(QColor("#3A4460"))
+                painter.setFont(QFont("Sans Serif", 8))
+                painter.drawText(int(x_g) - 10, T + H + 4, 20, 14,
                                  Qt.AlignmentFlag.AlignCenter, "✕")
 
-        # --- Per-segment gradient fill + colored curve ---
+        # ── gradient fill + neon curve ───────────────────────────────────────
         if len(valid) >= 2:
             points = [(px(hn), py(lat), lat) for hn, ip, hostname, lat in valid]
 
-            # Gradient fill under each segment (Zabbix style: solid at curve, transparent at axis)
+            # glow fill under each segment
             for i in range(1, len(points)):
                 x0, y0, lat0 = points[i - 1]
                 x1, y1, lat1 = points[i]
-                cx = (x0 + x1) / 2
+                cx_m = (x0 + x1) / 2
                 seg_fill = QPainterPath()
                 seg_fill.moveTo(x0, T + H)
                 seg_fill.lineTo(x0, y0)
-                seg_fill.cubicTo(cx, y0, cx, y1, x1, y1)
+                seg_fill.cubicTo(cx_m, y0, cx_m, y1, x1, y1)
                 seg_fill.lineTo(x1, T + H)
                 seg_fill.closeSubpath()
-                seg_color = self._color(lat1)
+                _, glow_c = self._color(lat1)
                 gradient = QLinearGradient(0, min(y0, y1), 0, T + H)
-                top_c = QColor(seg_color)
-                top_c.setAlpha(80)
-                bot_c = QColor(seg_color)
+                top_c = QColor(glow_c)
+                top_c.setAlpha(70)
+                bot_c = QColor(glow_c)
                 bot_c.setAlpha(0)
                 gradient.setColorAt(0.0, top_c)
                 gradient.setColorAt(1.0, bot_c)
+                painter.setPen(Qt.PenStyle.NoPen)
                 painter.fillPath(seg_fill, gradient)
 
-            # Colored curve per segment
-            for i in range(1, len(points)):
-                x0, y0, lat0 = points[i - 1]
-                x1, y1, lat1 = points[i]
-                cx = (x0 + x1) / 2
-                seg_curve = QPainterPath()
-                seg_curve.moveTo(x0, y0)
-                seg_curve.cubicTo(cx, y0, cx, y1, x1, y1)
-                pen = painter.pen()
-                pen.setColor(self._color(lat1))
-                pen.setWidth(2)
-                pen.setStyle(Qt.PenStyle.SolidLine)
-                painter.setPen(pen)
-                painter.drawPath(seg_curve)
+            # neon glow curve (multiple passes for glow)
+            for pass_w, pass_alpha in [(5, 40), (3, 80), (2, 200)]:
+                for i in range(1, len(points)):
+                    x0, y0, lat0 = points[i - 1]
+                    x1, y1, lat1 = points[i]
+                    cx_m = (x0 + x1) / 2
+                    seg_curve = QPainterPath()
+                    seg_curve.moveTo(x0, y0)
+                    seg_curve.cubicTo(cx_m, y0, cx_m, y1, x1, y1)
+                    _, glow_c = self._color(lat1)
+                    _gc = QColor(glow_c)
+                    _gc.setAlpha(pass_alpha)
+                    pen = QPen(_gc)
+                    pen.setWidth(pass_w)
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(pen)
+                    painter.drawPath(seg_curve)
 
         elif len(valid) == 1:
             hn0, ip0, _name0, lat0 = valid[0]
-            x, y = px(hn0), py(lat0)
-            pen = painter.pen()
-            pen.setColor(self._color(lat0))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.drawLine(L, int(y), L + W, int(y))
+            x_g, y_g = px(hn0), py(lat0)
+            bar_c, glow_c = self._color(lat0)
+            for pass_w, pass_alpha in [(4, 50), (2, 180)]:
+                _pc = QColor(glow_c)
+                _pc.setAlpha(pass_alpha)
+                p_pen = QPen(_pc)
+                p_pen.setWidth(pass_w)
+                painter.setPen(p_pen)
+                painter.drawLine(L, int(y_g), L + W, int(y_g))
 
-        # --- Points, hostname & latency labels ---
+        # ── points + labels ──────────────────────────────────────────────────
         for i, (hop_num, ip, hostname, lat) in enumerate(valid):
-            x, y = px(hop_num), py(lat)
+            x_g, y_g = px(hop_num), py(lat)
             is_hovered = (self._hovered == i)
-            col = self._color(lat)
+            bar_c, glow_c = self._color(lat)
 
-            # Point circle
-            painter.setBrush(col)
-            pen = painter.pen()
-            pen.setColor(QColor("#ffffff"))
-            pen.setWidth(1)
-            painter.setPen(pen)
+            # point glow
+            for glow_r in ([12, 8, 5] if is_hovered else [8, 5]):
+                g_c = QColor(glow_c)
+                g_c.setAlpha(30 if glow_r > 8 else 60)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(g_c)
+                painter.drawEllipse(int(x_g) - glow_r, int(y_g) - glow_r,
+                                    glow_r * 2, glow_r * 2)
+
+            # point circle
             r = 7 if is_hovered else 5
-            painter.drawEllipse(int(x) - r, int(y) - r, r * 2, r * 2)
+            pt_grad = QRadialGradient(x_g - r // 3, y_g - r // 3, r * 2)
+            pt_grad.setColorAt(0.0, QColor(glow_c).lighter(120))
+            pt_grad.setColorAt(1.0, QColor(bar_c))
+            painter.setBrush(pt_grad)
+            painter.setPen(QPen(QColor("#FFFFFF"), 1 if is_hovered else 0))
+            painter.drawEllipse(int(x_g) - r, int(y_g) - r, r * 2, r * 2)
 
-            # Hostname above the point
+            # hostname (above point)
             display = hostname if hostname and hostname != ip else ip
             if len(display) > 18:
                 display = display[:16] + "…"
-            painter.setPen(QColor("#555555"))
+            painter.setPen(QColor("#8899BB") if not is_hovered else QColor("#C9D1E0"))
             painter.setFont(QFont("Sans Serif", 7 if is_hovered else 6))
-            painter.drawText(int(x) - 40, int(y) - 32, 80, 12,
+            painter.drawText(int(x_g) - 42, int(y_g) - 34, 84, 13,
                              Qt.AlignmentFlag.AlignCenter, display)
 
-            # Latency label (colored, bold on hover)
-            painter.setPen(col)
-            painter.setFont(QFont("Sans Serif", 8 if is_hovered else 7,
-                                  QFont.Weight.Bold if is_hovered else QFont.Weight.Normal))
-            painter.drawText(int(x) - 28, int(y) - 20, 56, 14,
-                             Qt.AlignmentFlag.AlignCenter, f"{lat:.1f}ms")
+            # latency badge
+            lat_str = f"{lat:.1f}ms"
+            badge_font = QFont("Monospace", 8 if is_hovered else 7,
+                               QFont.Weight.Bold if is_hovered else QFont.Weight.Normal)
+            painter.setFont(badge_font)
+            bw = painter.fontMetrics().horizontalAdvance(lat_str) + 10
+            bh = 16
+            bx = int(x_g) - bw // 2
+            by = int(y_g) - 22
+            badge_bg = QColor(bar_c)
+            badge_bg.setAlpha(45)
+            painter.setBrush(badge_bg)
+            _bb_c = QColor(bar_c)
+            _bb_c.setAlpha(140)
+            badge_border_pen = QPen(_bb_c)
+            painter.setPen(badge_border_pen)
+            painter.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
+            painter.setPen(QColor(glow_c))
+            painter.drawText(bx, by, bw, bh, Qt.AlignmentFlag.AlignCenter, lat_str)
 
-        # --- Footer: total latency ---
-        painter.setPen(QColor("#444444"))
-        painter.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        # ── footer ───────────────────────────────────────────────────────────
+        painter.setPen(QColor("#4A6080"))
+        painter.setFont(QFont("Sans Serif", 8))
         reached = len(valid)
         total_hops = len(self.hops)
-        footer = (f"Total latency: {total_lat:.1f} ms  —  "
+        footer = (f"Total: {total_lat:.1f} ms  ·  "
                   f"{reached}/{total_hops} hops reached")
-        painter.drawText(L, T + H + 36, W, 14,
+        painter.drawText(L, T + H + 38, W, 14,
                          Qt.AlignmentFlag.AlignRight, footer)
 
         painter.end()
+
+
 
 
 class VendorReferenceDialog(QDialog):
