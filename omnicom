@@ -2664,9 +2664,10 @@ class LatencyGraphWidget(QWidget):
                    (100, "#FF6D00", "#FF9100"),
                    (float("inf"), "#FF1744", "#FF6E40")]
 
-    def __init__(self, hops, parent=None):
+    def __init__(self, hops, local_info=None, parent=None):
         super().__init__(parent)
         self.hops = hops
+        self.local_info = local_info  # (hostname, ip) tuple or None
         self.setMinimumSize(420, 300)
         self.setStyleSheet("background: transparent;")
         self.setMouseTracking(True)
@@ -2687,7 +2688,7 @@ class LatencyGraphWidget(QWidget):
         all_lats = [lat for _, lat in valid]
         max_lat = max(all_lats, default=100) * 1.18
         max_lat = max(max_lat, 10)
-        px = lambda hn: L + (hn - 1) / max(max_hop - 1, 1) * W
+        px = lambda hn: L + hn / max(max_hop, 1) * W
         py = lambda lat: T + H - (lat / max_lat) * H
         pos = event.position()
         closest, closest_dist = None, float("inf")
@@ -2742,7 +2743,7 @@ class LatencyGraphWidget(QWidget):
         max_lat = max(max_lat, 10)
 
         def px(hn):
-            return L + (hn - 1) / max(max_hop - 1, 1) * W
+            return L + hn / max(max_hop, 1) * W
 
         def py(lat):
             return T + H - (lat / max_lat) * H
@@ -2782,6 +2783,8 @@ class LatencyGraphWidget(QWidget):
         # ── X axis labels ────────────────────────────────────────────────────
         painter.setPen(QColor("#4A6080"))
         painter.setFont(QFont("Monospace", 7))
+        # Origin "0"
+        painter.drawText(L - 8, T + H + 4, 16, 14, Qt.AlignmentFlag.AlignCenter, "0")
         for hop_num, ip, _, _ in self.hops:
             x_g = px(hop_num)
             painter.drawText(int(x_g) - 15, T + H + 4, 30, 14,
@@ -2789,6 +2792,112 @@ class LatencyGraphWidget(QWidget):
         painter.setPen(QColor("#3A4460"))
         painter.setFont(QFont("Sans Serif", 8))
         painter.drawText(L, T + H + 20, W, 14, Qt.AlignmentFlag.AlignCenter, "Hop")
+
+        # ── Local Network Latency region (between 0 and hop 1) ────────────────
+        if self.hops:
+            x_hop1 = px(1)
+            region_w = int(x_hop1 - L)
+            if region_w > 8:
+                # subtle shaded band
+                region_fill = QLinearGradient(L, T, L + region_w, T)
+                local_c = QColor("#00BCD4")
+                local_c.setAlpha(14)
+                region_fill.setColorAt(0.0, local_c)
+                local_c2 = QColor("#00BCD4")
+                local_c2.setAlpha(0)
+                region_fill.setColorAt(1.0, local_c2)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(region_fill)
+                painter.drawRect(L, T, region_w, H)
+
+                # ── growing latency curve from (0, 0ms) to hop 1 ──────────────
+                # painter.save() aqui garante que o pen ciano NÃO vaza para o restante
+                painter.save()
+                first_hop = next(
+                    ((hn, ip, hostname, lat) for hn, ip, hostname, lat in self.hops
+                     if lat > 0 and ip != "*"), None
+                )
+                if first_hop:
+                    _, _, _, lat1 = first_hop
+                    x0_curve, y0_curve = L, T + H
+                    x1_curve, y1_curve = x_hop1, py(lat1)
+                    ctrl_x = (x0_curve + x1_curve) / 2
+                    curve_path = QPainterPath()
+                    curve_path.moveTo(x0_curve, y0_curve)
+                    curve_path.cubicTo(ctrl_x, y0_curve, ctrl_x, y1_curve, x1_curve, y1_curve)
+                    fill_path = QPainterPath(curve_path)
+                    fill_path.lineTo(x1_curve, T + H)
+                    fill_path.lineTo(x0_curve, T + H)
+                    fill_path.closeSubpath()
+                    fill_grad = QLinearGradient(0, min(y0_curve, y1_curve), 0, T + H)
+                    fill_top = QColor("#00BCD4"); fill_top.setAlpha(55)
+                    fill_bot = QColor("#00BCD4"); fill_bot.setAlpha(0)
+                    fill_grad.setColorAt(0.0, fill_top)
+                    fill_grad.setColorAt(1.0, fill_bot)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.fillPath(fill_path, fill_grad)
+                    for pass_w, pass_alpha in [(5, 30), (3, 70), (2, 180)]:
+                        glow_c = QColor("#00E5FF"); glow_c.setAlpha(pass_alpha)
+                        gp = QPen(glow_c); gp.setWidth(pass_w)
+                        gp.setCapStyle(Qt.PenCapStyle.RoundCap)
+                        gp.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                        painter.setPen(gp)
+                        painter.drawPath(curve_path)
+                painter.restore()  # reseta pen/brush antes do restante do gráfico
+
+                # dashed vertical at hop 1 position
+                dash_pen = QPen(QColor("#00BCD4"))
+                dash_pen.setStyle(Qt.PenStyle.DashLine)
+                dash_pen.setWidth(1)
+                dash_pen.setDashPattern([3, 4])
+                painter.setPen(dash_pen)
+                painter.drawLine(int(x_hop1), T, int(x_hop1), T + H)
+
+                # label rotated vertically in the band
+                mid_x = L + region_w // 2
+                painter.save()
+                painter.translate(mid_x, T + H // 2)
+                painter.rotate(-90)
+                label_color = QColor("#00E5FF")
+                label_color.setAlpha(200)
+                painter.setPen(label_color)
+                painter.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+                band_text_w = min(H - 4, 160)
+                painter.drawText(-band_text_w // 2, -9, band_text_w, 18,
+                                 Qt.AlignmentFlag.AlignCenter, "Local Network Latency")
+                painter.restore()
+
+        # ── Origin point: local machine (hop 0) ─────────────────────────────
+        painter.save()  # isola brush/pen — evita vazar para a curva verde
+        origin_x, origin_y = L, T + H
+        origin_color = QColor("#00E5FF")
+        # glow rings
+        for gr, ga in [(14, 15), (9, 35), (6, 80)]:
+            gc = QColor(origin_color); gc.setAlpha(ga)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gc)
+            painter.drawEllipse(origin_x - gr, origin_y - gr, gr * 2, gr * 2)
+        # solid point
+        pt_g = QRadialGradient(origin_x - 1, origin_y - 1, 10)
+        pt_g.setColorAt(0.0, QColor("#80FFFF"))
+        pt_g.setColorAt(1.0, QColor("#00BCD4"))
+        painter.setBrush(pt_g)
+        painter.setPen(QPen(QColor("#FFFFFF"), 1))
+        painter.drawEllipse(origin_x - 5, origin_y - 5, 10, 10)
+        # local hostname + IP labels above the origin point
+        if self.local_info:
+            local_host, local_ip = self.local_info
+            if len(local_host) > 20:
+                local_host = local_host[:18] + "\u2026"
+            painter.setPen(QColor("#E8F0FF"))
+            painter.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+            painter.drawText(origin_x - 60, origin_y - 50, 120, 14,
+                             Qt.AlignmentFlag.AlignCenter, local_host)
+            painter.setPen(QColor("#00E5FF"))
+            painter.setFont(QFont("Monospace", 7))
+            painter.drawText(origin_x - 60, origin_y - 36, 120, 13,
+                             Qt.AlignmentFlag.AlignCenter, local_ip)
+        painter.restore()  # brush/pen voltam ao estado anterior — curva verde não é afetada
 
         # ── timeout markers ──────────────────────────────────────────────────
         for hop_num, ip, _, lat in self.hops:
@@ -2867,48 +2976,62 @@ class LatencyGraphWidget(QWidget):
             is_hovered = (self._hovered == i)
             bar_c, glow_c = self._color(lat)
 
-            # point glow
-            for glow_r in ([12, 8, 5] if is_hovered else [8, 5]):
+            # point glow — stronger on hover
+            if is_hovered:
+                glow_passes = [(22, 18), (16, 35), (11, 70), (7, 130)]
+            else:
+                glow_passes = [(10, 20), (6, 50)]
+            for glow_r, glow_a in glow_passes:
                 g_c = QColor(glow_c)
-                g_c.setAlpha(30 if glow_r > 8 else 60)
+                g_c.setAlpha(glow_a)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(g_c)
                 painter.drawEllipse(int(x_g) - glow_r, int(y_g) - glow_r,
                                     glow_r * 2, glow_r * 2)
 
-            # point circle
-            r = 7 if is_hovered else 5
+            # point circle — bigger on hover
+            r = 10 if is_hovered else 5
             pt_grad = QRadialGradient(x_g - r // 3, y_g - r // 3, r * 2)
-            pt_grad.setColorAt(0.0, QColor(glow_c).lighter(120))
+            pt_grad.setColorAt(0.0, QColor(glow_c).lighter(150 if is_hovered else 120))
             pt_grad.setColorAt(1.0, QColor(bar_c))
             painter.setBrush(pt_grad)
-            painter.setPen(QPen(QColor("#FFFFFF"), 1 if is_hovered else 0))
+            painter.setPen(QPen(QColor("#FFFFFF"), 2 if is_hovered else 0))
             painter.drawEllipse(int(x_g) - r, int(y_g) - r, r * 2, r * 2)
 
-            # hostname (above point)
+            # hostname (above point) — larger and brighter on hover
             display = hostname if hostname and hostname != ip else ip
-            if len(display) > 18:
-                display = display[:16] + "…"
-            painter.setPen(QColor("#8899BB") if not is_hovered else QColor("#C9D1E0"))
-            painter.setFont(QFont("Sans Serif", 7 if is_hovered else 6))
-            painter.drawText(int(x_g) - 42, int(y_g) - 34, 84, 13,
-                             Qt.AlignmentFlag.AlignCenter, display)
+            if is_hovered:
+                max_chars = 28
+                font_size = 9
+            else:
+                max_chars = 18
+                font_size = 6
+            if len(display) > max_chars:
+                display = display[:max_chars - 2] + "…"
+            text_color = QColor("#E8F0FF") if is_hovered else QColor("#8899BB")
+            painter.setPen(text_color)
+            painter.setFont(QFont("Sans Serif", font_size,
+                                  QFont.Weight.Bold if is_hovered else QFont.Weight.Normal))
+            label_w = 120 if is_hovered else 84
+            label_offset_y = 58 if is_hovered else 46
+            painter.drawText(int(x_g) - label_w // 2, int(y_g) - label_offset_y,
+                             label_w, 14, Qt.AlignmentFlag.AlignCenter, display)
 
-            # latency badge
+            # latency badge — larger on hover
             lat_str = f"{lat:.1f}ms"
-            badge_font = QFont("Monospace", 8 if is_hovered else 7,
-                               QFont.Weight.Bold if is_hovered else QFont.Weight.Normal)
+            badge_font_size = 10 if is_hovered else 7
+            badge_font = QFont("Monospace", badge_font_size, QFont.Weight.Bold)
             painter.setFont(badge_font)
-            bw = painter.fontMetrics().horizontalAdvance(lat_str) + 10
-            bh = 16
+            bw = painter.fontMetrics().horizontalAdvance(lat_str) + (16 if is_hovered else 10)
+            bh = 20 if is_hovered else 16
             bx = int(x_g) - bw // 2
-            by = int(y_g) - 22
+            by = int(y_g) - (28 if is_hovered else 22)
             badge_bg = QColor(bar_c)
-            badge_bg.setAlpha(45)
+            badge_bg.setAlpha(80 if is_hovered else 45)
             painter.setBrush(badge_bg)
             _bb_c = QColor(bar_c)
-            _bb_c.setAlpha(140)
-            badge_border_pen = QPen(_bb_c)
+            _bb_c.setAlpha(200 if is_hovered else 140)
+            badge_border_pen = QPen(_bb_c, 2 if is_hovered else 1)
             painter.setPen(badge_border_pen)
             painter.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
             painter.setPen(QColor(glow_c))
@@ -6401,6 +6524,8 @@ class SerialTerminalGUI(QMainWindow):
 
         self.traceroute_results_table.setSortingEnabled(True)
         self._reset_traceroute_button()
+        # Abre automaticamente o Latency Graph ao finalizar
+        self._show_latency_graph_dialog()
 
     def _on_traceroute_error(self, error_msg):
         """Handle traceroute error"""
@@ -6727,44 +6852,34 @@ class SerialTerminalGUI(QMainWindow):
         dialog = QDialog(self)
         target = self.traceroute_target_input.text().strip()
         dialog.setWindowTitle(f"Latency Graph — {target}" if target else "Latency Graph")
-        dialog.resize(760, 480)
+        dialog.resize(820, 520)
         dialog.setMinimumSize(520, 360)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(0)
 
         hops = self.traceroute_viz_widget.hops
         if hops:
-            graph = LatencyGraphWidget(hops)
+            # Resolve local hostname and outbound IP
+            try:
+                local_hostname = socket.gethostname()
+            except Exception:
+                local_hostname = "localhost"
+            try:
+                _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                _s.connect(("8.8.8.8", 80))
+                local_ip = _s.getsockname()[0]
+                _s.close()
+            except Exception:
+                local_ip = "127.0.0.1"
+            graph = LatencyGraphWidget(hops, local_info=(local_hostname, local_ip))
             layout.addWidget(graph, 1)
         else:
             empty_label = QLabel("No route data yet — run a traceroute first.")
             empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty_label.setStyleSheet("color: #888888; font-size: 10pt;")
             layout.addWidget(empty_label)
-
-        close_style = """
-            QPushButton {
-                background-color: #78909c;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #607d8b; }
-        """
-        close_btn = QPushButton("Close")
-        close_btn.setFixedWidth(100)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(close_style)
-        close_btn.clicked.connect(dialog.accept)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
 
         dialog.setLayout(layout)
         dialog.exec()
