@@ -4,11 +4,15 @@ src/
 *.pkg.tar.zst
 *.pkg.tar.xz
 build-dir/
+build-deb/
 .flatpak-builder/
+flatpak-repo/
 repo/
 *.flatpak
+*.whl
 
 # Debian build
+/debian/
 debian/omnicom/
 *.deb
 *.buildinfo
