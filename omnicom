@@ -6927,6 +6927,10 @@ class SerialTerminalGUI(QMainWindow):
         )
         self._reset_mtr_button()
 
+        # Automatically show latency graph when MTR finishes
+        if self.traceroute_viz_widget.hops:
+            self._show_latency_graph_dialog()
+
     def _reset_mtr_button(self):
         """Reset button to 'START MTR' state (keeps MTR table columns)"""
         self.traceroute_btn.setText("START MTR")
