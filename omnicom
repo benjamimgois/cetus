@@ -7683,13 +7683,29 @@ class SerialTerminalGUI(QMainWindow):
                 err = proc.stderr.strip()
                 if 'incorrect password' in err.lower() or 'authentication failure' in err.lower() or '3 incorrect' in err.lower():
                     QMessageBox.warning(self, "Traceroute", "Incorrect sudo password.\nTCP/UDP traceroute cancelled.")
+                    return False
+                elif 'read-only file system' in err.lower():
+                    # Read-only filesystem - ask user if they want to continue with sudo
+                    reply = QMessageBox.question(
+                        self, "Traceroute - Read-only Filesystem",
+                        "Cannot set capabilities on read-only filesystem.\n\n"
+                        "Traceroute will require sudo password each time it runs.\n\n"
+                        "Continue anyway?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if reply == QMessageBox.StandardButton.Yes:
+                        # Mark as granted so we don't keep asking
+                        self._traceroute_cap_granted = True
+                        self._traceroute_needs_sudo = True  # Flag to use sudo for traceroute
+                        return True
+                    return False
                 else:
                     QMessageBox.warning(
                         self, "Traceroute",
                         f"Failed to set traceroute capability.\n\n{err or 'Unknown error.'}\n\n"
                         "Try running manually:\n  sudo setcap cap_net_raw+ep /usr/bin/traceroute"
                     )
-                return False
+                    return False
         except subprocess.TimeoutExpired:
             QMessageBox.warning(self, "Traceroute", "Timed out while trying to set capability.")
             return False
