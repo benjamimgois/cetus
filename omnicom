@@ -2356,13 +2356,14 @@ class MtrWorker(QThread):
     mtr_error      = pyqtSignal(str)
     mtr_finished   = pyqtSignal()
 
-    def __init__(self, target, max_hops=30, interval=1, dns_lookup=True, cycles=0):
+    def __init__(self, target, max_hops=30, interval=1, dns_lookup=True, cycles=0, packets=10):
         super().__init__()
         self.target     = target
         self.max_hops   = max_hops
         self.interval   = interval
         self.dns_lookup = dns_lookup
         self.cycles     = cycles       # 0 = continuous
+        self.packets    = packets      # packets per hop
         self._stop_flag = False
 
     def stop(self):
@@ -2374,8 +2375,11 @@ class MtrWorker(QThread):
         cmd = ['mtr', '--raw']
         if not self.dns_lookup:
             cmd.append('-n')
+        # Use cycles if specified, otherwise use packets count
         if self.cycles > 0:
             cmd.extend(['-c', str(self.cycles)])
+        elif self.packets > 0:
+            cmd.extend(['-c', str(self.packets)])
         cmd.extend(['-m', str(self.max_hops), '--interval', str(self.interval), self.target])
 
         # Per-hop state
@@ -6049,6 +6053,17 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_cycles_combo.setVisible(False)
         config_layout.addRow(self.mtr_cycles_label, self.mtr_cycles_combo)
 
+        # MTR Packets count (hidden by default)
+        self.mtr_packets_label = QLabel("Packets:")
+        self.mtr_packets_combo = QComboBox()
+        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
+        self.mtr_packets_combo.setCurrentText("10")
+        self.mtr_packets_combo.setFixedWidth(85)
+        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
+        self.mtr_packets_label.setVisible(False)
+        self.mtr_packets_combo.setVisible(False)
+        config_layout.addRow(self.mtr_packets_label, self.mtr_packets_combo)
+
         # Max Hops + Timeout + DNS Lookup inline
         options_inline_widget = QWidget()
         options_inline_layout = QHBoxLayout()
@@ -6774,6 +6789,7 @@ class SerialTerminalGUI(QMainWindow):
         interval = int(self.mtr_interval_combo.currentText().rstrip('s'))
         cycles_text = self.mtr_cycles_combo.currentText()
         cycles = 0 if "\u221e" in cycles_text else int(cycles_text)
+        packets = int(self.mtr_packets_combo.currentText())
         max_hops = int(self.traceroute_max_hops_combo.currentText())
         dns_lookup = self.traceroute_dns_checkbox.isChecked()
 
@@ -6804,7 +6820,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:pressed { background-color: #424242; }
         """)
 
-        self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, cycles)
+        self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, cycles, packets)
         self.mtr_worker.hop_discovered.connect(self._on_mtr_hop_discovered)
         self.mtr_worker.hop_updated.connect(self._on_mtr_hop_updated)
         self.mtr_worker.cycle_complete.connect(self._on_mtr_cycle)
@@ -7286,6 +7302,8 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_interval_combo.setVisible(is_mtr)
         self.mtr_cycles_label.setVisible(is_mtr)
         self.mtr_cycles_combo.setVisible(is_mtr)
+        self.mtr_packets_label.setVisible(is_mtr)
+        self.mtr_packets_combo.setVisible(is_mtr)
 
         # Switch table columns and button label
         if is_mtr:
