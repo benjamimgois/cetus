@@ -5514,10 +5514,9 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_method_combo.currentTextChanged.connect(self._scan_method_changed)
         scan_layout.addRow("Method:", self.scan_method_combo)
 
-        # Ports input (hidden for ICMP)
+        # Ports input (hidden for ICMP) with quick presets button
         self.scan_ports_label = QLabel("Ports:")
         self.scan_ports_input = QLineEdit()
-        self.scan_ports_input.setFixedWidth(combo_width)
         self.scan_ports_input.setPlaceholderText("22,80,443 or 1-1024")
         self.scan_ports_input.setToolTip("Comma-separated ports or range (e.g. 22,80,443 or 1-1024)")
         self.scan_ports_input.setText("22,23,80,443")
@@ -5534,9 +5533,94 @@ class SerialTerminalGUI(QMainWindow):
                 border: 2px solid #ef5350;
             }
         """)
+
+        # Common ports quick preset button
+        _common_ports = [
+            ("SSH (22)", "22"),
+            ("Telnet (23)", "23"),
+            ("FTP (20-21)", "20,21"),
+            ("HTTP (80)", "80"),
+            ("HTTPS (443)", "443"),
+            ("DNS (53)", "53"),
+            ("SMTP (25)", "25"),
+            ("POP3 (110)", "110"),
+            ("IMAP (143)", "143"),
+            ("SNMP (161)", "161"),
+            ("RDP (3389)", "3389"),
+            ("MySQL (3306)", "3306"),
+            ("PostgreSQL (5432)", "5432"),
+            ("MongoDB (27017)", "27017"),
+            ("---", None),
+            ("Common Web Ports", "80,443,8080,8443"),
+            ("Common Mail Ports", "25,110,143,587,993,995"),
+            ("Common Database Ports", "1433,3306,5432,27017"),
+            ("Top 100 Ports", "1-100"),
+            ("Top 1000 Ports", "1-1000"),
+        ]
+
+        _ports_quick_btn = QPushButton()
+        _ports_quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _ports_quick_btn.setIconSize(QSize(16, 16))
+        _ports_quick_btn.setFixedWidth(28)
+        _ports_quick_btn.setFixedHeight(self.scan_ports_input.sizeHint().height() or 24)
+        _ports_quick_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _ports_quick_btn.setToolTip("Common ports presets")
+        _ports_quick_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f5f5;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+                border: 1px solid #b0b0b0;
+            }
+            QPushButton:pressed {
+                background-color: #d8d8d8;
+            }
+        """)
+
+        def _show_ports_menu():
+            menu = QMenu(_ports_quick_btn)
+            for label, ports in _common_ports:
+                if ports is None:
+                    menu.addSeparator()
+                else:
+                    action = menu.addAction(label)
+                    action.setData(ports)
+            chosen = menu.exec(
+                _ports_quick_btn.mapToGlobal(_ports_quick_btn.rect().bottomLeft())
+            )
+            if chosen and chosen.data():
+                current_text = self.scan_ports_input.text().strip()
+                new_ports = chosen.data()
+                if current_text:
+                    # Add to existing ports if not already present
+                    existing_ports = set(current_text.split(','))
+                    new_ports_list = new_ports.split(',')
+                    for port in new_ports_list:
+                        if port not in existing_ports:
+                            current_text += ',' + port
+                    self.scan_ports_input.setText(current_text)
+                else:
+                    self.scan_ports_input.setText(new_ports)
+
+        _ports_quick_btn.clicked.connect(_show_ports_menu)
+
+        _ports_widget = QWidget()
+        _ports_widget.setFixedWidth(combo_width)
+        _ports_layout = QHBoxLayout(_ports_widget)
+        _ports_layout.setContentsMargins(0, 0, 0, 0)
+        _ports_layout.setSpacing(4)
+        _ports_layout.addWidget(self.scan_ports_input)
+        _ports_layout.addWidget(_ports_quick_btn)
+
         self.scan_ports_label.setVisible(False)
-        self.scan_ports_input.setVisible(False)
-        scan_layout.addRow(self.scan_ports_label, self.scan_ports_input)
+        _ports_widget.setVisible(False)
+        self._ports_widget = _ports_widget  # Store reference for visibility control
+        scan_layout.addRow(self.scan_ports_label, _ports_widget)
 
         # Timeout and DNS option in a row
         options_layout = QHBoxLayout()
@@ -5722,6 +5806,10 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.addWidget(self.scan_btn)
 
         page.setLayout(main_layout)
+
+        # Initialize field visibility based on default method
+        self._scan_method_changed(self.scan_method_combo.currentText())
+
         return page
 
     def create_snmp_page(self):
@@ -7343,7 +7431,7 @@ class SerialTerminalGUI(QMainWindow):
         """Show/hide ports field based on scan method"""
         show_ports = method in ('TCP', 'UDP')
         self.scan_ports_label.setVisible(show_ports)
-        self.scan_ports_input.setVisible(show_ports)
+        self._ports_widget.setVisible(show_ports)
 
     def _scan_auto_detect_network(self):
         """Auto-detect the network from the first active interface"""
