@@ -6053,39 +6053,39 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_cycles_combo.setVisible(False)
         config_layout.addRow(self.mtr_cycles_label, self.mtr_cycles_combo)
 
-        # MTR Packets count (hidden by default)
-        self.mtr_packets_label = QLabel("Packets:")
-        self.mtr_packets_combo = QComboBox()
-        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
-        self.mtr_packets_combo.setCurrentText("10")
-        self.mtr_packets_combo.setFixedWidth(85)
-        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
-        self.mtr_packets_label.setVisible(False)
-        self.mtr_packets_combo.setVisible(False)
-        config_layout.addRow(self.mtr_packets_label, self.mtr_packets_combo)
-
-        # Max Hops + Timeout + DNS Lookup inline
+        # Max Hops + Packets + Timeout + DNS Lookup inline
         options_inline_widget = QWidget()
         options_inline_layout = QHBoxLayout()
         options_inline_layout.setContentsMargins(0, 0, 0, 0)
         options_inline_layout.setSpacing(6)
 
+        # MTR Packets count (hidden by default, shown inline with Max Hops)
+        self.mtr_packets_label = QLabel("Packets:")
+        self.mtr_packets_label.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.mtr_packets_combo = QComboBox()
+        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
+        self.mtr_packets_combo.setCurrentText("10")
+        self.mtr_packets_combo.setFixedWidth(65)
+        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
+        self.mtr_packets_label.setVisible(False)
+        self.mtr_packets_combo.setVisible(False)
+
         hops_label = QLabel("Max Hops:")
-        hops_label.setStyleSheet("color: #555555; font-size: 9pt;")
+        hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
 
         self.traceroute_max_hops_combo = QComboBox()
         self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
         self.traceroute_max_hops_combo.setCurrentText("30")
-        self.traceroute_max_hops_combo.setFixedWidth(85)
+        self.traceroute_max_hops_combo.setFixedWidth(65)
         self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
 
         timeout_label = QLabel("Timeout:")
-        timeout_label.setStyleSheet("color: #555555; font-size: 9pt;")
+        timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
 
         self.traceroute_timeout_combo = QComboBox()
         self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
         self.traceroute_timeout_combo.setCurrentText("5s")
-        self.traceroute_timeout_combo.setFixedWidth(75)
+        self.traceroute_timeout_combo.setFixedWidth(60)
         self.traceroute_timeout_combo.setToolTip("Timeout per hop")
 
         self.traceroute_dns_checkbox = QCheckBox("DNS Lookup")
@@ -6113,6 +6113,8 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
+        options_inline_layout.addWidget(self.mtr_packets_label)
+        options_inline_layout.addWidget(self.mtr_packets_combo)
         options_inline_layout.addWidget(hops_label)
         options_inline_layout.addWidget(self.traceroute_max_hops_combo)
         options_inline_layout.addWidget(timeout_label)
@@ -6120,7 +6122,7 @@ class SerialTerminalGUI(QMainWindow):
         options_inline_layout.addWidget(self.traceroute_dns_checkbox)
         options_inline_layout.addStretch()
         options_inline_widget.setLayout(options_inline_layout)
-        config_layout.addRow("Options:", options_inline_widget)
+        config_layout.addRow("", options_inline_widget)
 
         config_group.setLayout(config_layout)
         config_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
