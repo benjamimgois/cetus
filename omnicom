@@ -6252,14 +6252,14 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_proxy_type_combo = QComboBox()
         self.traceroute_proxy_type_combo.addItems(["SOCKS5", "SOCKS4", "HTTP"])
         self.traceroute_proxy_type_combo.setCurrentText("SOCKS5")
-        self.traceroute_proxy_type_combo.setFixedWidth(90)
+        self.traceroute_proxy_type_combo.setFixedWidth(100)
         self.traceroute_proxy_type_combo.setToolTip("Proxy protocol type")
         self.traceroute_proxy_type_combo.setEnabled(False)
 
         self.traceroute_proxy_host_input = QLineEdit()
         self.traceroute_proxy_host_input.setPlaceholderText("Proxy host (e.g. 127.0.0.1)")
         self.traceroute_proxy_host_input.setToolTip("Proxy server hostname or IP address")
-        self.traceroute_proxy_host_input.setFixedWidth(150)
+        self.traceroute_proxy_host_input.setFixedWidth(180)
         self.traceroute_proxy_host_input.setEnabled(False)
         self.traceroute_proxy_host_input.setStyleSheet(traceroute_line_edit_style)
 
@@ -6269,7 +6269,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_proxy_port_input = QLineEdit()
         self.traceroute_proxy_port_input.setPlaceholderText("Port")
         self.traceroute_proxy_port_input.setToolTip("Proxy server port (e.g. 9050, 8080, 3128)")
-        self.traceroute_proxy_port_input.setFixedWidth(60)
+        self.traceroute_proxy_port_input.setFixedWidth(70)
         self.traceroute_proxy_port_input.setEnabled(False)
         self.traceroute_proxy_port_input.setStyleSheet(traceroute_line_edit_style)
 
@@ -6323,7 +6323,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_timeout_combo = QComboBox()
         self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
         self.traceroute_timeout_combo.setCurrentText("5s")
-        self.traceroute_timeout_combo.setFixedWidth(75)
+        self.traceroute_timeout_combo.setFixedWidth(85)
         self.traceroute_timeout_combo.setToolTip("Timeout per hop")
 
         options_inline_layout.addWidget(self.mtr_interval_label)
