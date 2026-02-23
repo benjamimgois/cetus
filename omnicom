@@ -4899,29 +4899,49 @@ class SerialTerminalGUI(QMainWindow):
         port_outer.setContentsMargins(8, 5, 8, 6)
         port_outer.setSpacing(12)
 
-        # Left: Type and Port form fields
+        # Left: Type and Port form fields (horizontal layout)
         port_form_widget = QWidget()
-        port_layout = QFormLayout()
-        port_layout.setVerticalSpacing(4)
+        port_layout = QHBoxLayout()
+        port_layout.setSpacing(12)
         port_layout.setContentsMargins(0, 0, 0, 0)
-        port_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        port_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        # Different widths for type and port fields
+        type_field_width = 120
+        port_field_width = 200
 
         # Port type
+        type_container = QWidget()
+        type_layout = QHBoxLayout()
+        type_layout.setContentsMargins(0, 0, 0, 0)
+        type_layout.setSpacing(6)
+        type_label = QLabel("Type:")
+        type_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.port_type = QComboBox()
         self.port_type.addItems(['USB', 'Serial'])
         self.port_type.setCurrentIndex(0)
-        self.port_type.setFixedWidth(combo_width)
+        self.port_type.setFixedWidth(type_field_width)
         self.port_type.setToolTip("Select the type of serial port")
         self.port_type.currentIndexChanged.connect(self.update_port_list)
-        port_layout.addRow("Type:", self.port_type)
+        type_layout.addWidget(type_label)
+        type_layout.addWidget(self.port_type)
+        type_container.setLayout(type_layout)
 
         # Port
+        port_container = QWidget()
+        port_inner_layout = QHBoxLayout()
+        port_inner_layout.setContentsMargins(0, 0, 0, 0)
+        port_inner_layout.setSpacing(6)
+        port_label = QLabel("Port:")
+        port_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.port = QComboBox()
-        self.port.setFixedWidth(combo_width)
+        self.port.setFixedWidth(port_field_width)
         self.port.setToolTip("Select the serial port to connect")
-        port_layout.addRow("Port:", self.port)
+        port_inner_layout.addWidget(port_label)
+        port_inner_layout.addWidget(self.port)
+        port_container.setLayout(port_inner_layout)
 
+        port_layout.addWidget(type_container)
+        port_layout.addWidget(port_container)
         port_form_widget.setLayout(port_layout)
         port_outer.addWidget(port_form_widget)
         port_outer.addStretch()
@@ -5922,34 +5942,52 @@ class SerialTerminalGUI(QMainWindow):
             ("GitHub",              "github.com"),
         ]
 
-        _quick_btn = QPushButton("▾")
+        _quick_btn = QPushButton()
+        _quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _quick_btn.setIconSize(QSize(16, 16))
         _quick_btn.setFixedWidth(28)
         _quick_btn.setFixedHeight(self.traceroute_target_input.sizeHint().height() or 24)
         _quick_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         _quick_btn.setToolTip("Quick target presets")
         _quick_btn.setStyleSheet("""
             QPushButton {
-                background-color: #00BCD4;
-                color: #FFFFFF;
+                background-color: #f5f5f5;
+                color: #333333;
+                border: 1px solid #d0d0d0;
                 border-radius: 4px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #00ACC1;
+                background-color: #e8e8e8;
+                border: 1px solid #b0b0b0;
             }
             QPushButton:pressed {
-                background-color: #0097A7;
+                background-color: #d8d8d8;
             }
         """)
 
         def _show_quick_menu():
             menu = QMenu(_quick_btn)
+
+            # Add predefined quick targets
             for label, ip in _quick_targets:
                 if ip is None:
                     menu.addSeparator()
                 else:
                     action = menu.addAction(f"{label}  —  {ip}")
                     action.setData(ip)
+
+            # Add SSH profiles from Quick Connect
+            ssh_profiles = self.config.get_ssh_profiles()
+            if ssh_profiles:
+                menu.addSeparator()
+                for profile in ssh_profiles:
+                    name = profile.get('name', '')
+                    host = profile.get('host', '')
+                    if name and host:
+                        action = menu.addAction(f"{name}  —  {host}")
+                        action.setData(host)
+
             chosen = menu.exec(
                 _quick_btn.mapToGlobal(_quick_btn.rect().bottomLeft())
             )
