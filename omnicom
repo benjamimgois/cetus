@@ -2356,14 +2356,13 @@ class MtrWorker(QThread):
     mtr_error      = pyqtSignal(str)
     mtr_finished   = pyqtSignal()
 
-    def __init__(self, target, max_hops=30, interval=1, dns_lookup=True, cycles=0, packets=10):
+    def __init__(self, target, max_hops=30, interval=1, dns_lookup=True, packets=10):
         super().__init__()
         self.target     = target
         self.max_hops   = max_hops
         self.interval   = interval
         self.dns_lookup = dns_lookup
-        self.cycles     = cycles       # 0 = continuous
-        self.packets    = packets      # packets per hop
+        self.packets    = packets      # number of packets to send
         self._stop_flag = False
 
     def stop(self):
@@ -2375,10 +2374,7 @@ class MtrWorker(QThread):
         cmd = ['mtr', '--raw']
         if not self.dns_lookup:
             cmd.append('-n')
-        # Use cycles if specified, otherwise use packets count
-        if self.cycles > 0:
-            cmd.extend(['-c', str(self.cycles)])
-        elif self.packets > 0:
+        if self.packets > 0:
             cmd.extend(['-c', str(self.packets)])
         cmd.extend(['-m', str(self.max_hops), '--interval', str(self.interval), self.target])
 
@@ -6000,94 +5996,7 @@ class SerialTerminalGUI(QMainWindow):
 
         _quick_btn.clicked.connect(_show_quick_menu)
 
-        _target_widget = QWidget()
-        _target_widget.setFixedWidth(combo_width)
-        _target_layout = QHBoxLayout(_target_widget)
-        _target_layout.setContentsMargins(0, 0, 0, 0)
-        _target_layout.setSpacing(4)
-        _target_layout.addWidget(self.traceroute_target_input)
-        _target_layout.addWidget(_quick_btn)
-        config_layout.addRow("Target:", _target_widget)
-
-
-        # Method selector (ICMP/TCP/UDP) - below Target
-        self.traceroute_method_combo = QComboBox()
-        self.traceroute_method_combo.addItems(["ICMP (MTR)", "TCP", "UDP"])
-        self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
-        self.traceroute_method_combo.setFixedWidth(combo_width)
-        self.traceroute_method_combo.setToolTip("Traceroute method: ICMP via MTR (default), TCP (specific port), UDP (specific port)")
-        self.traceroute_method_combo.currentTextChanged.connect(self._traceroute_method_changed)
-        config_layout.addRow("Method:", self.traceroute_method_combo)
-
-        # Port input (hidden by default, shown when TCP/UDP selected)
-        self.traceroute_port_label = QLabel("Port:")
-        self.traceroute_port_input = QLineEdit()
-        self.traceroute_port_input.setFixedWidth(combo_width)
-        self.traceroute_port_input.setPlaceholderText("80, 443, 53, etc.")
-        self.traceroute_port_input.setToolTip("Target port for TCP/UDP traceroute (1-65535)")
-        self.traceroute_port_input.setText("80")
-        self.traceroute_port_input.setStyleSheet(traceroute_line_edit_style)
-        self.traceroute_port_label.setVisible(False)
-        self.traceroute_port_input.setVisible(False)
-        config_layout.addRow(self.traceroute_port_label, self.traceroute_port_input)
-
-        # MTR Interval (hidden by default, shown when MTR is selected)
-        self.mtr_interval_label = QLabel("Interval:")
-        self.mtr_interval_combo = QComboBox()
-        self.mtr_interval_combo.addItems(["1s", "2s", "5s"])
-        self.mtr_interval_combo.setCurrentText("1s")
-        self.mtr_interval_combo.setFixedWidth(85)
-        self.mtr_interval_combo.setToolTip("Probe interval between cycles")
-        self.mtr_interval_label.setVisible(False)
-        self.mtr_interval_combo.setVisible(False)
-        config_layout.addRow(self.mtr_interval_label, self.mtr_interval_combo)
-
-        # MTR Cycles (hidden by default)
-        self.mtr_cycles_label = QLabel("Cycles:")
-        self.mtr_cycles_combo = QComboBox()
-        self.mtr_cycles_combo.addItems(["\u221e (continuous)", "10", "20", "50", "100"])
-        self.mtr_cycles_combo.setCurrentText("\u221e (continuous)")
-        self.mtr_cycles_combo.setFixedWidth(160)
-        self.mtr_cycles_combo.setToolTip("Number of probe cycles (∞ = run until stopped)")
-        self.mtr_cycles_label.setVisible(False)
-        self.mtr_cycles_combo.setVisible(False)
-        config_layout.addRow(self.mtr_cycles_label, self.mtr_cycles_combo)
-
-        # Max Hops + Packets + Timeout + DNS Lookup inline
-        options_inline_widget = QWidget()
-        options_inline_layout = QHBoxLayout()
-        options_inline_layout.setContentsMargins(0, 0, 0, 0)
-        options_inline_layout.setSpacing(6)
-
-        # MTR Packets count (hidden by default, shown inline with Max Hops)
-        self.mtr_packets_label = QLabel("Packets:")
-        self.mtr_packets_label.setStyleSheet("color: #555555; font-size: 8pt;")
-        self.mtr_packets_combo = QComboBox()
-        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
-        self.mtr_packets_combo.setCurrentText("10")
-        self.mtr_packets_combo.setFixedWidth(65)
-        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
-        self.mtr_packets_label.setVisible(False)
-        self.mtr_packets_combo.setVisible(False)
-
-        hops_label = QLabel("Max Hops:")
-        hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
-
-        self.traceroute_max_hops_combo = QComboBox()
-        self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
-        self.traceroute_max_hops_combo.setCurrentText("30")
-        self.traceroute_max_hops_combo.setFixedWidth(65)
-        self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
-
-        timeout_label = QLabel("Timeout:")
-        timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
-
-        self.traceroute_timeout_combo = QComboBox()
-        self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
-        self.traceroute_timeout_combo.setCurrentText("5s")
-        self.traceroute_timeout_combo.setFixedWidth(60)
-        self.traceroute_timeout_combo.setToolTip("Timeout per hop")
-
+        # DNS Lookup checkbox
         self.traceroute_dns_checkbox = QCheckBox("DNS Lookup")
         self.traceroute_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS")
         self.traceroute_dns_checkbox.setChecked(True)
@@ -6113,13 +6022,90 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
-        options_inline_layout.addWidget(self.mtr_packets_label)
-        options_inline_layout.addWidget(self.mtr_packets_combo)
+        _target_widget = QWidget()
+        _target_layout = QHBoxLayout(_target_widget)
+        _target_layout.setContentsMargins(0, 0, 0, 0)
+        _target_layout.setSpacing(8)
+        _target_layout.addWidget(self.traceroute_target_input)
+        _target_layout.addWidget(_quick_btn)
+        _target_layout.addWidget(self.traceroute_dns_checkbox)
+        _target_layout.addStretch()
+        config_layout.addRow("Target:", _target_widget)
+
+
+        # Method selector (ICMP/TCP/UDP) - below Target
+        self.traceroute_method_combo = QComboBox()
+        self.traceroute_method_combo.addItems(["ICMP (MTR)", "TCP", "UDP"])
+        self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
+        self.traceroute_method_combo.setFixedWidth(combo_width)
+        self.traceroute_method_combo.setToolTip("Traceroute method: ICMP via MTR (default), TCP (specific port), UDP (specific port)")
+        self.traceroute_method_combo.currentTextChanged.connect(self._traceroute_method_changed)
+        config_layout.addRow("Method:", self.traceroute_method_combo)
+
+        # Port input (hidden by default, shown when TCP/UDP selected)
+        self.traceroute_port_label = QLabel("Port:")
+        self.traceroute_port_input = QLineEdit()
+        self.traceroute_port_input.setFixedWidth(combo_width)
+        self.traceroute_port_input.setPlaceholderText("80, 443, 53, etc.")
+        self.traceroute_port_input.setToolTip("Target port for TCP/UDP traceroute (1-65535)")
+        self.traceroute_port_input.setText("80")
+        self.traceroute_port_input.setStyleSheet(traceroute_line_edit_style)
+        self.traceroute_port_label.setVisible(False)
+        self.traceroute_port_input.setVisible(False)
+        config_layout.addRow(self.traceroute_port_label, self.traceroute_port_input)
+
+        # MTR Packets count (hidden by default, shown below Method)
+        self.mtr_packets_label = QLabel("Packets:")
+        self.mtr_packets_combo = QComboBox()
+        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
+        self.mtr_packets_combo.setCurrentText("10")
+        self.mtr_packets_combo.setFixedWidth(combo_width)
+        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
+        self.mtr_packets_label.setVisible(False)
+        self.mtr_packets_combo.setVisible(False)
+        config_layout.addRow(self.mtr_packets_label, self.mtr_packets_combo)
+
+        # Max Hops + Interval + Timeout inline
+        options_inline_widget = QWidget()
+        options_inline_layout = QHBoxLayout()
+        options_inline_layout.setContentsMargins(0, 0, 0, 0)
+        options_inline_layout.setSpacing(6)
+
+        # MTR Interval (hidden by default, shown inline to the left of Max Hops)
+        self.mtr_interval_label = QLabel("Interval:")
+        self.mtr_interval_label.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.mtr_interval_combo = QComboBox()
+        self.mtr_interval_combo.addItems(["1s", "2s", "5s"])
+        self.mtr_interval_combo.setCurrentText("1s")
+        self.mtr_interval_combo.setFixedWidth(75)
+        self.mtr_interval_combo.setToolTip("Probe interval between cycles")
+        self.mtr_interval_label.setVisible(False)
+        self.mtr_interval_combo.setVisible(False)
+
+        hops_label = QLabel("Max Hops:")
+        hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
+
+        self.traceroute_max_hops_combo = QComboBox()
+        self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
+        self.traceroute_max_hops_combo.setCurrentText("30")
+        self.traceroute_max_hops_combo.setFixedWidth(80)
+        self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
+
+        timeout_label = QLabel("Timeout:")
+        timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
+
+        self.traceroute_timeout_combo = QComboBox()
+        self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
+        self.traceroute_timeout_combo.setCurrentText("5s")
+        self.traceroute_timeout_combo.setFixedWidth(75)
+        self.traceroute_timeout_combo.setToolTip("Timeout per hop")
+
+        options_inline_layout.addWidget(self.mtr_interval_label)
+        options_inline_layout.addWidget(self.mtr_interval_combo)
         options_inline_layout.addWidget(hops_label)
         options_inline_layout.addWidget(self.traceroute_max_hops_combo)
         options_inline_layout.addWidget(timeout_label)
         options_inline_layout.addWidget(self.traceroute_timeout_combo)
-        options_inline_layout.addWidget(self.traceroute_dns_checkbox)
         options_inline_layout.addStretch()
         options_inline_widget.setLayout(options_inline_layout)
         config_layout.addRow("", options_inline_widget)
@@ -6789,8 +6775,6 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         interval = int(self.mtr_interval_combo.currentText().rstrip('s'))
-        cycles_text = self.mtr_cycles_combo.currentText()
-        cycles = 0 if "\u221e" in cycles_text else int(cycles_text)
         packets = int(self.mtr_packets_combo.currentText())
         max_hops = int(self.traceroute_max_hops_combo.currentText())
         dns_lookup = self.traceroute_dns_checkbox.isChecked()
@@ -6822,7 +6806,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:pressed { background-color: #424242; }
         """)
 
-        self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, cycles, packets)
+        self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, packets)
         self.mtr_worker.hop_discovered.connect(self._on_mtr_hop_discovered)
         self.mtr_worker.hop_updated.connect(self._on_mtr_hop_updated)
         self.mtr_worker.cycle_complete.connect(self._on_mtr_cycle)
@@ -7302,8 +7286,6 @@ class SerialTerminalGUI(QMainWindow):
         # MTR-specific options
         self.mtr_interval_label.setVisible(is_mtr)
         self.mtr_interval_combo.setVisible(is_mtr)
-        self.mtr_cycles_label.setVisible(is_mtr)
-        self.mtr_cycles_combo.setVisible(is_mtr)
         self.mtr_packets_label.setVisible(is_mtr)
         self.mtr_packets_combo.setVisible(is_mtr)
 
