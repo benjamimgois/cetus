@@ -6154,6 +6154,79 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_packets_combo.setVisible(False)
         config_layout.addRow(self.mtr_packets_label, self.mtr_packets_combo)
 
+        # Proxy configuration (optional)
+        proxy_widget = QWidget()
+        proxy_layout = QHBoxLayout()
+        proxy_layout.setContentsMargins(0, 0, 0, 0)
+        proxy_layout.setSpacing(8)
+
+        self.traceroute_proxy_checkbox = QCheckBox("Use Proxy")
+        self.traceroute_proxy_checkbox.setToolTip("Route traceroute through a proxy (SOCKS/HTTP)")
+        self.traceroute_proxy_checkbox.setChecked(False)
+        self.traceroute_proxy_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #333333;
+                font-size: 9pt;
+                spacing: 4px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                background-color: #f5f5f5;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #00BCD4;
+                border-color: #00BCD4;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #00BCD4;
+            }
+        """)
+
+        self.traceroute_proxy_type_combo = QComboBox()
+        self.traceroute_proxy_type_combo.addItems(["SOCKS5", "SOCKS4", "HTTP"])
+        self.traceroute_proxy_type_combo.setCurrentText("SOCKS5")
+        self.traceroute_proxy_type_combo.setFixedWidth(90)
+        self.traceroute_proxy_type_combo.setToolTip("Proxy protocol type")
+        self.traceroute_proxy_type_combo.setEnabled(False)
+
+        self.traceroute_proxy_host_input = QLineEdit()
+        self.traceroute_proxy_host_input.setPlaceholderText("Proxy host (e.g. 127.0.0.1)")
+        self.traceroute_proxy_host_input.setToolTip("Proxy server hostname or IP address")
+        self.traceroute_proxy_host_input.setFixedWidth(150)
+        self.traceroute_proxy_host_input.setEnabled(False)
+        self.traceroute_proxy_host_input.setStyleSheet(traceroute_line_edit_style)
+
+        proxy_port_label = QLabel(":")
+        proxy_port_label.setStyleSheet("color: #555555; font-size: 10pt;")
+
+        self.traceroute_proxy_port_input = QLineEdit()
+        self.traceroute_proxy_port_input.setPlaceholderText("Port")
+        self.traceroute_proxy_port_input.setToolTip("Proxy server port (e.g. 9050, 8080, 3128)")
+        self.traceroute_proxy_port_input.setFixedWidth(60)
+        self.traceroute_proxy_port_input.setEnabled(False)
+        self.traceroute_proxy_port_input.setStyleSheet(traceroute_line_edit_style)
+
+        # Enable/disable proxy fields based on checkbox
+        def _toggle_proxy():
+            enabled = self.traceroute_proxy_checkbox.isChecked()
+            self.traceroute_proxy_type_combo.setEnabled(enabled)
+            self.traceroute_proxy_host_input.setEnabled(enabled)
+            self.traceroute_proxy_port_input.setEnabled(enabled)
+
+        self.traceroute_proxy_checkbox.stateChanged.connect(_toggle_proxy)
+
+        proxy_layout.addWidget(self.traceroute_proxy_checkbox)
+        proxy_layout.addWidget(self.traceroute_proxy_type_combo)
+        proxy_layout.addWidget(self.traceroute_proxy_host_input)
+        proxy_layout.addWidget(proxy_port_label)
+        proxy_layout.addWidget(self.traceroute_proxy_port_input)
+        proxy_layout.addStretch()
+        proxy_widget.setLayout(proxy_layout)
+        config_layout.addRow("Proxy:", proxy_widget)
+
         # Max Hops + Interval + Timeout inline
         options_inline_widget = QWidget()
         options_inline_layout = QHBoxLayout()
