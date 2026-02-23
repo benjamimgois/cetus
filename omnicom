@@ -6131,17 +6131,81 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_method_combo.currentTextChanged.connect(self._traceroute_method_changed)
         config_layout.addRow("Method:", self.traceroute_method_combo)
 
-        # Port input (hidden by default, shown when TCP/UDP selected)
+        # Port input (hidden by default, shown when TCP/UDP selected) with quick presets
         self.traceroute_port_label = QLabel("Port:")
         self.traceroute_port_input = QLineEdit()
-        self.traceroute_port_input.setFixedWidth(combo_width)
         self.traceroute_port_input.setPlaceholderText("80, 443, 53, etc.")
         self.traceroute_port_input.setToolTip("Target port for TCP/UDP traceroute (1-65535)")
         self.traceroute_port_input.setText("80")
         self.traceroute_port_input.setStyleSheet(traceroute_line_edit_style)
+
+        # Common ports quick preset button for traceroute
+        _tr_common_ports = [
+            ("HTTP (80)", "80"),
+            ("HTTPS (443)", "443"),
+            ("DNS (53)", "53"),
+            ("SSH (22)", "22"),
+            ("Telnet (23)", "23"),
+            ("FTP (21)", "21"),
+            ("SMTP (25)", "25"),
+            ("POP3 (110)", "110"),
+            ("IMAP (143)", "143"),
+            ("SNMP (161)", "161"),
+            ("RDP (3389)", "3389"),
+            ("VNC (5900)", "5900"),
+            ("MySQL (3306)", "3306"),
+            ("PostgreSQL (5432)", "5432"),
+        ]
+
+        _tr_ports_quick_btn = QPushButton()
+        _tr_ports_quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _tr_ports_quick_btn.setIconSize(QSize(16, 16))
+        _tr_ports_quick_btn.setFixedWidth(28)
+        _tr_ports_quick_btn.setFixedHeight(self.traceroute_port_input.sizeHint().height() or 24)
+        _tr_ports_quick_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _tr_ports_quick_btn.setToolTip("Common ports presets")
+        _tr_ports_quick_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f5f5;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+                border: 1px solid #b0b0b0;
+            }
+            QPushButton:pressed {
+                background-color: #d8d8d8;
+            }
+        """)
+
+        def _show_tr_ports_menu():
+            menu = QMenu(_tr_ports_quick_btn)
+            for label, port in _tr_common_ports:
+                action = menu.addAction(label)
+                action.setData(port)
+            chosen = menu.exec(
+                _tr_ports_quick_btn.mapToGlobal(_tr_ports_quick_btn.rect().bottomLeft())
+            )
+            if chosen and chosen.data():
+                self.traceroute_port_input.setText(chosen.data())
+
+        _tr_ports_quick_btn.clicked.connect(_show_tr_ports_menu)
+
+        _tr_port_widget = QWidget()
+        _tr_port_widget.setFixedWidth(combo_width)
+        _tr_port_layout = QHBoxLayout(_tr_port_widget)
+        _tr_port_layout.setContentsMargins(0, 0, 0, 0)
+        _tr_port_layout.setSpacing(4)
+        _tr_port_layout.addWidget(self.traceroute_port_input)
+        _tr_port_layout.addWidget(_tr_ports_quick_btn)
+
         self.traceroute_port_label.setVisible(False)
-        self.traceroute_port_input.setVisible(False)
-        config_layout.addRow(self.traceroute_port_label, self.traceroute_port_input)
+        _tr_port_widget.setVisible(False)
+        self._tr_port_widget = _tr_port_widget  # Store reference for visibility control
+        config_layout.addRow(self.traceroute_port_label, _tr_port_widget)
 
         # MTR Packets count (hidden by default, shown below Method)
         self.mtr_packets_label = QLabel("Packets:")
@@ -7451,7 +7515,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Port row (TCP/UDP only)
         self.traceroute_port_label.setVisible(is_port)
-        self.traceroute_port_input.setVisible(is_port)
+        self._tr_port_widget.setVisible(is_port)
 
         # MTR-specific options
         self.mtr_interval_label.setVisible(is_mtr)
