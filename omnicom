@@ -6297,6 +6297,10 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.addWidget(self.traceroute_btn)
 
         page.setLayout(main_layout)
+
+        # Initialize field visibility based on default method
+        self._traceroute_method_changed(self.traceroute_method_combo.currentText())
+
         return page
 
     def execute_snmp_query(self):
