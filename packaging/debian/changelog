@@ -1,3 +1,19 @@
+omnicom (1.5-1) jammy; urgency=medium
+
+  * Reorganize Serial tab layout: Type and Port fields side-by-side
+  * Update Quick target presets button style and add SSH profiles integration
+  * Add packets count field for ICMP (MTR) traceroute method
+  * Add common ports quick presets to IP scan and traceroute
+  * Add RDP (3389) and VNC (5900) to default scan ports
+  * Add proxy configuration (SOCKS/HTTP) to traceroute
+  * Auto-display latency graph when MTR finishes
+  * Move DNS Lookup checkbox to Target row
+  * Improve read-only filesystem handling for traceroute capabilities
+  * Optimize field layouts and widths for better content visibility
+  * Fix MTR fields visibility on initial load
+
+ -- Benjamim Gois <benjamimgois@example.com>  Sun, 23 Feb 2026 14:00:00 -0300
+
 omnicom (1.4-1) jammy; urgency=medium
 
   * Add Traceroute / MTR tab with graphical route visualization
