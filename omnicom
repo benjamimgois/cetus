@@ -259,7 +259,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea
+    QMenu, QScrollArea, QTabWidget
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
@@ -2273,6 +2273,77 @@ class TracerouteWorker(QThread):
             pass
 
         return None
+
+
+import queue
+
+class GeoFlagWorker(QThread):
+    """
+    Background worker that fetches country codes for IPs sequentially
+    using a queue, resolving them into Emoji flags for the UI.
+    ip-api.com allows 45 requests per minute, so we pace requests.
+    """
+    flag_resolved = pyqtSignal(str, str, str, object, object, bool) # ip, cc, flag, hop_num, row_idx, is_mtr
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.queue = queue.Queue()
+        self.cache = {}
+        self._running = True
+
+    def run(self):
+        import urllib.request
+        import json
+        import time
+
+        while self._running:
+            try:
+                task = self.queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            ip, is_mtr, hop_num, row_idx = task
+            if ip in self.cache:
+                cc, flag = self.cache[ip]
+                self.flag_resolved.emit(ip, cc, flag, hop_num, row_idx, is_mtr)
+                self.queue.task_done()
+                continue
+            
+            if ip == "*" or ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("127.") or ip.startswith("100.") or ip.startswith("172."):
+                cc, flag = "LAN", "🏠"
+                self.cache[ip] = (cc, flag)
+                self.flag_resolved.emit(ip, cc, flag, hop_num, row_idx, is_mtr)
+                self.queue.task_done()
+                continue
+
+            try:
+                url = f"http://ip-api.com/json/{ip}?fields=status,countryCode"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 Omnicom'})
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    data = json.loads(response.read().decode('utf-8'))
+                
+                if data.get("status") == "success" and data.get("countryCode"):
+                    cc = data.get("countryCode")
+                    # Convert 2-letter Country Code to Emoji Flag
+                    flag = chr(ord(cc[0]) + 127397) + chr(ord(cc[1]) + 127397)
+                else:
+                    cc, flag = "?", "❓"
+            except Exception:
+                cc, flag = "?", "❓"
+
+            self.cache[ip] = (cc, flag)
+            self.flag_resolved.emit(ip, cc, flag, hop_num, row_idx, is_mtr)
+            self.queue.task_done()
+            
+            # Rate limit respect (45 req/min ≈ 1.33s per req)
+            time.sleep(1.4)
+
+    def stop(self):
+        self._running = False
+        self.wait()
+        
+    def enqueue(self, ip, is_mtr, hop_num, row_idx):
+        self.queue.put((ip, is_mtr, hop_num, row_idx))
 
 
 class MtrWorker(QThread):
@@ -4589,13 +4660,18 @@ class SerialTerminalGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"Omnicom v{VERSION}")
         self.setMinimumSize(600, 780)
-        self.resize(600, 780)
+        self.resize(650, 780)
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
         self.tftp_process = None
         self._pending_profile_name = None
         self._pending_vendor = None
         self.config = ConfigManager()
+
+        self.geo_flag_worker = GeoFlagWorker()
+        self.geo_flag_worker.flag_resolved.connect(self._on_geo_flag_resolved)
+        self.geo_flag_worker.start()
+
         self.init_ui()
         self.apply_styles()
         self.load_settings()
@@ -5821,20 +5897,83 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        # Target input
+        # Target input + quick-target button
         self.traceroute_target_input = QLineEdit()
-        self.traceroute_target_input.setFixedWidth(combo_width)
         self.traceroute_target_input.setPlaceholderText("192.168.1.1 or example.com")
         self.traceroute_target_input.setToolTip("Target IP address or hostname")
         self.traceroute_target_input.setStyleSheet(traceroute_line_edit_style)
-        config_layout.addRow("Target:", self.traceroute_target_input)
+
+        _quick_targets = [
+            ("Google DNS",          "8.8.8.8"),
+            ("Google DNS Alt",      "8.8.4.4"),
+            ("Cloudflare DNS",      "1.1.1.1"),
+            ("Cloudflare DNS Alt",  "1.0.0.1"),
+            ("Quad9 DNS",           "9.9.9.9"),
+            ("OpenDNS",             "208.67.222.222"),
+            ("Level3 DNS",          "4.2.2.2"),
+            ("Comodo DNS",          "8.26.56.26"),
+            ("AdGuard DNS",         "94.140.14.14"),
+            ("CleanBrowsing DNS",   "185.228.168.9"),
+            ("---",                 None),
+            ("Google",              "www.google.com"),
+            ("Facebook",            "www.facebook.com"),
+            ("Amazon AWS",          "aws.amazon.com"),
+            ("Cloudflare",          "www.cloudflare.com"),
+            ("GitHub",              "github.com"),
+        ]
+
+        _quick_btn = QPushButton("▾")
+        _quick_btn.setFixedWidth(28)
+        _quick_btn.setFixedHeight(self.traceroute_target_input.sizeHint().height() or 24)
+        _quick_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _quick_btn.setToolTip("Quick target presets")
+        _quick_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00BCD4;
+                color: #FFFFFF;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00ACC1;
+            }
+            QPushButton:pressed {
+                background-color: #0097A7;
+            }
+        """)
+
+        def _show_quick_menu():
+            menu = QMenu(_quick_btn)
+            for label, ip in _quick_targets:
+                if ip is None:
+                    menu.addSeparator()
+                else:
+                    action = menu.addAction(f"{label}  —  {ip}")
+                    action.setData(ip)
+            chosen = menu.exec(
+                _quick_btn.mapToGlobal(_quick_btn.rect().bottomLeft())
+            )
+            if chosen and chosen.data():
+                self.traceroute_target_input.setText(chosen.data())
+
+        _quick_btn.clicked.connect(_show_quick_menu)
+
+        _target_widget = QWidget()
+        _target_widget.setFixedWidth(combo_width)
+        _target_layout = QHBoxLayout(_target_widget)
+        _target_layout.setContentsMargins(0, 0, 0, 0)
+        _target_layout.setSpacing(4)
+        _target_layout.addWidget(self.traceroute_target_input)
+        _target_layout.addWidget(_quick_btn)
+        config_layout.addRow("Target:", _target_widget)
+
 
         # Method selector (ICMP/TCP/UDP) - below Target
         self.traceroute_method_combo = QComboBox()
-        self.traceroute_method_combo.addItems(["ICMP", "TCP", "UDP", "MTR"])
-        self.traceroute_method_combo.setCurrentText("ICMP")
+        self.traceroute_method_combo.addItems(["ICMP (MTR)", "TCP", "UDP"])
+        self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
         self.traceroute_method_combo.setFixedWidth(combo_width)
-        self.traceroute_method_combo.setToolTip("Traceroute method: ICMP (default), TCP (specific port), UDP (specific port)")
+        self.traceroute_method_combo.setToolTip("Traceroute method: ICMP via MTR (default), TCP (specific port), UDP (specific port)")
         self.traceroute_method_combo.currentTextChanged.connect(self._traceroute_method_changed)
         config_layout.addRow("Method:", self.traceroute_method_combo)
 
@@ -6053,16 +6192,12 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_viz_btn.setText("⊞")
         self.traceroute_viz_btn.setStyleSheet("""
             QPushButton {
-                background-color: #00BCD4;
+                background-color: #546e7a;
                 border: none;
                 border-radius: 6px;
             }
-            QPushButton:hover {
-                background-color: #00ACC1;
-            }
-            QPushButton:pressed {
-                background-color: #0097A7;
-            }
+            QPushButton:hover { background-color: #455a64; }
+            QPushButton:pressed { background-color: #37474f; }
         """)
         self.traceroute_viz_btn.clicked.connect(self._show_route_visualization_dialog)
         actions_layout.addWidget(self.traceroute_viz_btn)
@@ -6377,9 +6512,9 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_btn.setEnabled(False)
             return
 
-        # Branch to MTR if selected
+        # Branch to MTR if 'ICMP (MTR)' or legacy 'MTR' is selected
         method = self.traceroute_method_combo.currentText()
-        if method == 'MTR':
+        if method in ('MTR', 'ICMP (MTR)'):
             self._start_mtr()
             return
 
@@ -6469,13 +6604,18 @@ class SerialTerminalGUI(QMainWindow):
         hop_item.setData(Qt.ItemDataRole.UserRole, hop_num)
         self.traceroute_results_table.setItem(row, 0, hop_item)
 
+        # Country
+        cty_item = QTableWidgetItem("")
+        cty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.traceroute_results_table.setItem(row, 1, cty_item)
+
         # IP address
         ip_item = QTableWidgetItem(ip)
-        self.traceroute_results_table.setItem(row, 1, ip_item)
+        self.traceroute_results_table.setItem(row, 2, ip_item)
 
         # Hostname
         hostname_item = QTableWidgetItem(hostname)
-        self.traceroute_results_table.setItem(row, 2, hostname_item)
+        self.traceroute_results_table.setItem(row, 3, hostname_item)
 
         # Latency with color coding
         if ip == "*":
@@ -6493,7 +6633,10 @@ class SerialTerminalGUI(QMainWindow):
             else:
                 latency_item.setForeground(QColor("#F44336"))  # Red
         latency_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.traceroute_results_table.setItem(row, 3, latency_item)
+        self.traceroute_results_table.setItem(row, 4, latency_item)
+        
+        # Trigger geoip lookup
+        self._trigger_geo_lookup(ip, is_mtr=False, hop_num=None, row_idx=row)
 
         # Update visualization
         self.traceroute_viz_widget.add_hop(hop_num, ip, hostname, latency)
@@ -6556,6 +6699,33 @@ class SerialTerminalGUI(QMainWindow):
 
     # ─── MTR methods ──────────────────────────────────────────────────────────
 
+    def _trigger_geo_lookup(self, ip, is_mtr, hop_num, row_idx):
+        """Enqueue IP for background Geo/Flag resolution"""
+        if not ip or ip == "*":
+            return
+        self.geo_flag_worker.enqueue(ip, is_mtr, hop_num, row_idx)
+
+    def _on_geo_flag_resolved(self, ip, cc, flag, hop_num, row_idx, is_mtr):
+        """Callback when Geo IP is resolved to update the table directly safely from main thread."""
+        t = self.traceroute_results_table
+        if is_mtr:
+            if hop_num in self._mtr_hop_rows:
+                row = self._mtr_hop_rows[hop_num]
+                ip_item = t.item(row, 2)
+                if ip_item and ip_item.text() == ip:
+                    cty_item = QTableWidgetItem(flag)
+                    cty_item.setToolTip(cc)
+                    cty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    t.setItem(row, 1, cty_item)
+        else:
+            if row_idx is not None and row_idx < t.rowCount():
+                ip_item = t.item(row_idx, 2)
+                if ip_item and ip_item.text() == ip:
+                    cty_item = QTableWidgetItem(flag)
+                    cty_item.setToolTip(cc)
+                    cty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    t.setItem(row_idx, 1, cty_item)
+
     def _start_mtr(self):
         """Start MTR monitoring session"""
         target = self.traceroute_target_input.text().strip()
@@ -6610,8 +6780,8 @@ class SerialTerminalGUI(QMainWindow):
         # Update hostname if row already exists
         if hop_num in self._mtr_hop_rows:
             row = self._mtr_hop_rows[hop_num]
-            t.item(row, 1).setText(ip)
-            t.item(row, 2).setText(hostname)
+            t.item(row, 2).setText(ip)
+            t.item(row, 3).setText(hostname)
             return
 
         # New hop — insert row
@@ -6622,13 +6792,21 @@ class SerialTerminalGUI(QMainWindow):
         hop_item = QTableWidgetItem(str(hop_num + 1))   # display 1-indexed
         hop_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         t.setItem(row, 0, hop_item)
-        t.setItem(row, 1, QTableWidgetItem(ip))
-        t.setItem(row, 2, QTableWidgetItem(hostname))
+        
+        cty_item = QTableWidgetItem("")
+        cty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        t.setItem(row, 1, cty_item)
+        
+        t.setItem(row, 2, QTableWidgetItem(ip))
+        t.setItem(row, 3, QTableWidgetItem(hostname))
 
-        for col in range(3, 9):
+        for col in range(4, 10):
             placeholder = QTableWidgetItem("—")
             placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             t.setItem(row, col, placeholder)
+            
+        # Trigger geoip lookup
+        self._trigger_geo_lookup(ip, is_mtr=True, hop_num=hop_num, row_idx=row)
 
     def _on_mtr_hop_updated(self, hop_num, loss_pct, avg, best, worst, stdev, sent):
         """Update statistics for an existing MTR hop row"""
@@ -6663,12 +6841,12 @@ class SerialTerminalGUI(QMainWindow):
         wrst_item = _cell(f"{worst:.1f}", _lat_color(worst))
         stdev_item = _cell(f"{stdev:.1f}")
 
-        t.setItem(row, 3, loss_item)
-        t.setItem(row, 4, snt_item)
-        t.setItem(row, 5, avg_item)
-        t.setItem(row, 6, best_item)
-        t.setItem(row, 7, wrst_item)
-        t.setItem(row, 8, stdev_item)
+        t.setItem(row, 4, loss_item)
+        t.setItem(row, 5, snt_item)
+        t.setItem(row, 6, avg_item)
+        t.setItem(row, 7, best_item)
+        t.setItem(row, 8, wrst_item)
+        t.setItem(row, 9, stdev_item)
 
         # Keep visualization widget updated with current avg latency
         ip = t.item(row, 1).text() if t.item(row, 1) else "*"
@@ -6726,33 +6904,40 @@ class SerialTerminalGUI(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _switch_table_to_mtr_mode(self):
-        """Switch the traceroute results table to 9-column MTR statistics mode"""
+        """Switch the traceroute results table to 10-column MTR statistics mode"""
         t = self.traceroute_results_table
-        t.setColumnCount(9)
+        t.setColumnCount(10)
         t.setHorizontalHeaderLabels(
-            ["Hop", "IP Address", "Hostname", "Loss%", "Snt", "Avg", "Best", "Wrst", "StDev"]
+            ["Hop", "Cty", "IP Address", "Hostname", "Loss%", "Snt", "Avg", "Best", "Wrst", "StDev"]
         )
         hdr = t.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for col in range(3, 9):
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        for col in range(4, 10):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             t.setColumnWidth(col, 72)
         t.setColumnWidth(0, 50)
+        t.setColumnWidth(1, 40)
+        # Ocultar colunas Best, Worst e StDev
+        for col in (7, 8, 9):
+            t.setColumnHidden(col, True)
 
     def _switch_table_to_traceroute_mode(self):
-        """Restore the results table to standard 4-column traceroute mode"""
+        """Restore the results table to standard 5-column traceroute mode"""
         t = self.traceroute_results_table
-        t.setColumnCount(4)
-        t.setHorizontalHeaderLabels(["Hop", "IP Address", "Hostname", "Latency (ms)"])
+        t.setColumnCount(5)
+        t.setHorizontalHeaderLabels(["Hop", "Cty", "IP Address", "Hostname", "Latency (ms)"])
         hdr = t.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         t.setColumnWidth(0, 60)
-        t.setColumnWidth(3, 100)
+        t.setColumnWidth(1, 40)
+        t.setColumnWidth(4, 100)
 
     def _traceroute_export_csv(self):
         """Export traceroute results to CSV file"""
@@ -6891,9 +7076,14 @@ class SerialTerminalGUI(QMainWindow):
             return
         row = item.row()
         hop_num = self.traceroute_results_table.item(row, 0).text()
-        ip = self.traceroute_results_table.item(row, 1).text()
-        hostname = self.traceroute_results_table.item(row, 2).text()
-        latency = self.traceroute_results_table.item(row, 3).text()
+        ip = self.traceroute_results_table.item(row, 2).text() if self.traceroute_results_table.item(row, 2) else ""
+        hostname = self.traceroute_results_table.item(row, 3).text() if self.traceroute_results_table.item(row, 3) else ""
+        
+        # MTR mode latencies are at column 6 (Avg). Standard traceroute is at 4. We can safely pick whatever is not empty.
+        latency = ""
+        lat_item = self.traceroute_results_table.item(row, 4) if self.traceroute_results_table.columnCount() == 5 else self.traceroute_results_table.item(row, 6)
+        if lat_item:
+            latency = lat_item.text()
 
         menu = QMenu(self)
         menu.setStyleSheet("""
@@ -6921,6 +7111,8 @@ class SerialTerminalGUI(QMainWindow):
         copy_ip_action = menu.addAction("Copy IP Address")
         copy_hostname_action = menu.addAction("Copy Hostname")
         menu.addSeparator()
+        ip_details_action = menu.addAction("IP Details (Whois / Geo)")
+        menu.addSeparator()
         copy_row_action = menu.addAction("Copy Row")
 
         action = menu.exec(self.traceroute_results_table.viewport().mapToGlobal(pos))
@@ -6929,12 +7121,122 @@ class SerialTerminalGUI(QMainWindow):
             QApplication.clipboard().setText(ip)
         elif action == copy_hostname_action:
             QApplication.clipboard().setText(hostname)
+        elif action == ip_details_action:
+            self._show_ip_details_dialog(ip, hostname)
         elif action == copy_row_action:
             QApplication.clipboard().setText(f"Hop {hop_num}: {ip} ({hostname}) — {latency}")
 
+    def _show_ip_details_dialog(self, ip, hostname):
+        """Show a dialog with Whois and Geo IP information for the selected IP"""
+        if not ip or ip in ("*", "localhost", "127.0.0.1"):
+            QMessageBox.information(self, "IP Details", "Valid public IP address required.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"IP Details: {ip} ({hostname})")
+        dialog.setMinimumSize(500, 400)
+        dialog.setStyleSheet("QDialog { background-color: #0d1117; color: #c9d1e0; }")
+
+        layout = QVBoxLayout(dialog)
+        tabs = QTabWidget()
+        tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #30363d; border-radius: 4px; }
+            QTabBar::tab { background: #161b22; color: #8b949e; padding: 8px 16px; border: 1px solid #30363d; border-bottom: none; }
+            QTabBar::tab:selected { background: #0d1117; color: #c9d1e0; border-top: 2px solid #58a6ff; font-weight: bold; }
+        """)
+        layout.addWidget(tabs)
+
+        # Tab 1: Geo / Network (ip-api.com)
+        geo_widget = QWidget()
+        geo_layout = QVBoxLayout(geo_widget)
+        geo_text = QTextEdit()
+        geo_text.setReadOnly(True)
+        geo_text.setStyleSheet("background-color: #010409; color: #e6edf3; font-family: monospace; border: none;")
+        geo_layout.addWidget(geo_text)
+        tabs.addTab(geo_widget, "Geo / Network")
+
+        # Tab 2: Whois (local command)
+        whois_widget = QWidget()
+        whois_layout = QVBoxLayout(whois_widget)
+        whois_text = QTextEdit()
+        whois_text.setReadOnly(True)
+        whois_text.setStyleSheet("background-color: #010409; color: #e6edf3; font-family: monospace; border: none;")
+        whois_layout.addWidget(whois_text)
+        tabs.addTab(whois_widget, "Whois Data")
+
+        # Use QThread for background loading to avoid PyQt6 GUI lockups
+        class GeoWorker(QThread):
+            result_ready = pyqtSignal(str)
+            def run(self):
+                import urllib.request
+                import json
+                try:
+                    # Quick check for private/bogon IPs
+                    if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("127.") or ip.startswith("100.") or ip.startswith("172."):
+                        self.result_ready.emit(f"IP: {ip}\n\nThis is a Private, Loopback, or CGNAT IP address.\nGeo-location APIs do not track internal addresses.")
+                        return
+
+                    url = f"http://ip-api.com/json/{ip}?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                        
+                    if data.get("status") == "success":
+                        info = [
+                            f"IP:      {data.get('query', ip)}",
+                            f"ORG:     {data.get('org', '-')}",
+                            f"ISP:     {data.get('isp', '-')}",
+                            f"ASN:     {data.get('as', '-')}",
+                            "-" * 40,
+                            f"Country: {data.get('country', '-')}",
+                            f"Region:  {data.get('regionName', '-')}",
+                            f"City:    {data.get('city', '-')}",
+                            f"TimeZ:   {data.get('timezone', '-')}",
+                            f"Lat/Lon: {data.get('lat', '-')} / {data.get('lon', '-')}",
+                        ]
+                        self.result_ready.emit("\n".join(info))
+                    else:
+                        self.result_ready.emit(f"GeoIP Error: {data.get('message', 'Unknown error')}")
+                except Exception as e:
+                    self.result_ready.emit(f"Failed to fetch Geo IP info:\n{e}")
+
+        class WhoisWorker(QThread):
+            result_ready = pyqtSignal(str)
+            def run(self):
+                try:
+                    import subprocess
+                    result = subprocess.run(['whois', ip], capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        out = result.stdout
+                    else:
+                        out = f"Whois command failed.\n{result.stderr}\n{result.stdout}"
+                    self.result_ready.emit(out)
+                except Exception as e:
+                    self.result_ready.emit(f"Failed to run whois:\n{e}\n\nNote: Make sure 'whois' is installed (sudo apt install whois / sudo pacman -S whois)")
+
+        geo_text.setPlainText("Loading Geo/Network information (ip-api.com)...")
+        whois_text.setPlainText("Loading Whois data...")
+        
+        # Keep references to prevent garbage collection
+        dialog._geo_worker = GeoWorker()
+        dialog._whois_worker = WhoisWorker()
+        
+        dialog._geo_worker.result_ready.connect(geo_text.setPlainText)
+        dialog._whois_worker.result_ready.connect(whois_text.setPlainText)
+        
+        dialog._geo_worker.start()
+        dialog._whois_worker.start()
+
+        from PyQt6.QtWidgets import QDialogButtonBox
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        dialog.exec()
+
     def _traceroute_method_changed(self, method):
         """Show/hide fields and switch table columns based on selected method"""
-        is_mtr  = (method == 'MTR')
+        is_mtr  = method in ('MTR', 'ICMP (MTR)')
         is_port = method in ('TCP', 'UDP')
 
         # Port row (TCP/UDP only)
