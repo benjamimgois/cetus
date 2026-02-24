@@ -6000,6 +6000,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_target_input = QLineEdit()
         self.traceroute_target_input.setPlaceholderText("192.168.1.1 or example.com")
         self.traceroute_target_input.setToolTip("Target IP address or hostname")
+        self.traceroute_target_input.setFont(QFont("Sans Serif", 9))
         self.traceroute_target_input.setStyleSheet(traceroute_line_edit_style)
 
         _quick_targets = [
@@ -7102,8 +7103,8 @@ class SerialTerminalGUI(QMainWindow):
             self._show_latency_graph_dialog()
 
     def _reset_mtr_button(self):
-        """Reset button to 'START MTR' state (keeps MTR table columns)"""
-        self.traceroute_btn.setText("START MTR")
+        """Reset button to 'TRACEROUTE' state after MTR (keeps MTR table columns)"""
+        self.traceroute_btn.setText("TRACEROUTE")
         self.traceroute_btn.setEnabled(True)
         self.traceroute_btn.setStyleSheet("""
             QPushButton {
@@ -7471,7 +7472,7 @@ class SerialTerminalGUI(QMainWindow):
         if is_mtr:
             self.traceroute_results_table.setRowCount(0)
             self._switch_table_to_mtr_mode()
-            self.traceroute_btn.setText("START MTR")
+            self.traceroute_btn.setText("TRACEROUTE")
         else:
             self.traceroute_results_table.setRowCount(0)
             self._switch_table_to_traceroute_mode()
