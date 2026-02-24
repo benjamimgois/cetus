@@ -5509,7 +5509,7 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_ports_input = QLineEdit()
         self.scan_ports_input.setPlaceholderText("22,80,443 or 1-1024")
         self.scan_ports_input.setToolTip("Comma-separated ports or range (e.g. 22,80,443 or 1-1024)")
-        self.scan_ports_input.setText("22,23,80,443,3389,5900")
+        self.scan_ports_input.setText("22,23,80,443,3389")
         self.scan_ports_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
