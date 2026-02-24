@@ -2507,8 +2507,9 @@ class WifiChannelChart(QWidget):
 
         # Mouse tracking for tooltips
         self.setMouseTracking(True)
-        self._hovered_bssid = None
-        self._bssid_curves = {}  # bssid → curve info for hit detection
+        self._hovered_ssid = None
+        self._ssid_curves = {}  # ssid_bssid → curve info for hit detection
+        self._hidden_ssids = set()  # Set of hidden SSIDs
 
         # Tooltip styling
         self.setStyleSheet("""
@@ -2608,7 +2609,7 @@ class WifiChannelChart(QWidget):
 
         W = self.width()
         H = self.height()
-        pad_l, pad_r, pad_b, pad_t = 44, 16, 20, 8
+        pad_l, pad_r, pad_b, pad_t = 44, 16, 25, 4
         chart_w = W - pad_l - pad_r
         chart_h = H - pad_b - pad_t
 
@@ -2621,22 +2622,37 @@ class WifiChannelChart(QWidget):
             noise_floor = -95  # 2.4GHz noise floor
             # Channels for reference
             channels = list(range(1, 14))
-        else:
+            show_both_bands = False
+        elif self.band == '5GHz':
             freq_min, freq_max = 5150, 5850  # MHz
             noise_floor = -92  # 5GHz noise floor
             # Channels for reference
             channels = [36, 40, 44, 48, 52, 56, 60, 64,
                         100, 104, 108, 112, 116, 120, 124, 128,
                         132, 136, 140, 149, 153, 157, 161, 165]
+            show_both_bands = False
+        else:  # Both bands
+            freq_min, freq_max = 2400, 5900  # MHz - full range
+            noise_floor = -95  # Use 2.4GHz noise floor (more conservative)
+            channels = []  # Will be handled differently
+            show_both_bands = True
 
-        # Group networks by BSSID
-        # Collect SSIDs and pick strongest signal for each BSSID
-        bssid_groups = {}  # bssid → {strongest_net, ssids: [list]}
+        # Collect individual networks (by SSID)
+        # Check for hidden SSIDs filter
+        hidden_ssids = getattr(self, '_hidden_ssids', set())
+
+        all_networks = []
         for net in self.networks:
             ch = net.get('channel')
             net_band = net.get('band', '')
-            # Filter by band
-            if net_band != self.band:
+            ssid = net.get('ssid', '') or '<hidden>'
+
+            # Skip hidden SSIDs
+            if ssid in hidden_ssids:
+                continue
+
+            # Filter by band (skip filter if showing both bands)
+            if not show_both_bands and net_band != self.band:
                 continue
             # Get frequency
             net_freq = net.get('freq_mhz', self._channel_to_freq(ch))
@@ -2644,29 +2660,7 @@ class WifiChannelChart(QWidget):
             if net_freq < freq_min or net_freq > freq_max:
                 continue
 
-            bssid = net.get('bssid', '')
-            ssid = net.get('ssid', '') or '<hidden>'
-
-            if bssid not in bssid_groups:
-                bssid_groups[bssid] = {
-                    'strongest_net': net,
-                    'ssids': [ssid]
-                }
-            else:
-                # Add SSID if not already in list
-                if ssid not in bssid_groups[bssid]['ssids']:
-                    bssid_groups[bssid]['ssids'].append(ssid)
-                # Keep the strongest signal
-                if net.get('signal_pct', 0) > bssid_groups[bssid]['strongest_net'].get('signal_pct', 0):
-                    bssid_groups[bssid]['strongest_net'] = net
-
-        # Build list of networks to display (one per BSSID)
-        all_networks = []
-        for bssid, group in bssid_groups.items():
-            net = group['strongest_net']
-            ch = net.get('channel')
             sig_pct = net.get('signal_pct', 0)
-
             # Apply animation factor based on channel
             ch_anim = self._animated_sig.get(ch, 0.0)
             ch_target = self._target_sig.get(ch, 0.0)
@@ -2681,7 +2675,6 @@ class WifiChannelChart(QWidget):
                 dbm = (display_sig / 2) - 100
                 net_copy = net.copy()
                 net_copy['display_dbm'] = dbm
-                net_copy['ssids'] = group['ssids']  # Store all SSIDs
                 all_networks.append(net_copy)
 
         # ── Grid lines + Y-axis labels (dBm) ─────────────────────────────
@@ -2706,18 +2699,44 @@ class WifiChannelChart(QWidget):
         painter.drawLine(pad_l, pad_t + chart_h, W - pad_r, pad_t + chart_h)
 
         # ── Noise Floor ──────────────────────────────────────────────────
-        noise_y = self._dbm_to_y(noise_floor, chart_h, pad_t, dbm_min, dbm_max)
-        noise_pen = QPen(QColor('#FF6B6B'))
-        noise_pen.setWidth(2)
-        noise_pen.setStyle(Qt.PenStyle.DashLine)
-        painter.setPen(noise_pen)
-        painter.drawLine(pad_l, noise_y, W - pad_r, noise_y)
-        # Noise floor label
-        painter.setPen(QColor('#FF6B6B'))
-        painter.setFont(QFont('Sans Serif', 7))
-        painter.drawText(W - pad_r - 80, noise_y - 12, 75, 10,
-                         Qt.AlignmentFlag.AlignRight, f'Noise Floor ({noise_floor} dBm)')
-        painter.setFont(font_mono)
+        if show_both_bands:
+            # Draw two noise floors for both bands
+            # 2.4GHz noise floor (-95 dBm) in left region
+            noise_24_y = self._dbm_to_y(-95, chart_h, pad_t, dbm_min, dbm_max)
+            freq_24_end = self._freq_to_x(2500, freq_min, freq_max, chart_w, pad_l)
+            noise_pen = QPen(QColor('#FF6B6B'))
+            noise_pen.setWidth(2)
+            noise_pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(noise_pen)
+            painter.drawLine(pad_l, noise_24_y, freq_24_end, noise_24_y)
+
+            # 5GHz noise floor (-92 dBm) in right region
+            noise_5_y = self._dbm_to_y(-92, chart_h, pad_t, dbm_min, dbm_max)
+            freq_5_start = self._freq_to_x(5150, freq_min, freq_max, chart_w, pad_l)
+            painter.drawLine(freq_5_start, noise_5_y, W - pad_r, noise_5_y)
+
+            # Labels
+            painter.setPen(QColor('#FF6B6B'))
+            painter.setFont(QFont('Sans Serif', 7))
+            painter.drawText(pad_l + 5, noise_24_y - 12, 80, 10,
+                            Qt.AlignmentFlag.AlignLeft, '2.4G Floor (-95)')
+            painter.drawText(W - pad_r - 80, noise_5_y - 12, 75, 10,
+                            Qt.AlignmentFlag.AlignRight, '5G Floor (-92)')
+            painter.setFont(font_mono)
+        else:
+            # Single noise floor
+            noise_y = self._dbm_to_y(noise_floor, chart_h, pad_t, dbm_min, dbm_max)
+            noise_pen = QPen(QColor('#FF6B6B'))
+            noise_pen.setWidth(2)
+            noise_pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(noise_pen)
+            painter.drawLine(pad_l, noise_y, W - pad_r, noise_y)
+            # Noise floor label
+            painter.setPen(QColor('#FF6B6B'))
+            painter.setFont(QFont('Sans Serif', 7))
+            painter.drawText(W - pad_r - 80, noise_y - 12, 75, 10,
+                             Qt.AlignmentFlag.AlignRight, f'Noise Floor ({noise_floor} dBm)')
+            painter.setFont(font_mono)
 
         # ── Gaussian Curves for each network (grouped by BSSID) ──────────
         # Color palette for different networks
@@ -2727,7 +2746,7 @@ class WifiChannelChart(QWidget):
         ]
 
         # Clear curve tracking for hover detection
-        self._bssid_curves = {}
+        self._ssid_curves = {}
 
         # Draw each network as a gaussian curve
         for net_idx, net in enumerate(all_networks):
@@ -2735,13 +2754,13 @@ class WifiChannelChart(QWidget):
             bandwidth = net.get('bandwidth', 20)
             dbm = net.get('display_dbm', -90)
             bssid = net.get('bssid', '')
-            ssids = net.get('ssids', [])
+            ssid = net.get('ssid', '') or '<hidden>'
 
             # Get color for this network
             color = colors[net_idx % len(colors)]
 
             # Check if this curve is being hovered
-            is_hovered = (bssid == self._hovered_bssid)
+            is_hovered = (ssid == self._hovered_ssid)
 
             # Get center frequency
             center_freq = net.get('freq_mhz', self._channel_to_freq(ch))
@@ -2780,12 +2799,15 @@ class WifiChannelChart(QWidget):
             curve_path.closeSubpath()
 
             # Store curve info for hover detection
-            self._bssid_curves[bssid] = {
+            # Use a unique key combining SSID and BSSID to handle duplicate SSIDs
+            curve_key = f"{ssid}_{bssid}"
+            self._ssid_curves[curve_key] = {
                 'path': curve_path,
                 'center_x': center_x,
                 'center_y': peak_y,
                 'sigma_px': sigma_px,
-                'ssids': ssids
+                'ssid': ssid,
+                'bssid': bssid
             }
 
             # Fill the curve with gradient
@@ -2834,22 +2856,20 @@ class WifiChannelChart(QWidget):
             painter.drawEllipse(QPointF(x_3db_left, y_3db), 3, 3)
             painter.drawEllipse(QPointF(x_3db_right, y_3db), 3, 3)
 
-            # ── BSSID label at peak ──────────────────────────────────────
-            # Show BSSID (shortened) as label
-            bssid_short = bssid[-8:] if len(bssid) > 8 else bssid  # Last 8 chars
+            # ── SSID label at peak ───────────────────────────────────────
             painter.setPen(QColor(color))
             font_size = 8 if not is_hovered else 9
             painter.setFont(QFont('Sans Serif', font_size, QFont.Weight.Bold))
             fm = painter.fontMetrics()
-            label_w = fm.horizontalAdvance(bssid_short)
+            label_w = fm.horizontalAdvance(ssid)
             label_x = center_x - label_w // 2
             label_y = peak_y - 8
             # Shadow
             painter.setPen(QColor(0, 0, 0, 180))
-            painter.drawText(label_x + 1, label_y + 1, bssid_short)
+            painter.drawText(label_x + 1, label_y + 1, ssid)
             # Main text
             painter.setPen(marker_color)
-            painter.drawText(label_x, label_y, bssid_short)
+            painter.drawText(label_x, label_y, ssid)
             painter.setFont(font_mono)
 
         # ── Frequency labels (X-axis) ─────────────────────────────────────
@@ -2857,7 +2877,12 @@ class WifiChannelChart(QWidget):
         painter.setFont(QFont('Monospace', 7))
 
         # Determine frequency tick interval
-        if self.band == '2.4GHz':
+        if show_both_bands:
+            # Show both 2.4GHz and 5GHz frequency ranges
+            freq_ticks_24 = range(2400, 2500, 20)
+            freq_ticks_5 = range(5150, 5900, 100)  # Less dense for 5GHz
+            freq_ticks = list(freq_ticks_24) + list(freq_ticks_5)
+        elif self.band == '2.4GHz':
             # Show every 20 MHz
             freq_ticks = range(2400, 2500, 20)
         else:
@@ -2897,38 +2922,45 @@ class WifiChannelChart(QWidget):
         mx, my = mouse_pos.x(), mouse_pos.y()
 
         # Check if mouse is over any curve
-        old_hovered = self._hovered_bssid
-        self._hovered_bssid = None
+        old_hovered = self._hovered_ssid
+        self._hovered_ssid = None
 
-        for bssid, curve_info in self._bssid_curves.items():
+        for curve_key, curve_info in self._ssid_curves.items():
             path = curve_info['path']
             # Check if mouse is inside the curve path
             if path.contains(QPointF(mx, my)):
-                self._hovered_bssid = bssid
-                # Show tooltip with SSIDs
-                ssids = curve_info['ssids']
-                if len(ssids) == 1:
-                    tooltip_text = f"BSSID: {bssid}\nSSID: {ssids[0]}"
-                else:
-                    ssid_list = '\n  • '.join(ssids)
-                    tooltip_text = f"BSSID: {bssid}\nSSIDs:\n  • {ssid_list}"
+                ssid = curve_info['ssid']
+                bssid = curve_info['bssid']
+                self._hovered_ssid = ssid
+                # Show tooltip with SSID and BSSID
+                tooltip_text = f"SSID: {ssid}\nBSSID: {bssid}"
                 self.setToolTip(tooltip_text)
                 break
 
         # Clear tooltip if not hovering any curve
-        if self._hovered_bssid is None:
+        if self._hovered_ssid is None:
             self.setToolTip("")
 
         # Redraw if hover state changed
-        if old_hovered != self._hovered_bssid:
+        if old_hovered != self._hovered_ssid:
             self.update()
 
     def leaveEvent(self, event):
         """Handle mouse leaving the widget"""
-        if self._hovered_bssid is not None:
-            self._hovered_bssid = None
+        if self._hovered_ssid is not None:
+            self._hovered_ssid = None
             self.setToolTip("")
             self.update()
+
+    def hide_ssid(self, ssid):
+        """Hide an SSID from the chart"""
+        self._hidden_ssids.add(ssid)
+        self.update()
+
+    def show_ssid(self, ssid):
+        """Show a hidden SSID in the chart"""
+        self._hidden_ssids.discard(ssid)
+        self.update()
 
 
 class WiFiScanWorker(QThread):
@@ -7431,7 +7463,7 @@ class SerialTerminalGUI(QMainWindow):
         chart_band_label = QLabel("Chart:")
         chart_band_label.setStyleSheet("color: #555555; font-size: 9pt;")
         self.wifi_chart_band_combo = QComboBox()
-        self.wifi_chart_band_combo.addItems(["2.4 GHz", "5 GHz"])
+        self.wifi_chart_band_combo.addItems(["2.4 GHz", "5 GHz", "Both"])
         self.wifi_chart_band_combo.setFixedWidth(90)
         self.wifi_chart_band_combo.setToolTip("Select band for channel usage chart")
         self.wifi_chart_band_combo.setStyleSheet(combo_style)
@@ -7506,14 +7538,20 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(4)
 
         self.wifi_table = QTableWidget()
-        self.wifi_table.setColumnCount(9)
+        self.wifi_table.setColumnCount(10)
         self.wifi_table.setHorizontalHeaderLabels(
-            ["SSID", "BSSID", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security"]
+            ["👁", "SSID", "BSSID", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security"]
         )
+        # Column 0: Visibility checkbox
         self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.wifi_table.setColumnWidth(0, 200)
-        self.wifi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for col, w in [(2, 110), (3, 70), (4, 40), (5, 60), (6, 65), (7, 100), (8, 110)]:
+        self.wifi_table.setColumnWidth(0, 35)
+        # Column 1: SSID
+        self.wifi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.wifi_table.setColumnWidth(1, 200)
+        # Column 2: BSSID (stretch)
+        self.wifi_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        # Other columns
+        for col, w in [(3, 110), (4, 70), (5, 40), (6, 60), (7, 65), (8, 100), (9, 110)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -7536,6 +7574,13 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         results_layout.addWidget(self.wifi_table)
+
+        # Connect double-click to show BSSID details
+        self.wifi_table.itemDoubleClicked.connect(self._wifi_show_bssid_details)
+
+        # Connect cell changed to handle visibility checkbox
+        self.wifi_table.itemChanged.connect(self._wifi_visibility_changed)
+
         results_group.setLayout(results_layout)
         shadow2 = QGraphicsDropShadowEffect()
         shadow2.setBlurRadius(12); shadow2.setXOffset(0); shadow2.setYOffset(2)
@@ -7548,29 +7593,8 @@ class SerialTerminalGUI(QMainWindow):
         chart_group.setObjectName("channelUsagePanel")
         chart_group.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         chart_layout = QVBoxLayout()
-        chart_layout.setContentsMargins(8, 4, 8, 4)
-        chart_layout.setSpacing(2)
-
-        # Header: title + legend
-        header_row = QHBoxLayout()
-        chart_title_lbl = QLabel("Channel Usage")
-        chart_title_lbl.setStyleSheet(
-            "color: #8899BB; font-weight: bold; font-size: 9pt;"
-            " background: transparent; border: none;"
-        )
-        chart_legend_lbl = QLabel(
-            '<span style="color:#00E5FF">●</span> Network &nbsp;&nbsp;'
-            '<span style="color:#FF6B6B">- - -</span> Noise floor &nbsp;&nbsp;'
-            '<span style="color:#FFFFFF">●</span> -3dB'
-        )
-        chart_legend_lbl.setStyleSheet(
-            "font-size: 7pt; color: #6A7A90; background: transparent; border: none;"
-        )
-        header_row.addWidget(chart_title_lbl)
-        header_row.addSpacing(10)
-        header_row.addWidget(chart_legend_lbl)
-        header_row.addStretch()
-        chart_layout.addLayout(header_row)
+        chart_layout.setContentsMargins(4, 2, 4, 2)
+        chart_layout.setSpacing(0)
 
         # Connect chart band selector to update chart
         self.wifi_chart_band_combo.currentTextChanged.connect(self._wifi_update_chart)
@@ -8637,6 +8661,7 @@ class SerialTerminalGUI(QMainWindow):
             iface = ''
 
         self.wifi_table.setSortingEnabled(False)
+        self.wifi_table.blockSignals(True)  # Block signals during table update
         self.wifi_table.setRowCount(0)
         self.wifi_scan_btn.setText("Scanning...")
         self.wifi_scan_btn.setStyleSheet("""
@@ -8675,20 +8700,28 @@ class SerialTerminalGUI(QMainWindow):
         row = self.wifi_table.rowCount()
         self.wifi_table.insertRow(row)
 
-        # Col 0 — SSID (with connected indicator as prefix)
+        # Col 0 — Visibility checkbox
+        visibility_item = QTableWidgetItem()
+        visibility_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        # Check if SSID is hidden in chart and set checkbox state accordingly
+        is_hidden = net['ssid'] in self.wifi_channel_chart._hidden_ssids
+        visibility_item.setCheckState(Qt.CheckState.Unchecked if is_hidden else Qt.CheckState.Checked)
+        self.wifi_table.setItem(row, 0, visibility_item)
+
+        # Col 1 — SSID (with connected indicator as prefix)
         ssid_text = ("● " if net['in_use'] else "") + net['ssid']
         ssid_item = QTableWidgetItem(ssid_text)
         if net['in_use']:
             ssid_item.setForeground(QColor('#E91E63'))
-        self.wifi_table.setItem(row, 0, ssid_item)
+        self.wifi_table.setItem(row, 1, ssid_item)
 
-        # Col 1 — BSSID (with soft color for identification)
+        # Col 2 — BSSID (with soft color for identification)
         bssid_item = QTableWidgetItem(net['bssid'])
         bssid_color = self._wifi_bssid_color(net['bssid'])
         bssid_item.setForeground(QColor(bssid_color))
-        self.wifi_table.setItem(row, 1, bssid_item)
+        self.wifi_table.setItem(row, 2, bssid_item)
 
-        # Col 2 — Signal bar + dBm
+        # Col 3 — Signal bar + dBm
         sig_pct = net['signal_pct']
         bars = self._wifi_signal_bars(sig_pct)
         sig_item = QTableWidgetItem(f"{bars}  {net['dbm']} dBm")
@@ -8699,9 +8732,9 @@ class SerialTerminalGUI(QMainWindow):
             sig_item.setForeground(QColor('#f57f17'))
         else:
             sig_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 2, sig_item)
+        self.wifi_table.setItem(row, 3, sig_item)
 
-        # Col 3 — SNR (Signal-to-Noise Ratio)
+        # Col 4 — SNR (Signal-to-Noise Ratio)
         snr = net.get('snr', 0)
         snr_item = QTableWidgetItem(f"{snr} dB" if snr > 0 else "N/A")
         snr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -8711,14 +8744,14 @@ class SerialTerminalGUI(QMainWindow):
             snr_item.setForeground(QColor('#f57f17'))  # Good
         elif snr > 0:
             snr_item.setForeground(QColor('#c62828'))  # Poor
-        self.wifi_table.setItem(row, 3, snr_item)
+        self.wifi_table.setItem(row, 4, snr_item)
 
-        # Col 4 — Channel
+        # Col 5 — Channel
         ch_item = QTableWidgetItem(str(net['channel']))
         ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.wifi_table.setItem(row, 4, ch_item)
+        self.wifi_table.setItem(row, 5, ch_item)
 
-        # Col 5 — Bandwidth
+        # Col 6 — Bandwidth
         bandwidth = net.get('bandwidth', 20)
         bw_item = QTableWidgetItem(f"{bandwidth} MHz")
         bw_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -8728,15 +8761,15 @@ class SerialTerminalGUI(QMainWindow):
             bw_item.setForeground(QColor('#2e7d32'))  # Green for medium
         else:
             bw_item.setForeground(QColor('#757575'))  # Gray for narrow
-        self.wifi_table.setItem(row, 5, bw_item)
+        self.wifi_table.setItem(row, 6, bw_item)
 
-        # Col 6 — Band
-        self.wifi_table.setItem(row, 6, QTableWidgetItem(net['band']))
+        # Col 7 — Band
+        self.wifi_table.setItem(row, 7, QTableWidgetItem(net['band']))
 
-        # Col 7 — Rate
-        self.wifi_table.setItem(row, 7, QTableWidgetItem(net['rate']))
+        # Col 8 — Rate
+        self.wifi_table.setItem(row, 8, QTableWidgetItem(net['rate']))
 
-        # Col 8 — Security
+        # Col 9 — Security
         sec = net['security']
         sec_item = QTableWidgetItem(sec)
         if 'WPA3' in sec:
@@ -8745,12 +8778,37 @@ class SerialTerminalGUI(QMainWindow):
             sec_item.setForeground(QColor('#2e7d32'))
         elif sec == 'Open':
             sec_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 8, sec_item)
+        self.wifi_table.setItem(row, 9, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
 
+    def _wifi_visibility_changed(self, item):
+        """Handle visibility checkbox changes."""
+        # Only process changes to column 0 (visibility checkboxes)
+        if item.column() != 0:
+            return
+
+        # Get the SSID from column 1 of the same row
+        ssid_item = self.wifi_table.item(item.row(), 1)
+        if not ssid_item:
+            return
+
+        # Extract SSID (remove "● " prefix if present)
+        ssid_text = ssid_item.text()
+        if ssid_text.startswith("● "):
+            ssid = ssid_text[2:]
+        else:
+            ssid = ssid_text
+
+        # Update chart visibility
+        if item.checkState() == Qt.CheckState.Checked:
+            self.wifi_channel_chart.show_ssid(ssid)
+        else:
+            self.wifi_channel_chart.hide_ssid(ssid)
+
     def _on_wifi_scan_finished(self, total):
         """Handle scan completion."""
+        self.wifi_table.blockSignals(False)  # Re-enable signals after table update
         self.wifi_table.setSortingEnabled(True)
         self.wifi_scan_btn.setText("SCAN")
         self.wifi_scan_btn.setStyleSheet("""
@@ -8808,7 +8866,13 @@ class SerialTerminalGUI(QMainWindow):
         if not hasattr(self, '_wifi_networks'):
             return
         band_text = self.wifi_chart_band_combo.currentText()
-        band_key = '5GHz' if '5' in band_text else '2.4GHz'
+        # Map band text to band key
+        if band_text == "Both":
+            band_key = 'Both'
+        elif '5' in band_text:
+            band_key = '5GHz'
+        else:
+            band_key = '2.4GHz'
         self.wifi_channel_chart.set_networks(self._wifi_networks, band_key)
 
     def _wifi_signal_bars(self, pct):
@@ -8821,8 +8885,7 @@ class SerialTerminalGUI(QMainWindow):
         # Create a simple hash from the BSSID
         hash_val = sum(ord(c) for c in bssid.replace(':', ''))
 
-        # Generate soft pastel colors with good contrast
-        # Using HSL-like approach for better color distribution
+        # Soft colors for text display
         colors = [
             '#6B8E23',  # Olive green
             '#4682B4',  # Steel blue
@@ -8842,6 +8905,165 @@ class SerialTerminalGUI(QMainWindow):
         ]
 
         return colors[hash_val % len(colors)]
+
+    def _wifi_show_bssid_details(self, item):
+        """Show detailed BSSID information for the selected SSID."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QHeaderView, QLabel, QPushButton
+        from PyQt6.QtCore import Qt
+
+        if not hasattr(self, '_wifi_networks') or not self._wifi_networks:
+            return
+
+        # Get SSID from the clicked row
+        row = item.row()
+        ssid = self.wifi_table.item(row, 1).text().replace('● ', '')  # Remove connected indicator
+
+        # Find all BSSIDs for this SSID
+        bssid_list = []
+        for net in self._wifi_networks:
+            if net['ssid'] == ssid:
+                bssid_list.append(net)
+
+        if not bssid_list:
+            return
+
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"BSSID Details for: {ssid}")
+        dialog.setMinimumWidth(800)
+        dialog.setMinimumHeight(400)
+
+        layout = QVBoxLayout()
+
+        # Header
+        header = QLabel(f"<b>{len(bssid_list)} Access Point(s) broadcasting '{ssid}'</b>")
+        header.setStyleSheet("font-size: 11pt; padding: 10px;")
+        layout.addWidget(header)
+
+        # Table
+        table = QTableWidget()
+        table.setColumnCount(8)
+        table.setHorizontalHeaderLabels(
+            ["BSSID", "Signal", "SNR", "Channel", "BW", "Band", "Rate", "Security"]
+        )
+        table.setRowCount(len(bssid_list))
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+
+        # Column widths
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col, w in [(1, 110), (2, 70), (3, 60), (4, 60), (5, 60), (6, 100), (7, 110)]:
+            table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            table.setColumnWidth(col, w)
+
+        # Populate table
+        for i, net in enumerate(bssid_list):
+            # BSSID with color
+            bssid_item = QTableWidgetItem(net['bssid'])
+            bssid_color = self._wifi_bssid_color(net['bssid'])
+            bssid_item.setForeground(QColor(bssid_color))
+            table.setItem(i, 0, bssid_item)
+
+            # Signal
+            sig_pct = net['signal_pct']
+            bars = self._wifi_signal_bars(sig_pct)
+            sig_item = QTableWidgetItem(f"{bars}  {net['dbm']} dBm")
+            if sig_pct >= 70:
+                sig_item.setForeground(QColor('#2e7d32'))
+            elif sig_pct >= 40:
+                sig_item.setForeground(QColor('#f57f17'))
+            else:
+                sig_item.setForeground(QColor('#c62828'))
+            table.setItem(i, 1, sig_item)
+
+            # SNR
+            snr = net.get('snr', 0)
+            snr_item = QTableWidgetItem(f"{snr} dB" if snr > 0 else "N/A")
+            snr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if snr >= 40:
+                snr_item.setForeground(QColor('#2e7d32'))
+            elif snr >= 25:
+                snr_item.setForeground(QColor('#f57f17'))
+            elif snr > 0:
+                snr_item.setForeground(QColor('#c62828'))
+            table.setItem(i, 2, snr_item)
+
+            # Channel
+            ch_item = QTableWidgetItem(str(net['channel']))
+            ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(i, 3, ch_item)
+
+            # Bandwidth
+            bandwidth = net.get('bandwidth', 20)
+            bw_item = QTableWidgetItem(f"{bandwidth} MHz")
+            bw_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if bandwidth >= 80:
+                bw_item.setForeground(QColor('#1565c0'))
+            elif bandwidth >= 40:
+                bw_item.setForeground(QColor('#2e7d32'))
+            else:
+                bw_item.setForeground(QColor('#757575'))
+            table.setItem(i, 4, bw_item)
+
+            # Band
+            table.setItem(i, 5, QTableWidgetItem(net['band']))
+
+            # Rate
+            table.setItem(i, 6, QTableWidgetItem(net['rate']))
+
+            # Security
+            sec = net['security']
+            sec_item = QTableWidgetItem(sec)
+            if 'WPA3' in sec:
+                sec_item.setForeground(QColor('#1565c0'))
+            elif 'WPA2' in sec or 'WPA' in sec:
+                sec_item.setForeground(QColor('#2e7d32'))
+            elif sec == 'Open':
+                sec_item.setForeground(QColor('#c62828'))
+            table.setItem(i, 7, sec_item)
+
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color: #f5f5f5;
+                gridline-color: #d0d0d0;
+                alternate-background-color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #e0e0e0;
+                padding: 4px;
+                border: none;
+                font-weight: bold;
+            }
+        """)
+
+        layout.addWidget(table)
+
+        # Close button
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.clicked.connect(dialog.close)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E91E63;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #C2185B;
+            }
+        """)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        dialog.setLayout(layout)
+        dialog.exec()
 
     def _wifi_export_csv(self):
         """Export the current scan results to a CSV file."""
