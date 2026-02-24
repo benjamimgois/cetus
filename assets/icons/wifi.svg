@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Transformed by: SVG Repo Mixer Tools -->
+
+<svg
+   width="902"
+   height="800"
+   viewBox="0 0 27.06 24"
+   fill="none"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="wifi.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.00375"
+     inkscape:cx="399.50187"
+     inkscape:cy="667.99502"
+     inkscape:window-width="1920"
+     inkscape:window-height="1012"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <g
+     id="SVGRepo_bgCarrier"
+     stroke-width="0" />
+  <g
+     id="SVGRepo_tracerCarrier"
+     stroke-linecap="round"
+     stroke-linejoin="round" />
+  <text
+     xml:space="preserve"
+     style="font-weight:bold;font-size:7.2px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.03"
+     x="-0.14943959"
+     y="23.910786"
+     id="text1"><tspan
+       sodipodi:role="line"
+       id="tspan1"
+       style="fill:#ffffff;stroke-width:0.03"
+       x="-0.14943959"
+       y="23.910786">SURVEY</tspan></text>
+  <g
+     id="SVGRepo_bgCarrier-5"
+     stroke-width="0"
+     transform="matrix(1.1576641,0,0,1.1576641,1.8888336,-5.7032115)" />
+  <g
+     id="SVGRepo_tracerCarrier-3"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     transform="matrix(1.1576641,0,0,1.1576641,1.8888336,-5.7032115)" />
+  <g
+     id="SVGRepo_iconCarrier"
+     transform="matrix(1.2793346,0,0,1.2793346,-1.8551762,-6.2225725)">
+    <circle
+       cx="1"
+       cy="1"
+       r="1"
+       transform="matrix(1,0,0,-1,11,19)"
+       fill="#ffffff"
+       id="circle1" />
+    <path
+       d="M 20.1915,10.2642 C 19.2864,8.97153 18.0881,7.9114 16.6947,7.17053 15.3014,6.42965 13.7524,6.02907 12.1746,6.00152 10.5967,5.97398 9.03471,6.32026 7.61632,7.01206 6.19793,7.70385 4.9634,8.72152 4.01367,9.98185 M 17.7341,12.985 C 17.1005,12.0801 16.2617,11.338 15.2863,10.8194 14.311,10.3008 13.2267,10.0203 12.1222,10.0011 11.0177,9.98179 9.9243,10.2242 8.93143,10.7084 7.93856,11.1927 7.07439,11.9051 6.40958,12.7873 m 8.04792,2.492 c -0.2716,-0.3878 -0.631,-0.7059 -1.0491,-0.9281 -0.418,-0.2223 -0.8827,-0.3425 -1.356,-0.3507 -0.4734,-0.0083 -0.942,0.0956 -1.3675,0.3031 -0.4255,0.2076 -0.79586,0.5129 -1.08078,0.891"
+       stroke="#ffffff"
+       stroke-width="2"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       id="path1" />
+  </g>
+</svg>
