@@ -2492,36 +2492,70 @@ class WifiChannelChart(QWidget):
     """Custom widget that draws a bar chart of WiFi channel usage."""
 
     def __init__(self, parent=None):
+        from PyQt6.QtCore import QTimer
         super().__init__(parent)
         self.networks = []   # list of dicts: {channel, signal_pct, ssid, band}
         self.band = '2.4GHz'
-        self.setMinimumHeight(110)
+        self.setMinimumHeight(240)
+        self.setStyleSheet("background: transparent;")
+        self._animated_sig = {}   # channel → current animated signal value (float)
+        self._target_sig = {}     # channel → target signal value
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(16)  # ~60 fps
+        self._anim_timer.timeout.connect(self._anim_step)
 
     def set_networks(self, networks, band='2.4GHz'):
         self.networks = networks
         self.band = band
+        # Build max signal per channel
+        new_targets = {}
+        for net in networks:
+            ch = net.get('channel')
+            sig = net.get('signal_pct', 0)
+            if ch is not None:
+                new_targets[ch] = max(new_targets.get(ch, 0), sig)
+        # Include channels still animating down to 0
+        all_channels = set(self._animated_sig.keys()) | set(new_targets.keys())
+        self._target_sig = {ch: new_targets.get(ch, 0) for ch in all_channels}
+        for ch in all_channels:
+            if ch not in self._animated_sig:
+                self._animated_sig[ch] = 0.0
+        self._anim_timer.start()
+
+    def _anim_step(self):
+        done = True
+        for ch in list(self._animated_sig.keys()):
+            target = self._target_sig.get(ch, 0)
+            current = self._animated_sig[ch]
+            diff = target - current
+            if abs(diff) < 0.4:
+                self._animated_sig[ch] = float(target)
+            else:
+                self._animated_sig[ch] = current + diff * 0.14
+                done = False
+        # Remove channels that settled at 0 and are no longer needed
+        self._animated_sig = {
+            ch: v for ch, v in self._animated_sig.items()
+            if v > 0.1 or self._target_sig.get(ch, 0) > 0
+        }
+        if done:
+            self._anim_timer.stop()
         self.update()
 
     def paintEvent(self, event):
         from PyQt6.QtGui import (QPainter, QColor, QFont, QPen,
-                                  QLinearGradient, QBrush, QPainterPath)
+                                  QLinearGradient, QPainterPath)
         from PyQt6.QtCore import Qt, QRectF
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-        w = self.width()
-        h = self.height()
-        pad_l, pad_r, pad_b, pad_t = 38, 12, 26, 14
-        chart_w = w - pad_l - pad_r
-        chart_h = h - pad_b - pad_t
-
-        # ── Background gradient ──────────────────────────────────
-        bg = QLinearGradient(0, 0, 0, h)
-        bg.setColorAt(0.0, QColor('#f8fafd'))
-        bg.setColorAt(1.0, QColor('#edf1f7'))
-        painter.fillRect(0, 0, w, h, QBrush(bg))
+        W = self.width()
+        H = self.height()
+        pad_l, pad_r, pad_b, pad_t = 44, 16, 28, 14
+        chart_w = W - pad_l - pad_r
+        chart_h = H - pad_b - pad_t
 
         # Channels for selected band
         if self.band == '2.4GHz':
@@ -2544,36 +2578,41 @@ class WifiChannelChart(QWidget):
             if ch in channels:
                 ch_nets.setdefault(ch, []).append(net)
 
-        # ── Horizontal grid lines + Y-axis labels ────────────────
-        font_tiny = QFont('Sans Serif', 7)
-        painter.setFont(font_tiny)
-        for pct, lbl in [(100, '100'), (75, '75'), (50, '50'), (25, '25'), (0, '0')]:
+        # ── Grid lines + Y-axis labels (dBm) ─────────────────────────────
+        font_mono = QFont('Monospace', 7)
+        painter.setFont(font_mono)
+        for pct, lbl in [(100, '-50'), (75, '-63'), (50, '-75'), (25, '-88'), (0, '-100')]:
             y = pad_t + chart_h - int(chart_h * pct / 100)
-            # dashed grid
-            pen = QPen(QColor('#d4dce8'), 1, Qt.PenStyle.DashLine)
-            pen.setDashPattern([4, 4])
-            painter.setPen(pen)
-            painter.drawLine(pad_l, y, w - pad_r, y)
-            # label
-            painter.setPen(QColor('#8899aa'))
-            painter.drawText(0, y - 6, pad_l - 4, 14,
+            grid_pen = QPen(QColor('#1E2A3A'))
+            grid_pen.setWidth(1)
+            painter.setPen(grid_pen)
+            painter.drawLine(pad_l, y, W - pad_r, y)
+            painter.setPen(QColor('#3A4460'))
+            painter.drawText(0, y - 7, pad_l - 6, 14,
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              lbl)
 
-        # ── Bars ────────────────────────────────────────────────
-        bar_w = max(int(col_w * 0.62), 4)
+        # ── Axes ─────────────────────────────────────────────────────────
+        axis_pen = QPen(QColor('#2A3A50'))
+        axis_pen.setWidth(1)
+        painter.setPen(axis_pen)
+        painter.drawLine(pad_l, pad_t, pad_l, pad_t + chart_h)
+        painter.drawLine(pad_l, pad_t + chart_h, W - pad_r, pad_t + chart_h)
 
-        # Color palettes (top → bottom gradient) by AP count
-        COLORS = {
-            1: (QColor('#4DD0E1'), QColor('#006064')),   # teal  — free channel
-            2: (QColor('#FFD54F'), QColor('#E65100')),   # amber — moderate
-            3: (QColor('#FF7043'), QColor('#B71C1C')),   # deep orange — busy
+        # ── Bars ─────────────────────────────────────────────────────────
+        bar_w = max(int(col_w * 0.58), 4)
+
+        # Neon palettes by AP count: (glow_hex, base_hex)
+        NEON = {
+            1: ('#00E5FF', '#00838F'),   # cyan  — free channel
+            2: ('#FFD740', '#E65100'),   # amber — moderate
+            3: ('#FF6E40', '#B71C1C'),   # orange-red — busy
         }
 
         for i, ch in enumerate(channels):
             nets = ch_nets.get(ch, [])
             count = len(nets)
-            sig   = max((nx['signal_pct'] for nx in nets), default=0)
+            sig = self._animated_sig.get(ch, 0.0)
 
             cx = pad_l + int(i * col_w) + int(col_w / 2)
             x  = cx - bar_w // 2
@@ -2582,66 +2621,109 @@ class WifiChannelChart(QWidget):
 
             if count > 0 and bar_h_px > 0:
                 y_top = base_y - bar_h_px
-                c_top, c_bot = COLORS.get(min(count, 3), COLORS[3])
+                glow_hex, base_hex = NEON.get(min(count, 3), NEON[3])
 
-                # Gradient fill
-                grad = QLinearGradient(x, y_top, x, base_y)
-                grad.setColorAt(0.0, c_top)
-                grad.setColorAt(1.0, c_bot)
+                # Glow shadow passes (same technique as RouteVisualization)
+                for glow_r, alpha in [(8, 12), (5, 28), (3, 58)]:
+                    gc = QColor(glow_hex)
+                    gc.setAlpha(alpha)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(gc)
+                    painter.drawRoundedRect(
+                        x - glow_r, y_top - glow_r // 2,
+                        bar_w + glow_r * 2, bar_h_px + glow_r,
+                        4 + glow_r, 4 + glow_r
+                    )
 
-                # Rounded-top bar path
-                radius = min(5, bar_w // 2)
-                path = QPainterPath()
-                path.addRoundedRect(QRectF(x, y_top, bar_w, bar_h_px), radius, radius)
-                # Square off bottom corners
-                path.addRect(QRectF(x, y_top + radius, bar_w, bar_h_px - radius))
-                painter.fillPath(path, QBrush(grad))
+                # Bar gradient fill
+                bar_rect = QRectF(x, y_top, bar_w, bar_h_px)
+                fill_grad = QLinearGradient(x, y_top, x, base_y)
+                top_c = QColor(glow_hex); top_c.setAlpha(210)
+                bot_c = QColor(base_hex); bot_c.setAlpha(230)
+                fill_grad.setColorAt(0.0, top_c)
+                fill_grad.setColorAt(1.0, bot_c)
+                bar_path = QPainterPath()
+                bar_path.addRoundedRect(bar_rect, 4, 4)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.fillPath(bar_path, fill_grad)
 
-                # Subtle inner highlight (left edge gleam)
+                # Gleam highlight (top-left inner shine)
                 gleam = QLinearGradient(x, y_top, x + bar_w, y_top)
-                gleam.setColorAt(0.0, QColor(255, 255, 255, 70))
-                gleam.setColorAt(0.4, QColor(255, 255, 255, 0))
-                painter.fillPath(path, QBrush(gleam))
+                gleam.setColorAt(0.0, QColor(255, 255, 255, 55))
+                gleam.setColorAt(0.5, QColor(255, 255, 255, 0))
+                painter.fillPath(bar_path, gleam)
 
-                # Border
-                painter.setPen(QPen(c_bot.darker(130), 0.8))
-                painter.drawPath(path)
+                # Neon border
+                border_c = QColor(glow_hex); border_c.setAlpha(180)
+                painter.setPen(QPen(border_c, 1))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(bar_path)
 
-                # AP count badge above bar
-                badge_y = max(y_top - 16, pad_t)
-                badge_rect = QRectF(cx - 9, badge_y, 18, 14)
-                badge_bg = QLinearGradient(badge_rect.topLeft(), badge_rect.bottomLeft())
-                badge_bg.setColorAt(0, c_top.lighter(115))
-                badge_bg.setColorAt(1, c_top)
-                badge_path = QPainterPath()
-                badge_path.addRoundedRect(badge_rect, 4, 4)
-                painter.fillPath(badge_path, QBrush(badge_bg))
-                painter.setPen(QPen(c_bot.darker(110), 0.6))
-                painter.drawPath(badge_path)
-                painter.setPen(QColor('#1a1a2e'))
-                painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
-                painter.drawText(badge_rect.toRect(),
-                                 Qt.AlignmentFlag.AlignCenter, str(count))
-                painter.setFont(font_tiny)
+                # AP count badge (same pill style as LatencyGraph badges)
+                badge_label = f"{count} AP{'s' if count > 1 else ''}"
+                badge_y = max(y_top - 19, pad_t + 1)
+                bw, bh = 36, 15
+                bx = cx - bw // 2
+                badge_bg_c = QColor(base_hex); badge_bg_c.setAlpha(50)
+                badge_brd_c = QColor(glow_hex); badge_brd_c.setAlpha(200)
+                painter.setBrush(badge_bg_c)
+                painter.setPen(QPen(badge_brd_c, 1))
+                painter.drawRoundedRect(bx, badge_y, bw, bh, bh // 2, bh // 2)
+                painter.setPen(QColor(glow_hex))
+                painter.setFont(QFont('Monospace', 7, QFont.Weight.Bold))
+                painter.drawText(bx, badge_y, bw, bh,
+                                 Qt.AlignmentFlag.AlignCenter, badge_label)
+                painter.setFont(font_mono)
+
+                # ── SSID label — vertical text inside bar ────────────────
+                if bar_h_px > 22:
+                    strongest = max(nets, key=lambda n: n.get('signal_pct', 0))
+                    ssid = strongest.get('ssid', '') or '<hidden>'
+                    painter.save()
+                    painter.translate(cx, y_top + bar_h_px // 2)
+                    painter.rotate(-90)
+                    ssid_font = QFont('Sans Serif', 7)
+                    painter.setFont(ssid_font)
+                    fm = painter.fontMetrics()
+                    avail_w = bar_h_px - 10
+                    ssid_elided = fm.elidedText(
+                        ssid, Qt.TextElideMode.ElideRight, avail_w
+                    )
+                    # Shadow pass
+                    painter.setPen(QColor(0, 0, 0, 110))
+                    painter.drawText(
+                        -avail_w // 2 + 1, -bar_w // 2 + 1,
+                        avail_w, bar_w,
+                        Qt.AlignmentFlag.AlignCenter, ssid_elided
+                    )
+                    # Main text
+                    painter.setPen(QColor(255, 255, 255, 210))
+                    painter.drawText(
+                        -avail_w // 2, -bar_w // 2,
+                        avail_w, bar_w,
+                        Qt.AlignmentFlag.AlignCenter, ssid_elided
+                    )
+                    painter.restore()
             else:
-                # Empty channel — faint placeholder bar
-                ph_h = 4
-                ph_rect = QRectF(x, base_y - ph_h, bar_w, ph_h)
-                painter.fillRect(ph_rect, QColor('#dde3ea'))
+                # Empty channel — subtle tick at baseline
+                ph_c = QColor('#1E2A3A')
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(ph_c)
+                painter.drawRoundedRect(x, base_y - 3, bar_w, 3, 1, 1)
 
-            # ── Channel label ──────────────────────────────────
-            painter.setPen(QColor('#556677'))
-            painter.setFont(font_tiny)
-            painter.drawText(cx - 14, h - pad_b + 4, 28, 16,
+            # ── Channel label ─────────────────────────────────────────────
+            painter.setPen(QColor('#4A6080'))
+            painter.setFont(font_mono)
+            painter.drawText(cx - 14, H - pad_b + 4, 28, 16,
                              Qt.AlignmentFlag.AlignCenter, str(ch))
 
-        # ── Y-axis title ────────────────────────────────────────
+        # ── Y-axis title ──────────────────────────────────────────────────
         painter.save()
-        painter.translate(10, pad_t + chart_h // 2)
+        painter.translate(12, pad_t + chart_h // 2)
         painter.rotate(-90)
-        painter.setPen(QColor('#8899aa'))
-        painter.setFont(QFont('Sans Serif', 7))
-        painter.drawText(-22, -4, 44, 12, Qt.AlignmentFlag.AlignCenter, 'Signal %')
+        painter.setPen(QColor('#4A6080'))
+        painter.setFont(QFont('Sans Serif', 8))
+        painter.drawText(-22, -6, 44, 14, Qt.AlignmentFlag.AlignCenter, 'dBm')
         painter.restore()
 
         painter.end()
@@ -7095,7 +7177,7 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.wifi_interval_combo = QComboBox()
         self.wifi_interval_combo.addItems(["5s", "10s", "15s", "30s"])
-        self.wifi_interval_combo.setCurrentText("10s")
+        self.wifi_interval_combo.setCurrentText("5s")
         self.wifi_interval_combo.setFixedWidth(70)
         self.wifi_interval_combo.setStyleSheet(combo_style)
         interval_unit_lbl = QLabel("seconds")
@@ -7105,8 +7187,8 @@ class SerialTerminalGUI(QMainWindow):
         sig_filter_lbl = QLabel("Min signal:")
         sig_filter_lbl.setStyleSheet("color: #555555; font-size: 9pt;")
         self.wifi_min_signal_combo = QComboBox()
-        self.wifi_min_signal_combo.addItems(["Any", "≥ 25%", "≥ 50%", "≥ 75%"])
-        self.wifi_min_signal_combo.setFixedWidth(80)
+        self.wifi_min_signal_combo.addItems(["Any", "≥ -88 dBm", "≥ -75 dBm", "≥ -63 dBm"])
+        self.wifi_min_signal_combo.setFixedWidth(100)
         self.wifi_min_signal_combo.setStyleSheet(combo_style)
 
         auto_layout.addWidget(self.wifi_auto_refresh_cb)
@@ -7136,8 +7218,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setHorizontalHeaderLabels(
             ["SSID", "BSSID", "Signal", "Ch", "Band", "Rate", "Security"]
         )
-        self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col, w in [(1, 150), (2, 110), (3, 40), (4, 65), (5, 100), (6, 110)]:
+        self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.wifi_table.setColumnWidth(0, 200)
+        self.wifi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for col, w in [(2, 110), (3, 40), (4, 65), (5, 100), (6, 110)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -7165,47 +7249,81 @@ class SerialTerminalGUI(QMainWindow):
         shadow2.setBlurRadius(12); shadow2.setXOffset(0); shadow2.setYOffset(2)
         shadow2.setColor(QColor(0, 0, 0, 25))
         results_group.setGraphicsEffect(shadow2)
-        main_layout.addWidget(results_group, 2)
+        main_layout.addWidget(results_group, 3)
 
         # === Channel chart ===
-        chart_group = QGroupBox("Channel Usage")
+        chart_group = QWidget()
+        chart_group.setObjectName("channelUsagePanel")
+        chart_group.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         chart_layout = QVBoxLayout()
-        chart_layout.setContentsMargins(8, 4, 8, 6)
-        chart_layout.setSpacing(4)
+        chart_layout.setContentsMargins(14, 10, 14, 10)
+        chart_layout.setSpacing(6)
 
-        chart_band_row = QHBoxLayout()
+        # Header: title + band selector + legend — all on one dark row
+        header_row = QHBoxLayout()
+        chart_title_lbl = QLabel("Channel Usage")
+        chart_title_lbl.setStyleSheet(
+            "color: #8899BB; font-weight: bold; font-size: 9pt;"
+            " background: transparent; border: none;"
+        )
+        band_lbl = QLabel("Band:")
+        band_lbl.setStyleSheet(
+            "color: #4A6080; font-size: 9pt; background: transparent; border: none;"
+        )
         self.wifi_chart_band_combo = QComboBox()
         self.wifi_chart_band_combo.addItems(["2.4 GHz", "5 GHz"])
         self.wifi_chart_band_combo.setFixedWidth(90)
-        self.wifi_chart_band_combo.setStyleSheet(combo_style)
+        self.wifi_chart_band_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #1A1F2E; color: #8899BB;
+                border: 1px solid #2A3040; border-radius: 4px;
+                padding: 2px 8px; font-size: 9pt;
+            }
+            QComboBox:hover { border-color: #3A4460; }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: #1A1F2E; color: #8899BB;
+                border: 1px solid #2A3040;
+                selection-background-color: #2A3A50;
+            }
+        """)
         self.wifi_chart_band_combo.currentTextChanged.connect(self._wifi_update_chart)
-        chart_legend = QLabel("  ■ 1 AP  ■ 2 APs  ■ 3+ APs")
-        chart_legend.setStyleSheet(
-            "font-size: 8pt; color: #555555;"
-            " qproperty-text: '  ■ 1 AP   ■ 2 APs   ■ 3+ APs';"
-        )
-        # Simple HTML legend
         chart_legend_lbl = QLabel(
-            '<span style="color:#26a69a">■</span> 1 AP &nbsp;'
-            '<span style="color:#ffa726">■</span> 2 APs &nbsp;'
-            '<span style="color:#ef5350">■</span> 3+ APs'
+            '<span style="color:#00E5FF">■</span> 1 AP &nbsp;'
+            '<span style="color:#FFD740">■</span> 2 APs &nbsp;'
+            '<span style="color:#FF6E40">■</span> 3+ APs'
         )
-        chart_legend_lbl.setStyleSheet("font-size: 8pt;")
-        chart_band_row.addWidget(QLabel("Band:"))
-        chart_band_row.addWidget(self.wifi_chart_band_combo)
-        chart_band_row.addSpacing(12)
-        chart_band_row.addWidget(chart_legend_lbl)
-        chart_band_row.addStretch()
-        chart_layout.addLayout(chart_band_row)
+        chart_legend_lbl.setStyleSheet(
+            "font-size: 8pt; color: #4A6080; background: transparent; border: none;"
+        )
+        header_row.addWidget(chart_title_lbl)
+        header_row.addSpacing(16)
+        header_row.addWidget(band_lbl)
+        header_row.addWidget(self.wifi_chart_band_combo)
+        header_row.addSpacing(14)
+        header_row.addWidget(chart_legend_lbl)
+        header_row.addStretch()
+        chart_layout.addLayout(header_row)
 
         self.wifi_channel_chart = WifiChannelChart()
         chart_layout.addWidget(self.wifi_channel_chart)
         chart_group.setLayout(chart_layout)
+        chart_group.setStyleSheet("""
+            QWidget#channelUsagePanel {
+                background-color: #0D1117;
+                border: 1px solid #2A3040;
+                border-radius: 10px;
+            }
+            QWidget#channelUsagePanel QLabel {
+                background: transparent;
+                border: none;
+            }
+        """)
         shadow3 = QGraphicsDropShadowEffect()
-        shadow3.setBlurRadius(12); shadow3.setXOffset(0); shadow3.setYOffset(2)
-        shadow3.setColor(QColor(0, 0, 0, 25))
+        shadow3.setBlurRadius(20); shadow3.setXOffset(0); shadow3.setYOffset(4)
+        shadow3.setColor(QColor(0, 0, 0, 70))
         chart_group.setGraphicsEffect(shadow3)
-        main_layout.addWidget(chart_group)
+        main_layout.addWidget(chart_group, 4)
 
         # === Bottom button row ===
         btn_row = QHBoxLayout()
@@ -8278,8 +8396,8 @@ class SerialTerminalGUI(QMainWindow):
 
         # Apply min-signal filter
         min_sig_text = self.wifi_min_signal_combo.currentText()
-        min_sig_map = {"Any": 0, "≥ 25%": 25, "≥ 50%": 50, "≥ 75%": 75}
-        if net['signal_pct'] < min_sig_map.get(min_sig_text, 0):
+        min_dbm_map = {"Any": -200, "≥ -88 dBm": -88, "≥ -75 dBm": -75, "≥ -63 dBm": -63}
+        if net['dbm'] < min_dbm_map.get(min_sig_text, -200):
             return
 
         self._wifi_networks.append(net)
