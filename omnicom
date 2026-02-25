@@ -253,7 +253,7 @@ if __name__ == '__main__' and len(sys.argv) >= 5 and sys.argv[1] == '--tftp-serv
 # Import GUI libraries (only reached if not in TFTP server mode)
 import pyte
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QComboBox, QPushButton, QGroupBox, QFormLayout, QMessageBox,
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
@@ -1644,356 +1644,7 @@ class ScanWorker(QThread):
         return ""
 
     def _get_mac_vendor(self, mac):
-        """Lookup MAC vendor from OUI (first 3 octets)"""
-        if not mac or len(mac) < 8:
-            return "Unknown"
-        
-        # Extract OUI (first 3 octets = 6 hex digits)
-        # Remove colons and get first 6 characters
-        oui = mac.replace(':', '').upper()[:6]
-        
-        # Common vendor database (expanded)
-        vendors = {
-            # IANA and Standards
-            '00005E': 'IANA',
-            '70B3D5': 'IEEE',
-            
-            # Apple
-            '001B63': 'Apple',
-            '10FEED': 'Apple',
-            '3C0754': 'Apple',
-            '54EE75': 'Apple',
-            '6C4008': 'Apple',
-            '8C8590': 'Apple',
-            '9C5C8E': 'Apple',
-            'A0999B': 'Apple',
-            'A483E7': 'Apple',
-            'AC87A3': 'Apple',
-            'B8E856': 'Apple',
-            'BC3BAF': 'Apple',
-            'C82A14': 'Apple',
-            'D023DB': 'Apple',
-            'D49A20': 'Apple',
-            'E0ACCB': 'Apple',
-            'E4CE8F': 'Apple',
-            'F437B7': 'Apple',
-            'FC253F': 'Apple',
-            '0C7451': 'Apple',
-            '14109F': 'Apple',
-            '1C91E8': 'Apple',
-            '24A074': 'Apple',
-            '2C1F23': 'Apple',
-            '34159E': 'Apple',
-            '3C2EFF': 'Apple',
-            '40A6D9': 'Apple',
-            '44D884': 'Apple',
-            '4C7C5F': 'Apple',
-            '509EA7': 'Apple',
-            '5C5948': 'Apple',
-            '609217': 'Apple',
-            '64200C': 'Apple',
-            '68967B': 'Apple',
-            '6C4D73': 'Apple',
-            '6C709F': 'Apple',
-            '6C96CF': 'Apple',
-            '7014A6': 'Apple',
-            '7073CB': 'Apple',
-            '78A3E4': 'Apple',
-            '7CC537': 'Apple',
-            '80E650': 'Apple',
-            '8489AD': 'Apple',
-            '88E87F': 'Apple',
-            '8C006D': 'Apple',
-            '8C2DAA': 'Apple',
-            '8CF8C5': 'Apple',
-            '90840D': 'Apple',
-            '98FE94': 'Apple',
-            'A85C2C': 'Apple',
-            'AC3C0B': 'Apple',
-            'B065BD': 'Apple',
-            'B8782E': 'Apple',
-            'C0847A': 'Apple',
-            'C42C03': 'Apple',
-            'C8B5B7': 'Apple',
-            'D0E140': 'Apple',
-            'D4909C': 'Apple',
-            'D8004D': 'Apple',
-            'DC2B61': 'Apple',
-            'E0B52D': 'Apple',
-            'E80688': 'Apple',
-            'E88D28': 'Apple',
-            'F0DBE2': 'Apple',
-            'F0DCE2': 'Apple',
-            'F8D0BD': 'Apple',
-            
-            # Cisco
-            '002241': 'Cisco',
-            '485073': 'Cisco',
-            '7C2EBD': 'Cisco',
-            'DC2B2A': 'Cisco',
-            '001120': 'Cisco',
-            '0016C7': 'Cisco',
-            '001D45': 'Cisco',
-            '001E14': 'Cisco',
-            '0021A0': 'Cisco',
-            '0023EB': 'Cisco',
-            '002618': 'Cisco',
-            '0026CA': 'Cisco',
-            '00D0BA': 'Cisco',
-            '00D0BC': 'Cisco',
-            '00D0FF': 'Cisco',
-            '3C5EC4': 'Cisco',
-            '5C5015': 'Cisco',
-            '6C9C54': 'Cisco',
-            '7081EB': 'Cisco',
-            '88F031': 'Cisco',
-            'A0F84C': 'Cisco',
-            'B8BE76': 'Cisco',
-            'C471FE': 'Cisco',
-            'E4C7A2': 'Cisco',
-            
-            # Microsoft
-            '000D3A': 'Microsoft',
-            '0050F2': 'Microsoft',
-            '001DD8': 'Microsoft',
-            '7C1E52': 'Microsoft',
-            '00155D': 'Microsoft',
-            '0017FA': 'Microsoft',
-            
-            # Intel
-            '8086F2': 'Intel',
-            'F0189C': 'Intel',
-            '001E67': 'Intel',
-            '0024D7': 'Intel',
-            '00D0B7': 'Intel',
-            '3497F6': 'Intel',
-            '7085C2': 'Intel',
-            '94659C': 'Intel',
-            'A0A8CD': 'Intel',
-            'B4B686': 'Intel',
-            'D0509': 'Intel',
-            'E4028': 'Intel',
-            
-            # Samsung
-            '001599': 'Samsung',  # Found in user's network
-            '001632': 'Samsung',
-            '0018AF': 'Samsung',
-            '001D25': 'Samsung',
-            '002566': 'Samsung',
-            '0026FC': 'Samsung',
-            '34BE00': 'Samsung',
-            '38AA3C': 'Samsung',
-            '3C5A37': 'Samsung',
-            '40F520': 'Samsung',
-            '44D6E1': 'Samsung',
-            '5C0A5B': 'Samsung',
-            '68A86D': 'Samsung',
-            '78521A': 'Samsung',
-            '7C6193': 'Samsung',
-            '8C7712': 'Samsung',
-            '9C02A0': 'Samsung',
-            'A0821F': 'Samsung',
-            'B4F0AB': 'Samsung',
-            'C8F230': 'Samsung',
-            'D0176A': 'Samsung',
-            'D4E8B2': 'Samsung',
-            'E0036B': 'Samsung',  # Found in user's network
-            'E8508B': 'Samsung',
-            'EC1F72': 'Samsung',
-            
-            # Google
-            '2C3AE8': 'Google',
-            '3C5A37': 'Google',
-            '54605D': 'Google',
-            '6C198F': 'Google',
-            '74E5F9': 'Google',
-            'A4F1E8': 'Google',
-            'B4F0AB': 'Google',
-            'D8C46A': 'Google',
-            'F4F5E8': 'Google',
-            
-            # Amazon
-            '1C697A': 'Amazon',
-            '4C3275': 'Amazon',
-            '00FC8B': 'Amazon',
-            '44650D': 'Amazon',
-            '747548': 'Amazon',
-            '84D6D0': 'Amazon',
-            'A002DC': 'Amazon',
-            'F0D2F1': 'Amazon',
-            
-            # Xiaomi
-            '0C5477': 'Xiaomi',
-            '90324B': 'Xiaomi',
-            '34CE00': 'Xiaomi',
-            '3CBD3E': 'Xiaomi',  # Found in user's network
-            '50EC50': 'Xiaomi',
-            '64B473': 'Xiaomi',
-            '78022': 'Xiaomi',
-            '8CFABA': 'Xiaomi',
-            'A0E45E': 'Xiaomi',
-            'F8A45F': 'Xiaomi',
-            
-            # TP-Link
-            '001FE2': 'TP-Link',
-            '0025BC': 'TP-Link',
-            '0C8268': 'TP-Link',
-            '1C3BF3': 'TP-Link',
-            '2C3033': 'TP-Link',
-            '3C6AD2': 'TP-Link',  # Found in user's network
-            '5065F3': 'TP-Link',
-            '5C628B': 'TP-Link',
-            '6C5AB0': 'TP-Link',
-            '7C8BCA': 'TP-Link',
-            '98DAC4': 'TP-Link',
-            'A42BB0': 'TP-Link',
-            'B0487A': 'TP-Link',
-            'C06885': 'TP-Link',
-            'D84489': 'TP-Link',  # Found in user's network
-            'D8EB97': 'TP-Link',
-            'E0D362': 'TP-Link',  # Found in user's network
-            'E8DE27': 'TP-Link',
-            'F4F26D': 'TP-Link',
-            '1C61B4': 'TP-Link',
-            '2C30AA': 'TP-Link',
-            '30B49E': 'TP-Link',
-            '4C5E0C': 'TP-Link',
-            '5C8FE0': 'TP-Link',
-            '6C5AB0': 'TP-Link',
-            '7C8BCA': 'TP-Link',
-            '8C21A1': 'TP-Link',
-            '9C53CD': 'TP-Link',
-            'A0F3C1': 'TP-Link',
-            'B0BE76': 'TP-Link',
-            'C46E1F': 'TP-Link',
-            'D46E0E': 'TP-Link',
-            'E4C346': 'TP-Link',
-            'F4EC38': 'TP-Link',
-            
-            # D-Link
-            '001195': 'D-Link',
-            '0015E9': 'D-Link',
-            '001CF0': 'D-Link',
-            '001E58': 'D-Link',
-            '0022B0': 'D-Link',
-            '1C7EE5': 'D-Link',
-            '28107B': 'D-Link',
-            '3C1E04': 'D-Link',
-            '5CD998': 'D-Link',
-            '84C9B2': 'D-Link',
-            'C0A0BB': 'D-Link',
-            'CCB255': 'D-Link',
-            
-            # Hewlett Packard
-            '3CD92B': 'HP',
-            '001438': 'HP',
-            '001CC4': 'HP',
-            '001E0B': 'HP',
-            '002264': 'HP',
-            '00306E': 'HP',
-            '1C98EC': 'HP',
-            '2C27D7': 'HP',
-            '3860F9': 'HP',
-            '6C3BE5': 'HP',
-            '9C8CDC': 'HP',
-            'A0B3CC': 'HP',
-            'B499BA': 'HP',
-            'D48564': 'HP',
-            
-            # Dell
-            '001C23': 'Dell',
-            '0024E8': 'Dell',
-            '00B0D0': 'Dell',
-            '10BF48': 'Dell',
-            '14FEB5': 'Dell',
-            '18A996': 'Dell',
-            '18FB7B': 'Dell',
-            '2016B9': 'Dell',
-            '34E6AD': 'Dell',
-            '44A842': 'Dell',
-            '5C260A': 'Dell',
-            '84B153': 'Dell',
-            '90B11C': 'Dell',
-            'B8CA3A': 'Dell',
-            'D4AE52': 'Dell',
-            'F04DA2': 'Dell',
-            
-            # Huawei
-            '001E10': 'Huawei',
-            '002EC7': 'Huawei',
-            '0C37DC': 'Huawei',
-            '10C61F': 'Huawei',
-            '1C1D67': 'Huawei',
-            '28C63F': 'Huawei',
-            '34CD12': 'Huawei',
-            '3C1E04': 'Huawei',
-            '4C549': 'Huawei',
-            '5C:F9:6A': 'Huawei',
-            '6C4A85': 'Huawei',
-            '7C60AF': 'Huawei',
-            '8C34FD': 'Huawei',
-            'A4C168': 'Huawei',
-            'C81479': 'Huawei',
-            'D0C857': 'Huawei',
-            'E0979': 'Huawei',
-            
-            # VMware / Virtualization
-            '000C29': 'VMware',
-            '005056': 'VMware',
-            '001C42': 'Parallels',
-            '080027': 'VirtualBox',
-            '525400': 'QEMU/KVM',
-            
-            # Other Common
-            '0001C8': 'Thomas-Krenn',
-            '08002B': 'DEC',
-            '100000': 'Private',
-            '74C63B': 'AzureWave',
-            'F43C3B': 'FN-LINK',  # Found in user's network
-        }
-        
-        # Try exact match in local database
-        if oui in vendors:
-            return vendors[oui]
-        
-        # Check if this is a locally administered MAC address
-        # (second character of MAC is 2, 6, A, or E)
-        if mac and len(mac) >= 2:
-            second_char = mac[1].upper()
-            if second_char in ['2', '6', 'A', 'E']:
-                return "Private/Local"
-        
-        # Fallback: Try online API lookup for unknown OUIs
-        # Only try if not in a tight loop (to avoid rate limiting)
-        try:
-            import urllib.request
-            import urllib.error
-            
-            # Use macvendors.com API (free, but has rate limits)
-            url = f"https://api.macvendors.com/{mac}"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Omnicom/1.0'})
-            
-            with urllib.request.urlopen(req, timeout=1) as response:
-                vendor = response.read().decode('utf-8').strip()
-                if vendor and not vendor.startswith('{"errors'):
-                    # Clean up vendor name (take first line only, remove extra info)
-                    vendor = vendor.split('\n')[0]
-                    # Limit length to 30 characters (without ellipsis)
-                    if len(vendor) > 30:
-                        vendor = vendor[:30]
-                    return vendor
-        except urllib.error.HTTPError as e:
-            # 404 = not found, 429 = rate limited
-            if e.code == 404:
-                return "Unknown"
-            # For rate limiting or other errors, just return Unknown
-            pass
-        except (urllib.error.URLError, Exception):
-            # Network error or timeout, return Unknown
-            pass
-        
-        return "Unknown"
-
+        return _get_mac_vendor(mac)
 
     def _get_mac_and_vendor(self, ip):
         """Get MAC address and vendor for an IP"""
@@ -2002,6 +1653,358 @@ class ScanWorker(QThread):
             vendor = self._get_mac_vendor(mac)
             return mac, vendor
         return "", "Unknown"
+
+
+def _get_mac_vendor(mac):
+    """Lookup MAC vendor from OUI (first 3 octets)"""
+    if not mac or len(mac) < 8:
+        return "Unknown"
+
+    # Extract OUI (first 3 octets = 6 hex digits)
+    # Remove colons and get first 6 characters
+    oui = mac.replace(':', '').upper()[:6]
+    
+    # Common vendor database (expanded)
+    vendors = {
+        # IANA and Standards
+        '00005E': 'IANA',
+        '70B3D5': 'IEEE',
+        
+        # Apple
+        '001B63': 'Apple',
+        '10FEED': 'Apple',
+        '3C0754': 'Apple',
+        '54EE75': 'Apple',
+        '6C4008': 'Apple',
+        '8C8590': 'Apple',
+        '9C5C8E': 'Apple',
+        'A0999B': 'Apple',
+        'A483E7': 'Apple',
+        'AC87A3': 'Apple',
+        'B8E856': 'Apple',
+        'BC3BAF': 'Apple',
+        'C82A14': 'Apple',
+        'D023DB': 'Apple',
+        'D49A20': 'Apple',
+        'E0ACCB': 'Apple',
+        'E4CE8F': 'Apple',
+        'F437B7': 'Apple',
+        'FC253F': 'Apple',
+        '0C7451': 'Apple',
+        '14109F': 'Apple',
+        '1C91E8': 'Apple',
+        '24A074': 'Apple',
+        '2C1F23': 'Apple',
+        '34159E': 'Apple',
+        '3C2EFF': 'Apple',
+        '40A6D9': 'Apple',
+        '44D884': 'Apple',
+        '4C7C5F': 'Apple',
+        '509EA7': 'Apple',
+        '5C5948': 'Apple',
+        '609217': 'Apple',
+        '64200C': 'Apple',
+        '68967B': 'Apple',
+        '6C4D73': 'Apple',
+        '6C709F': 'Apple',
+        '6C96CF': 'Apple',
+        '7014A6': 'Apple',
+        '7073CB': 'Apple',
+        '78A3E4': 'Apple',
+        '7CC537': 'Apple',
+        '80E650': 'Apple',
+        '8489AD': 'Apple',
+        '88E87F': 'Apple',
+        '8C006D': 'Apple',
+        '8C2DAA': 'Apple',
+        '8CF8C5': 'Apple',
+        '90840D': 'Apple',
+        '98FE94': 'Apple',
+        'A85C2C': 'Apple',
+        'AC3C0B': 'Apple',
+        'B065BD': 'Apple',
+        'B8782E': 'Apple',
+        'C0847A': 'Apple',
+        'C42C03': 'Apple',
+        'C8B5B7': 'Apple',
+        'D0E140': 'Apple',
+        'D4909C': 'Apple',
+        'D8004D': 'Apple',
+        'DC2B61': 'Apple',
+        'E0B52D': 'Apple',
+        'E80688': 'Apple',
+        'E88D28': 'Apple',
+        'F0DBE2': 'Apple',
+        'F0DCE2': 'Apple',
+        'F8D0BD': 'Apple',
+        
+        # Cisco
+        '002241': 'Cisco',
+        '485073': 'Cisco',
+        '7C2EBD': 'Cisco',
+        'DC2B2A': 'Cisco',
+        '001120': 'Cisco',
+        '0016C7': 'Cisco',
+        '001D45': 'Cisco',
+        '001E14': 'Cisco',
+        '0021A0': 'Cisco',
+        '0023EB': 'Cisco',
+        '002618': 'Cisco',
+        '0026CA': 'Cisco',
+        '00D0BA': 'Cisco',
+        '00D0BC': 'Cisco',
+        '00D0FF': 'Cisco',
+        '3C5EC4': 'Cisco',
+        '5C5015': 'Cisco',
+        '6C9C54': 'Cisco',
+        '7081EB': 'Cisco',
+        '88F031': 'Cisco',
+        'A0F84C': 'Cisco',
+        'B8BE76': 'Cisco',
+        'C471FE': 'Cisco',
+        'E4C7A2': 'Cisco',
+        
+        # Microsoft
+        '000D3A': 'Microsoft',
+        '0050F2': 'Microsoft',
+        '001DD8': 'Microsoft',
+        '7C1E52': 'Microsoft',
+        '00155D': 'Microsoft',
+        '0017FA': 'Microsoft',
+        
+        # Intel
+        '8086F2': 'Intel',
+        'F0189C': 'Intel',
+        '001E67': 'Intel',
+        '0024D7': 'Intel',
+        '00D0B7': 'Intel',
+        '3497F6': 'Intel',
+        '7085C2': 'Intel',
+        '94659C': 'Intel',
+        'A0A8CD': 'Intel',
+        'B4B686': 'Intel',
+        'D0509': 'Intel',
+        'E4028': 'Intel',
+        
+        # Samsung
+        '001599': 'Samsung',  # Found in user's network
+        '001632': 'Samsung',
+        '0018AF': 'Samsung',
+        '001D25': 'Samsung',
+        '002566': 'Samsung',
+        '0026FC': 'Samsung',
+        '34BE00': 'Samsung',
+        '38AA3C': 'Samsung',
+        '3C5A37': 'Samsung',
+        '40F520': 'Samsung',
+        '44D6E1': 'Samsung',
+        '5C0A5B': 'Samsung',
+        '68A86D': 'Samsung',
+        '78521A': 'Samsung',
+        '7C6193': 'Samsung',
+        '8C7712': 'Samsung',
+        '9C02A0': 'Samsung',
+        'A0821F': 'Samsung',
+        'B4F0AB': 'Samsung',
+        'C8F230': 'Samsung',
+        'D0176A': 'Samsung',
+        'D4E8B2': 'Samsung',
+        'E0036B': 'Samsung',  # Found in user's network
+        'E8508B': 'Samsung',
+        'EC1F72': 'Samsung',
+        
+        # Google
+        '2C3AE8': 'Google',
+        '3C5A37': 'Google',
+        '54605D': 'Google',
+        '6C198F': 'Google',
+        '74E5F9': 'Google',
+        'A4F1E8': 'Google',
+        'B4F0AB': 'Google',
+        'D8C46A': 'Google',
+        'F4F5E8': 'Google',
+        
+        # Amazon
+        '1C697A': 'Amazon',
+        '4C3275': 'Amazon',
+        '00FC8B': 'Amazon',
+        '44650D': 'Amazon',
+        '747548': 'Amazon',
+        '84D6D0': 'Amazon',
+        'A002DC': 'Amazon',
+        'F0D2F1': 'Amazon',
+        
+        # Xiaomi
+        '0C5477': 'Xiaomi',
+        '90324B': 'Xiaomi',
+        '34CE00': 'Xiaomi',
+        '3CBD3E': 'Xiaomi',  # Found in user's network
+        '50EC50': 'Xiaomi',
+        '64B473': 'Xiaomi',
+        '78022': 'Xiaomi',
+        '8CFABA': 'Xiaomi',
+        'A0E45E': 'Xiaomi',
+        'F8A45F': 'Xiaomi',
+        
+        # TP-Link
+        '001FE2': 'TP-Link',
+        '0025BC': 'TP-Link',
+        '0C8268': 'TP-Link',
+        '1C3BF3': 'TP-Link',
+        '2C3033': 'TP-Link',
+        '3C6AD2': 'TP-Link',  # Found in user's network
+        '5065F3': 'TP-Link',
+        '5C628B': 'TP-Link',
+        '6C5AB0': 'TP-Link',
+        '7C8BCA': 'TP-Link',
+        '98DAC4': 'TP-Link',
+        'A42BB0': 'TP-Link',
+        'B0487A': 'TP-Link',
+        'C06885': 'TP-Link',
+        'D84489': 'TP-Link',  # Found in user's network
+        'D8EB97': 'TP-Link',
+        'E0D362': 'TP-Link',  # Found in user's network
+        'E8DE27': 'TP-Link',
+        'F4F26D': 'TP-Link',
+        '1C61B4': 'TP-Link',
+        '2C30AA': 'TP-Link',
+        '30B49E': 'TP-Link',
+        '4C5E0C': 'TP-Link',
+        '5C8FE0': 'TP-Link',
+        '6C5AB0': 'TP-Link',
+        '7C8BCA': 'TP-Link',
+        '8C21A1': 'TP-Link',
+        '9C53CD': 'TP-Link',
+        'A0F3C1': 'TP-Link',
+        'B0BE76': 'TP-Link',
+        'C46E1F': 'TP-Link',
+        'D46E0E': 'TP-Link',
+        'E4C346': 'TP-Link',
+        'F4EC38': 'TP-Link',
+        
+        # D-Link
+        '001195': 'D-Link',
+        '0015E9': 'D-Link',
+        '001CF0': 'D-Link',
+        '001E58': 'D-Link',
+        '0022B0': 'D-Link',
+        '1C7EE5': 'D-Link',
+        '28107B': 'D-Link',
+        '3C1E04': 'D-Link',
+        '5CD998': 'D-Link',
+        '84C9B2': 'D-Link',
+        'C0A0BB': 'D-Link',
+        'CCB255': 'D-Link',
+        
+        # Hewlett Packard
+        '3CD92B': 'HP',
+        '001438': 'HP',
+        '001CC4': 'HP',
+        '001E0B': 'HP',
+        '002264': 'HP',
+        '00306E': 'HP',
+        '1C98EC': 'HP',
+        '2C27D7': 'HP',
+        '3860F9': 'HP',
+        '6C3BE5': 'HP',
+        '9C8CDC': 'HP',
+        'A0B3CC': 'HP',
+        'B499BA': 'HP',
+        'D48564': 'HP',
+        
+        # Dell
+        '001C23': 'Dell',
+        '0024E8': 'Dell',
+        '00B0D0': 'Dell',
+        '10BF48': 'Dell',
+        '14FEB5': 'Dell',
+        '18A996': 'Dell',
+        '18FB7B': 'Dell',
+        '2016B9': 'Dell',
+        '34E6AD': 'Dell',
+        '44A842': 'Dell',
+        '5C260A': 'Dell',
+        '84B153': 'Dell',
+        '90B11C': 'Dell',
+        'B8CA3A': 'Dell',
+        'D4AE52': 'Dell',
+        'F04DA2': 'Dell',
+        
+        # Huawei
+        '001E10': 'Huawei',
+        '002EC7': 'Huawei',
+        '0C37DC': 'Huawei',
+        '10C61F': 'Huawei',
+        '1C1D67': 'Huawei',
+        '28C63F': 'Huawei',
+        '34CD12': 'Huawei',
+        '3C1E04': 'Huawei',
+        '4C549': 'Huawei',
+        '5C:F9:6A': 'Huawei',
+        '6C4A85': 'Huawei',
+        '7C60AF': 'Huawei',
+        '8C34FD': 'Huawei',
+        'A4C168': 'Huawei',
+        'C81479': 'Huawei',
+        'D0C857': 'Huawei',
+        'E0979': 'Huawei',
+        
+        # VMware / Virtualization
+        '000C29': 'VMware',
+        '005056': 'VMware',
+        '001C42': 'Parallels',
+        '080027': 'VirtualBox',
+        '525400': 'QEMU/KVM',
+        
+        # Other Common
+        '0001C8': 'Thomas-Krenn',
+        '08002B': 'DEC',
+        '100000': 'Private',
+        '74C63B': 'AzureWave',
+        'F43C3B': 'FN-LINK',  # Found in user's network
+    }
+    
+    # Try exact match in local database
+    if oui in vendors:
+        return vendors[oui]
+    
+    # Check if this is a locally administered MAC address
+    # (second character of MAC is 2, 6, A, or E)
+    if mac and len(mac) >= 2:
+        second_char = mac[1].upper()
+        if second_char in ['2', '6', 'A', 'E']:
+            return "Private/Local"
+    
+    # Fallback: Try online API lookup for unknown OUIs
+    # Only try if not in a tight loop (to avoid rate limiting)
+    try:
+        import urllib.request
+        import urllib.error
+        
+        # Use macvendors.com API (free, but has rate limits)
+        url = f"https://api.macvendors.com/{mac}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Omnicom/1.0'})
+        
+        with urllib.request.urlopen(req, timeout=1) as response:
+            vendor = response.read().decode('utf-8').strip()
+            if vendor and not vendor.startswith('{"errors'):
+                # Clean up vendor name (take first line only, remove extra info)
+                vendor = vendor.split('\n')[0]
+                # Limit length to 30 characters (without ellipsis)
+                if len(vendor) > 30:
+                    vendor = vendor[:30]
+                return vendor
+    except urllib.error.HTTPError as e:
+        # 404 = not found, 429 = rate limited
+        if e.code == 404:
+            return "Unknown"
+        # For rate limiting or other errors, just return Unknown
+        pass
+    except (urllib.error.URLError, Exception):
+        # Network error or timeout, return Unknown
+        pass
+    
+    return "Unknown"
 
 
 class ConnectionWorker(QThread):
@@ -2868,17 +2871,6 @@ class WifiChannelChart(QWidget):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPath(top_curve)
 
-            # ── Mark -3dB points ─────────────────────────────────────────
-            x_3db_left = center_x - sigma_px
-            x_3db_right = center_x + sigma_px
-            y_3db = self._dbm_to_y(dbm - 3, chart_h, pad_t, dbm_min, dbm_max)
-            marker_color = QColor(color)
-            marker_color.setAlpha(255)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(marker_color)
-            painter.drawEllipse(QPointF(x_3db_left, y_3db), 3, 3)
-            painter.drawEllipse(QPointF(x_3db_right, y_3db), 3, 3)
-
             # ── SSID label with collision avoidance ──────────────────────
             font_size = 8 if not is_active else 9
             painter.setFont(QFont('Sans Serif', font_size, QFont.Weight.Bold))
@@ -2906,7 +2898,7 @@ class WifiChannelChart(QWidget):
             # Shadow then main text
             painter.setPen(QColor(0, 0, 0, 180))
             painter.drawText(label_x + 1, label_y + 1, ssid)
-            painter.setPen(marker_color)
+            painter.setPen(QColor(color))
             painter.drawText(label_x, label_y, ssid)
             painter.setFont(font_mono)
 
@@ -7460,27 +7452,32 @@ class SerialTerminalGUI(QMainWindow):
 
         # === Configuration group ===
         config_group = QGroupBox("WiFi Configuration")
-        config_layout = QFormLayout()
-        config_layout.setVerticalSpacing(4)
-        config_layout.setContentsMargins(8, 5, 8, 6)
-        config_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        config_layout = QGridLayout()
+        config_layout.setVerticalSpacing(6)
+        config_layout.setHorizontalSpacing(8)
+        config_layout.setContentsMargins(12, 8, 12, 10)
+        config_layout.setColumnStretch(1, 1)
+        config_layout.setColumnStretch(3, 1)
 
-        # Interface selector
-        iface_widget = QWidget()
-        iface_layout = QHBoxLayout(iface_widget)
-        iface_layout.setContentsMargins(0, 0, 0, 0)
-        iface_layout.setSpacing(6)
+        _lbl_style = "color: #555555; font-size: 9pt;"
+
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(_lbl_style)
+            l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            return l
+
+        # ── Widgets ──────────────────────────────────────────────────────────
 
         self.wifi_iface_combo = QComboBox()
         self.wifi_iface_combo.setFixedWidth(140)
         self.wifi_iface_combo.setToolTip("WiFi interface to use for scanning")
         self.wifi_iface_combo.setStyleSheet(combo_style)
 
-        refresh_iface_btn = QPushButton()
+        refresh_iface_btn = QPushButton("↻")
         refresh_iface_btn.setFixedSize(26, 26)
         refresh_iface_btn.setToolTip("Refresh interface list")
         refresh_iface_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        refresh_iface_btn.setText("↻")
         refresh_iface_btn.setStyleSheet("""
             QPushButton { background-color: #e0e0e0; border: 1px solid #bdbdbd;
                           border-radius: 4px; font-size: 12pt; color: #555555; }
@@ -7488,42 +7485,24 @@ class SerialTerminalGUI(QMainWindow):
         """)
         refresh_iface_btn.clicked.connect(self._wifi_refresh_interfaces)
 
-        # Band filter
-        band_label = QLabel("Band:")
-        band_label.setStyleSheet("color: #555555; font-size: 9pt;")
         self.wifi_band_combo = QComboBox()
         self.wifi_band_combo.addItems(["All", "2.4 GHz", "5 GHz"])
-        self.wifi_band_combo.setFixedWidth(90)
+        self.wifi_band_combo.setFixedWidth(100)
         self.wifi_band_combo.setToolTip("Filter results by frequency band")
         self.wifi_band_combo.setStyleSheet(combo_style)
 
-        # Chart band filter
-        chart_band_label = QLabel("Chart:")
-        chart_band_label.setStyleSheet("color: #555555; font-size: 9pt;")
         self.wifi_chart_band_combo = QComboBox()
         self.wifi_chart_band_combo.addItems(["2.4 GHz", "5 GHz", "Both"])
-        self.wifi_chart_band_combo.setFixedWidth(90)
+        self.wifi_chart_band_combo.setFixedWidth(100)
         self.wifi_chart_band_combo.setToolTip("Select band for channel usage chart")
         self.wifi_chart_band_combo.setStyleSheet(combo_style)
 
-        iface_layout.addWidget(self.wifi_iface_combo)
-        iface_layout.addWidget(refresh_iface_btn)
-        iface_layout.addSpacing(12)
-        iface_layout.addWidget(band_label)
-        iface_layout.addWidget(self.wifi_band_combo)
-        iface_layout.addSpacing(12)
-        iface_layout.addWidget(chart_band_label)
-        iface_layout.addWidget(self.wifi_chart_band_combo)
-        iface_layout.addStretch()
-        config_layout.addRow("Interface:", iface_widget)
+        self.wifi_min_signal_combo = QComboBox()
+        self.wifi_min_signal_combo.addItems(["Any", "≥ -88 dBm", "≥ -75 dBm", "≥ -63 dBm"])
+        self.wifi_min_signal_combo.setFixedWidth(100)
+        self.wifi_min_signal_combo.setStyleSheet(combo_style)
 
-        # Auto-refresh
-        auto_widget = QWidget()
-        auto_layout = QHBoxLayout(auto_widget)
-        auto_layout.setContentsMargins(0, 0, 0, 0)
-        auto_layout.setSpacing(8)
-
-        self.wifi_auto_refresh_cb = QCheckBox("Auto-refresh every")
+        self.wifi_auto_refresh_cb = QCheckBox("Enabled")
         self.wifi_auto_refresh_cb.setChecked(True)
         self.wifi_auto_refresh_cb.setStyleSheet("""
             QCheckBox { color: #333333; font-size: 9pt; spacing: 4px; }
@@ -7532,35 +7511,53 @@ class SerialTerminalGUI(QMainWindow):
                 border: 1px solid #bdbdbd; border-radius: 3px;
                 background-color: #f5f5f5;
             }
-            QCheckBox::indicator:checked {
-                background-color: #E91E63; border-color: #E91E63;
-            }
-            QCheckBox::indicator:hover { border-color: #E91E63; }
+            QCheckBox::indicator:checked { background-color: #E91E63; border-color: #E91E63; }
+            QCheckBox::indicator:hover   { border-color: #E91E63; }
         """)
+
         self.wifi_interval_combo = QComboBox()
         self.wifi_interval_combo.addItems(["5s", "10s", "15s", "30s"])
         self.wifi_interval_combo.setCurrentText("5s")
         self.wifi_interval_combo.setFixedWidth(70)
         self.wifi_interval_combo.setStyleSheet(combo_style)
-        interval_unit_lbl = QLabel("seconds")
-        interval_unit_lbl.setStyleSheet("color: #555555; font-size: 9pt;")
 
-        # Min signal filter
-        sig_filter_lbl = QLabel("Min signal:")
-        sig_filter_lbl.setStyleSheet("color: #555555; font-size: 9pt;")
-        self.wifi_min_signal_combo = QComboBox()
-        self.wifi_min_signal_combo.addItems(["Any", "≥ -88 dBm", "≥ -75 dBm", "≥ -63 dBm"])
-        self.wifi_min_signal_combo.setFixedWidth(100)
-        self.wifi_min_signal_combo.setStyleSheet(combo_style)
+        # ── Row 0: Interface  |  Band filter ─────────────────────────────────
+        iface_cell = QWidget()
+        iface_cell_layout = QHBoxLayout(iface_cell)
+        iface_cell_layout.setContentsMargins(0, 0, 0, 0)
+        iface_cell_layout.setSpacing(4)
+        iface_cell_layout.addWidget(self.wifi_iface_combo)
+        iface_cell_layout.addWidget(refresh_iface_btn)
+        iface_cell_layout.addStretch()
 
-        auto_layout.addWidget(self.wifi_auto_refresh_cb)
-        auto_layout.addWidget(self.wifi_interval_combo)
-        auto_layout.addWidget(interval_unit_lbl)
-        auto_layout.addSpacing(16)
-        auto_layout.addWidget(sig_filter_lbl)
-        auto_layout.addWidget(self.wifi_min_signal_combo)
-        auto_layout.addStretch()
-        config_layout.addRow("Scan:", auto_widget)
+        config_layout.addWidget(_lbl("Interface:"),  0, 0)
+        config_layout.addWidget(iface_cell,          0, 1)
+        config_layout.addWidget(_lbl("Band filter:"), 0, 2)
+        config_layout.addWidget(self.wifi_band_combo, 0, 3)
+
+        # ── Row 1: Chart band  |  Min signal ──────────────────────────────────
+        config_layout.addWidget(_lbl("Chart band:"),         1, 0)
+        config_layout.addWidget(self.wifi_chart_band_combo,  1, 1)
+        config_layout.addWidget(_lbl("Min signal:"),         1, 2)
+        config_layout.addWidget(self.wifi_min_signal_combo,  1, 3)
+
+        # ── Row 2: Auto-refresh (full width) ──────────────────────────────────
+        auto_cell = QWidget()
+        auto_cell_layout = QHBoxLayout(auto_cell)
+        auto_cell_layout.setContentsMargins(0, 0, 0, 0)
+        auto_cell_layout.setSpacing(6)
+        auto_cell_layout.addWidget(self.wifi_auto_refresh_cb)
+        interval_lbl = QLabel("every")
+        interval_lbl.setStyleSheet(_lbl_style)
+        auto_cell_layout.addWidget(interval_lbl)
+        auto_cell_layout.addWidget(self.wifi_interval_combo)
+        unit_lbl = QLabel("seconds")
+        unit_lbl.setStyleSheet(_lbl_style)
+        auto_cell_layout.addWidget(unit_lbl)
+        auto_cell_layout.addStretch()
+
+        config_layout.addWidget(_lbl("Auto-refresh:"), 2, 0)
+        config_layout.addWidget(auto_cell,             2, 1, 1, 3)
 
         config_group.setLayout(config_layout)
         shadow1 = QGraphicsDropShadowEffect()
@@ -7576,20 +7573,23 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(4)
 
         self.wifi_table = QTableWidget()
-        self.wifi_table.setColumnCount(10)
+        self.wifi_table.setColumnCount(11)
         self.wifi_table.setHorizontalHeaderLabels(
-            ["👁", "SSID", "BSSID", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security"]
+            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security"]
         )
         # Column 0: Visibility checkbox
         self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.wifi_table.setColumnWidth(0, 35)
         # Column 1: SSID
         self.wifi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.wifi_table.setColumnWidth(1, 200)
-        # Column 2: BSSID (stretch)
-        self.wifi_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.wifi_table.setColumnWidth(1, 180)
+        # Column 2: BSSID
+        self.wifi_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.wifi_table.setColumnWidth(2, 130)
+        # Column 3: Vendor (stretch)
+        self.wifi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         # Other columns
-        for col, w in [(3, 110), (4, 70), (5, 40), (6, 60), (7, 65), (8, 100), (9, 110)]:
+        for col, w in [(4, 110), (5, 70), (6, 40), (7, 60), (8, 65), (9, 100), (10, 110)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -8791,7 +8791,14 @@ class SerialTerminalGUI(QMainWindow):
         bssid_item.setForeground(QColor(bssid_color))
         self.wifi_table.setItem(row, 2, bssid_item)
 
-        # Col 3 — Signal bar + dBm
+        # Col 3 — Vendor (from OUI lookup)
+        vendor = _get_mac_vendor(net['bssid'])
+        net['vendor'] = vendor
+        vendor_item = QTableWidgetItem(vendor)
+        vendor_item.setForeground(QColor('#555555') if vendor == 'Unknown' else QColor('#1a237e'))
+        self.wifi_table.setItem(row, 3, vendor_item)
+
+        # Col 4 — Signal bar + dBm
         sig_pct = net['signal_pct']
         bars = self._wifi_signal_bars(sig_pct)
         sig_item = QTableWidgetItem(f"{bars}  {net['dbm']} dBm")
@@ -8802,9 +8809,9 @@ class SerialTerminalGUI(QMainWindow):
             sig_item.setForeground(QColor('#f57f17'))
         else:
             sig_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 3, sig_item)
+        self.wifi_table.setItem(row, 4, sig_item)
 
-        # Col 4 — SNR (Signal-to-Noise Ratio)
+        # Col 5 — SNR (Signal-to-Noise Ratio)
         snr = net.get('snr', 0)
         snr_item = QTableWidgetItem(f"{snr} dB" if snr > 0 else "N/A")
         snr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -8814,14 +8821,14 @@ class SerialTerminalGUI(QMainWindow):
             snr_item.setForeground(QColor('#f57f17'))  # Good
         elif snr > 0:
             snr_item.setForeground(QColor('#c62828'))  # Poor
-        self.wifi_table.setItem(row, 4, snr_item)
+        self.wifi_table.setItem(row, 5, snr_item)
 
-        # Col 5 — Channel
+        # Col 6 — Channel
         ch_item = QTableWidgetItem(str(net['channel']))
         ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.wifi_table.setItem(row, 5, ch_item)
+        self.wifi_table.setItem(row, 6, ch_item)
 
-        # Col 6 — Bandwidth
+        # Col 7 — Bandwidth
         bandwidth = net.get('bandwidth', 20)
         bw_item = QTableWidgetItem(f"{bandwidth} MHz")
         bw_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -8831,15 +8838,15 @@ class SerialTerminalGUI(QMainWindow):
             bw_item.setForeground(QColor('#2e7d32'))  # Green for medium
         else:
             bw_item.setForeground(QColor('#757575'))  # Gray for narrow
-        self.wifi_table.setItem(row, 6, bw_item)
+        self.wifi_table.setItem(row, 7, bw_item)
 
-        # Col 7 — Band
-        self.wifi_table.setItem(row, 7, QTableWidgetItem(net['band']))
+        # Col 8 — Band
+        self.wifi_table.setItem(row, 8, QTableWidgetItem(net['band']))
 
-        # Col 8 — Rate
-        self.wifi_table.setItem(row, 8, QTableWidgetItem(net['rate']))
+        # Col 9 — Rate
+        self.wifi_table.setItem(row, 9, QTableWidgetItem(net['rate']))
 
-        # Col 9 — Security
+        # Col 10 — Security
         sec = net['security']
         sec_item = QTableWidgetItem(sec)
         if 'WPA3' in sec:
@@ -8848,7 +8855,7 @@ class SerialTerminalGUI(QMainWindow):
             sec_item.setForeground(QColor('#2e7d32'))
         elif sec == 'Open':
             sec_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 9, sec_item)
+        self.wifi_table.setItem(row, 10, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
 
@@ -9158,8 +9165,8 @@ class SerialTerminalGUI(QMainWindow):
             with open(path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=['ssid', 'bssid', 'signal_pct', 'dbm', 'snr', 'channel',
-                                'bandwidth', 'band', 'rate', 'security', 'in_use'],
+                    fieldnames=['ssid', 'bssid', 'vendor', 'signal_pct', 'dbm', 'snr',
+                                'channel', 'bandwidth', 'band', 'rate', 'security', 'in_use'],
                     extrasaction='ignore'
                 )
                 writer.writeheader()
