@@ -8329,21 +8329,50 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
-        copy_ip_action = menu.addAction("Copy IP Address")
-        copy_hostname_action = menu.addAction("Copy Hostname")
+        http_action     = menu.addAction("Open in Browser (HTTP)")
+        https_action    = menu.addAction("Open in Browser (HTTPS)")
+        menu.addSeparator()
+        ssh_action      = menu.addAction("Connect via SSH")
+        telnet_action   = menu.addAction("Connect via Telnet")
+        menu.addSeparator()
+        ipscan_action   = menu.addAction("IP Scan (TCP)")
+        snmpwalk_action = menu.addAction("SNMP Walk")
         menu.addSeparator()
         ip_details_action = menu.addAction("IP Details (Whois / Geo)")
         menu.addSeparator()
-        copy_row_action = menu.addAction("Copy Row")
+        copy_ip_action      = menu.addAction("Copy IP Address")
+        copy_hostname_action = menu.addAction("Copy Hostname")
+        copy_row_action     = menu.addAction("Copy Row")
 
         action = menu.exec(self.traceroute_results_table.viewport().mapToGlobal(pos))
 
-        if action == copy_ip_action:
+        if action == http_action:
+            import webbrowser
+            webbrowser.open(f"http://{ip}")
+        elif action == https_action:
+            import webbrowser
+            webbrowser.open(f"https://{ip}")
+        elif action == ssh_action:
+            self._scan_open_connection(ip, 'ssh')
+        elif action == telnet_action:
+            self._scan_open_connection(ip, 'telnet')
+        elif action == ipscan_action:
+            self.scan_network_input.setText(ip)
+            self.scan_mask_combo.setCurrentText("32")
+            self.scan_method_combo.setCurrentText("TCP")
+            self.switch_tab(3)
+            self._start_scan()
+        elif action == snmpwalk_action:
+            self.snmp_host_input.setText(ip)
+            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self.switch_tab(4)
+            self.execute_snmp_query()
+        elif action == ip_details_action:
+            self._show_ip_details_dialog(ip, hostname)
+        elif action == copy_ip_action:
             QApplication.clipboard().setText(ip)
         elif action == copy_hostname_action:
             QApplication.clipboard().setText(hostname)
-        elif action == ip_details_action:
-            self._show_ip_details_dialog(ip, hostname)
         elif action == copy_row_action:
             QApplication.clipboard().setText(f"Hop {hop_num}: {ip} ({hostname}) — {latency}")
 
@@ -9592,6 +9621,7 @@ class SerialTerminalGUI(QMainWindow):
         telnet_action = menu.addAction("Connect via Telnet")
         menu.addSeparator()
         snmpwalk_action = menu.addAction("SNMP Walk")
+        tracert_action  = menu.addAction("Traceroute (ICMP MTR)")
         menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
@@ -9612,6 +9642,83 @@ class SerialTerminalGUI(QMainWindow):
             self.snmp_query_type_combo.setCurrentText("snmpwalk")
             self.switch_tab(4)
             self.execute_snmp_query()
+        elif action == tracert_action:
+            self.traceroute_target_input.setText(ip)
+            self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
+            self.switch_tab(5)
+            self._start_traceroute()
+        elif action == copy_action:
+            QApplication.clipboard().setText(ip)
+
+    def _ssh_profile_context_menu(self, pos):
+        """Context menu for SSH Quick Connect table — network tools."""
+        item = self.ssh_profiles_table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        ip_item = self.ssh_profiles_table.item(row, 1)
+        if not ip_item:
+            return
+        ip = ip_item.text().strip()
+        if not ip:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #e8e8e8;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #d0d0d0;
+                margin: 4px 8px;
+            }
+        """)
+
+        http_action    = menu.addAction("Open in Browser (HTTP)")
+        https_action   = menu.addAction("Open in Browser (HTTPS)")
+        menu.addSeparator()
+        ipscan_action  = menu.addAction("IP Scan (TCP)")
+        snmpwalk_action = menu.addAction("SNMP Walk")
+        tracert_action = menu.addAction("Traceroute (ICMP MTR)")
+        menu.addSeparator()
+        copy_action = menu.addAction("Copy IP Address")
+
+        action = menu.exec(self.ssh_profiles_table.viewport().mapToGlobal(pos))
+
+        if action == http_action:
+            import webbrowser
+            webbrowser.open(f"http://{ip}")
+        elif action == https_action:
+            import webbrowser
+            webbrowser.open(f"https://{ip}")
+        elif action == ipscan_action:
+            self.scan_network_input.setText(ip)
+            self.scan_mask_combo.setCurrentText("32")
+            self.scan_method_combo.setCurrentText("TCP")
+            self.switch_tab(3)
+            self._start_scan()
+        elif action == snmpwalk_action:
+            self.snmp_host_input.setText(ip)
+            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self.switch_tab(4)
+            self.execute_snmp_query()
+        elif action == tracert_action:
+            self.traceroute_target_input.setText(ip)
+            self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
+            self.switch_tab(5)
+            self._start_traceroute()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
@@ -9936,6 +10043,8 @@ class SerialTerminalGUI(QMainWindow):
         """)
         profiles_layout.addWidget(self.ssh_profiles_table)
         self._enable_table_tooltips(self.ssh_profiles_table)
+        self.ssh_profiles_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ssh_profiles_table.customContextMenuRequested.connect(self._ssh_profile_context_menu)
 
         # Buttons row (centered, below table)
         btn_layout = QHBoxLayout()
