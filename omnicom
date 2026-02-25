@@ -1655,16 +1655,25 @@ class ScanWorker(QThread):
         return "", "Unknown"
 
 
+_OUI_VENDORS = None   # built once, re-used on every subsequent call
+
 def _get_mac_vendor(mac):
-    """Lookup MAC vendor from OUI (first 3 octets)"""
+    """Lookup MAC vendor from OUI (first 3 octets). Dict is built once and cached."""
+    global _OUI_VENDORS
     if not mac or len(mac) < 8:
         return "Unknown"
 
-    # Extract OUI (first 3 octets = 6 hex digits)
-    # Remove colons and get first 6 characters
     oui = mac.replace(':', '').upper()[:6]
-    
-    # Common vendor database (expanded)
+
+    # Fast path: dict already built
+    if _OUI_VENDORS is not None:
+        if oui in _OUI_VENDORS:
+            return _OUI_VENDORS[oui]
+        if len(mac) >= 2 and mac[1].upper() in ('2', '6', 'A', 'E'):
+            return 'Private/Local'
+        return 'Unknown'
+
+    # First call only: build the lookup table
     vendors = {
         # IANA and Standards
         '00005E': 'IANA',
@@ -1964,47 +1973,13 @@ def _get_mac_vendor(mac):
         'F43C3B': 'FN-LINK',  # Found in user's network
     }
     
-    # Try exact match in local database
+    _OUI_VENDORS = vendors   # cache for all future calls
+
     if oui in vendors:
         return vendors[oui]
-    
-    # Check if this is a locally administered MAC address
-    # (second character of MAC is 2, 6, A, or E)
-    if mac and len(mac) >= 2:
-        second_char = mac[1].upper()
-        if second_char in ['2', '6', 'A', 'E']:
-            return "Private/Local"
-    
-    # Fallback: Try online API lookup for unknown OUIs
-    # Only try if not in a tight loop (to avoid rate limiting)
-    try:
-        import urllib.request
-        import urllib.error
-        
-        # Use macvendors.com API (free, but has rate limits)
-        url = f"https://api.macvendors.com/{mac}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Omnicom/1.0'})
-        
-        with urllib.request.urlopen(req, timeout=1) as response:
-            vendor = response.read().decode('utf-8').strip()
-            if vendor and not vendor.startswith('{"errors'):
-                # Clean up vendor name (take first line only, remove extra info)
-                vendor = vendor.split('\n')[0]
-                # Limit length to 30 characters (without ellipsis)
-                if len(vendor) > 30:
-                    vendor = vendor[:30]
-                return vendor
-    except urllib.error.HTTPError as e:
-        # 404 = not found, 429 = rate limited
-        if e.code == 404:
-            return "Unknown"
-        # For rate limiting or other errors, just return Unknown
-        pass
-    except (urllib.error.URLError, Exception):
-        # Network error or timeout, return Unknown
-        pass
-    
-    return "Unknown"
+    if len(mac) >= 2 and mac[1].upper() in ('2', '6', 'A', 'E'):
+        return 'Private/Local'
+    return 'Unknown'
 
 
 class ConnectionWorker(QThread):
@@ -2698,7 +2673,7 @@ class WifiChannelChart(QWidget):
         self._target_sig = {}     # channel → target signal value
         self._ch_bandwidth = {}   # channel → max bandwidth in MHz
         self._anim_timer = QTimer(self)
-        self._anim_timer.setInterval(16)  # ~60 fps
+        self._anim_timer.setInterval(33)  # ~30 fps
         self._anim_timer.timeout.connect(self._anim_step)
 
         # Mouse tracking for tooltips
@@ -2707,6 +2682,14 @@ class WifiChannelChart(QWidget):
         self._selected_bssid = None  # BSSID highlighted from table selection
         self._ssid_curves = {}  # ssid_bssid → curve info for hit detection
         self._hidden_ssids = set()  # Set of hidden SSIDs
+
+        # White noise generator — enabled by default
+        self._noise_enabled = True
+        self._noise_cache   = None  # invalidated when band changes or noise toggled
+        self._noise_timer   = QTimer(self)
+        self._noise_timer.setInterval(33)   # 30 fps
+        self._noise_timer.timeout.connect(self._update_noise)
+        self._noise_timer.start()
 
         # Tooltip styling
         self.setStyleSheet("""
@@ -2793,6 +2776,24 @@ class WifiChannelChart(QWidget):
         """Calculate gaussian curve value at position x"""
         import math
         return math.exp(-0.5 * ((x - center) / sigma) ** 2)
+
+    # ── White noise ───────────────────────────────────────────────────────────
+
+    def set_noise(self, enabled: bool):
+        """Enable or disable the animated white-noise overlay."""
+        self._noise_enabled = enabled
+        self._noise_cache   = None   # invalidate so next frame is fresh
+        if enabled:
+            self._noise_timer.start()
+        else:
+            self._noise_timer.stop()
+        self.update()
+
+    def _update_noise(self):
+        """Request a repaint; noise is computed fresh inside paintEvent."""
+        self.update()
+
+    # ── BSSID selection ───────────────────────────────────────────────────────
 
     def select_bssid(self, bssid):
         """Highlight a specific BSSID from table selection."""
@@ -2973,6 +2974,30 @@ class WifiChannelChart(QWidget):
         # Track label placements for collision avoidance: list of (x1, y1, x2, y2)
         placed_labels = []
 
+        # ── Pre-compute noise frame (always fresh — no timer dependency) ──
+        # Two adjacent "slots" at 30 fps are blended so the animation is
+        # perfectly smooth regardless of what triggered this repaint.
+        if self._noise_enabled:
+            import random as _rnd, time as _time
+            _N    = 320
+            _t    = _time.monotonic() * 30.0   # units: 1/30 s slots
+            _fa   = int(_t)
+            _bl   = _t - _fa                    # blend factor 0→1
+
+            cache = getattr(self, '_noise_cache', None)
+            if cache is None or cache[0] != _fa:
+                def _mk(seed):
+                    r = _rnd.Random(seed)
+                    return [r.gauss(0, 2.2) +
+                            (r.uniform(4, 18) if r.random() < 0.025 else 0.0)
+                            for _ in range(_N)]
+                _a, _b = _mk(_fa), _mk(_fa + 1)
+                self._noise_cache = (_fa, _a, _b)
+            _, _a, _b = self._noise_cache
+            _noise_frame = [_a[j] * (1.0 - _bl) + _b[j] * _bl for j in range(_N)]
+        else:
+            _noise_frame = []
+
         # Draw each network as a gaussian curve
         num_points = 100
         for net in all_networks:
@@ -3006,7 +3031,12 @@ class WifiChannelChart(QWidget):
             base_y = self._dbm_to_y(dbm_min, chart_h, pad_t, dbm_min, dbm_max)
 
             # Helper: compute y for a given x_offset, with soft fade-to-floor
-            # in the outer 30% of each tail to avoid hard vertical edges
+            # in the outer 30% of each tail to avoid hard vertical edges.
+            # When noise is enabled, a per-frequency noise offset is added to
+            # the dBm value — scaled by sqrt(amplitude) so the noise is
+            # strongest at the peak and fades naturally toward the tails.
+            _nd = _noise_frame
+            _nd_len = len(_nd)
             def _curve_y(x_offset):
                 amplitude = self._gaussian(x_offset, 0, sigma_px)
                 y_dbm_raw = dbm + 10 * math.log10(amplitude) if amplitude > 0.001 else dbm_min
@@ -3014,6 +3044,12 @@ class WifiChannelChart(QWidget):
                 if t > 0.70:
                     fade = (t - 0.70) / 0.30  # 0→1 in last 30% of tail
                     y_dbm_raw = y_dbm_raw + (dbm_min - y_dbm_raw) * fade
+                if _nd_len:
+                    # Map absolute x to noise sample index
+                    freq_frac = (center_x + x_offset - pad_l) / max(chart_w, 1)
+                    n_idx = max(0, min(_nd_len - 1, int(freq_frac * _nd_len)))
+                    # Weight by sqrt(amplitude): full noise at peak, fades on tails
+                    y_dbm_raw += _nd[n_idx] * (amplitude ** 0.5)
                 return self._dbm_to_y(y_dbm_raw, chart_h, pad_t, dbm_min, dbm_max)
 
             # Build filled curve path — last point naturally lands at base_y
@@ -3136,13 +3172,13 @@ class WifiChannelChart(QWidget):
         painter.drawText(-22, -6, 44, 14, Qt.AlignmentFlag.AlignCenter, 'dBm')
         painter.restore()
 
-        # ── Chart title (top-left overlay) ────────────────────────────────
+        # ── Chart title — centered at top ─────────────────────────────────
         band_label = {'2.4GHz': '2.4 GHz', '5GHz': '5 GHz'}.get(self.band, '2.4 & 5 GHz')
-        chart_title = f'Spectrum View  —  {band_label}'
+        chart_title = f'Spectrum Analysis  —  {band_label}'
         painter.setFont(QFont('Sans Serif', 9, QFont.Weight.Bold))
         painter.setPen(QColor('#c9d1d9'))
-        painter.drawText(pad_l + 6, 2, chart_w - 12, 18,
-                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        painter.drawText(pad_l, 2, chart_w, 18,
+                         Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
                          chart_title)
 
         painter.end()
@@ -3379,6 +3415,7 @@ class WiFiScanWorker(QThread):
                 'in_use':     in_use,
                 'bssid':      bssid,
                 'ssid':       ssid,
+                'vendor':     _get_mac_vendor(bssid),
                 'channel':    channel,
                 'freq_mhz':   freq_mhz,
                 'band':       band,
@@ -7722,7 +7759,7 @@ class SerialTerminalGUI(QMainWindow):
         """)
 
         self.wifi_interval_combo = QComboBox()
-        self.wifi_interval_combo.addItems(["5s", "10s", "15s", "30s"])
+        self.wifi_interval_combo.addItems(["1s", "2s", "5s", "10s", "15s", "30s"])
         self.wifi_interval_combo.setCurrentText("5s")
         self.wifi_interval_combo.setFixedWidth(70)
         self.wifi_interval_combo.setStyleSheet(combo_style)
@@ -7813,12 +7850,22 @@ class SerialTerminalGUI(QMainWindow):
         graphs_cell_layout.addWidget(self.wifi_toggle_history_btn)
         graphs_cell_layout.addStretch()
 
+        self.wifi_noise_btn = QPushButton("Ruído Branco")
+        self.wifi_noise_btn.setCheckable(True)
+        self.wifi_noise_btn.setChecked(True)
+        self.wifi_noise_btn.setFixedHeight(24)
+        self.wifi_noise_btn.setStyleSheet(_toggle_style)
+        self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_noise_btn.setToolTip("Sobrepor ruído branco animado no espectro")
+
         right_grid.addWidget(_lbl("Banda:"),              0, 0)
         right_grid.addWidget(self.wifi_chart_band_combo,  0, 1)
         right_grid.addWidget(_lbl("Sinal mín.:"),         1, 0)
         right_grid.addWidget(self.wifi_min_signal_combo,  1, 1)
         right_grid.addWidget(_lbl("Mostrar:"),            2, 0)
         right_grid.addWidget(graphs_cell,                 2, 1)
+        right_grid.addWidget(_lbl("Efeitos:"),            3, 0)
+        right_grid.addWidget(self.wifi_noise_btn,         3, 1)
 
         # ── Outer layout: left | separator | right ────────────────────────────
         config_layout = QHBoxLayout()
@@ -7911,6 +7958,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self.wifi_channel_chart = WifiChannelChart()
         self.wifi_channel_chart.carrier_clicked.connect(self._on_chart_carrier_clicked)
+        self.wifi_noise_btn.toggled.connect(self.wifi_channel_chart.set_noise)
         chart_layout.addWidget(self.wifi_channel_chart)
         chart_group.setLayout(chart_layout)
         chart_group.setStyleSheet("""
@@ -9114,9 +9162,8 @@ class SerialTerminalGUI(QMainWindow):
         bssid_item.setForeground(QColor(bssid_color))
         self.wifi_table.setItem(row, 2, bssid_item)
 
-        # Col 3 — Vendor (from OUI lookup)
-        vendor = _get_mac_vendor(net['bssid'])
-        net['vendor'] = vendor
+        # Col 3 — Vendor (pre-computed in worker thread)
+        vendor = net.get('vendor', 'Unknown')
         vendor_item = QTableWidgetItem(vendor)
         vendor_item.setForeground(QColor('#555555') if vendor == 'Unknown' else QColor('#1a237e'))
         self.wifi_table.setItem(row, 3, vendor_item)
