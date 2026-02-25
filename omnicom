@@ -8730,9 +8730,6 @@ class SerialTerminalGUI(QMainWindow):
         if iface == "(auto)":
             iface = ''
 
-        self.wifi_table.setSortingEnabled(False)
-        self.wifi_table.blockSignals(True)  # Block signals during table update
-        self.wifi_table.setRowCount(0)
         self.wifi_scan_btn.setText("Scanning...")
         self.wifi_scan_btn.setStyleSheet("""
             QPushButton { background-color: #757575; color: #ffffff; border: none;
@@ -8742,7 +8739,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_status_label.setText("Scanning for networks...")
         self.wifi_status_label.setStyleSheet("color: #1565c0; font-size: 8pt; padding: 2px 4px;")
         self.wifi_export_btn.setEnabled(False)
-        self._wifi_networks = []
+        self._wifi_new_networks = []  # buffer; table is NOT cleared yet
 
         self._wifi_worker = WiFiScanWorker(iface)
         self._wifi_worker.network_found.connect(self._on_wifi_network_found)
@@ -8751,7 +8748,7 @@ class SerialTerminalGUI(QMainWindow):
         self._wifi_worker.start()
 
     def _on_wifi_network_found(self, net):
-        """Add one network to the results table."""
+        """Buffer one discovered network (table is updated atomically on scan finish)."""
         # Apply band filter
         band_filter = self.wifi_band_combo.currentText()
         if band_filter == "2.4 GHz" and net['band'] != '2.4GHz':
@@ -8765,15 +8762,16 @@ class SerialTerminalGUI(QMainWindow):
         if net['dbm'] < min_dbm_map.get(min_sig_text, -200):
             return
 
-        self._wifi_networks.append(net)
+        self._wifi_new_networks.append(net)
 
+    def _add_wifi_row(self, net):
+        """Insert one network dict as a new row at the bottom of wifi_table."""
         row = self.wifi_table.rowCount()
         self.wifi_table.insertRow(row)
 
         # Col 0 — Visibility checkbox
         visibility_item = QTableWidgetItem()
         visibility_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-        # Check if SSID is hidden in chart and set checkbox state accordingly
         is_hidden = net['ssid'] in self.wifi_channel_chart._hidden_ssids
         visibility_item.setCheckState(Qt.CheckState.Unchecked if is_hidden else Qt.CheckState.Checked)
         self.wifi_table.setItem(row, 0, visibility_item)
@@ -8816,11 +8814,11 @@ class SerialTerminalGUI(QMainWindow):
         snr_item = QTableWidgetItem(f"{snr} dB" if snr > 0 else "N/A")
         snr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if snr >= 40:
-            snr_item.setForeground(QColor('#2e7d32'))  # Excellent
+            snr_item.setForeground(QColor('#2e7d32'))
         elif snr >= 25:
-            snr_item.setForeground(QColor('#f57f17'))  # Good
+            snr_item.setForeground(QColor('#f57f17'))
         elif snr > 0:
-            snr_item.setForeground(QColor('#c62828'))  # Poor
+            snr_item.setForeground(QColor('#c62828'))
         self.wifi_table.setItem(row, 5, snr_item)
 
         # Col 6 — Channel
@@ -8833,11 +8831,11 @@ class SerialTerminalGUI(QMainWindow):
         bw_item = QTableWidgetItem(f"{bandwidth} MHz")
         bw_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if bandwidth >= 80:
-            bw_item.setForeground(QColor('#1565c0'))  # Blue for wide channels
+            bw_item.setForeground(QColor('#1565c0'))
         elif bandwidth >= 40:
-            bw_item.setForeground(QColor('#2e7d32'))  # Green for medium
+            bw_item.setForeground(QColor('#2e7d32'))
         else:
-            bw_item.setForeground(QColor('#757575'))  # Gray for narrow
+            bw_item.setForeground(QColor('#757575'))
         self.wifi_table.setItem(row, 7, bw_item)
 
         # Col 8 — Band
@@ -8893,9 +8891,19 @@ class SerialTerminalGUI(QMainWindow):
             self.wifi_channel_chart.hide_ssid(ssid)
 
     def _on_wifi_scan_finished(self, total):
-        """Handle scan completion."""
-        self.wifi_table.blockSignals(False)  # Re-enable signals after table update
+        """Handle scan completion — swap table contents atomically to avoid flicker."""
+        # Freeze rendering while we clear + repopulate
+        self.wifi_table.setUpdatesEnabled(False)
+        self.wifi_table.blockSignals(True)
+        self.wifi_table.setSortingEnabled(False)
+        self.wifi_table.setRowCount(0)
+        self._wifi_networks = []
+        for net in self._wifi_new_networks:
+            self._add_wifi_row(net)
+            self._wifi_networks.append(net)
+        self.wifi_table.blockSignals(False)
         self.wifi_table.setSortingEnabled(True)
+        self.wifi_table.setUpdatesEnabled(True)
         self.wifi_scan_btn.setText("SCAN")
         self.wifi_scan_btn.setStyleSheet("""
             QPushButton { background-color: #E91E63; color: #ffffff; border: none;
