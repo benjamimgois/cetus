@@ -7758,6 +7758,45 @@ class SerialTerminalGUI(QMainWindow):
         config_layout.addWidget(_lbl("Auto-refresh:"), 2, 0)
         config_layout.addWidget(auto_cell,             2, 1, 1, 3)
 
+        # ── Row 3: Graph visibility toggles ───────────────────────────────────
+        _toggle_style = """
+            QPushButton {
+                background-color: #3a3a4a; border: 1px solid #555566;
+                border-radius: 4px; color: #8b949e; font-size: 8pt;
+                padding: 2px 12px; min-width: 64px;
+            }
+            QPushButton:checked {
+                background-color: #E91E63; border-color: #E91E63; color: white;
+            }
+            QPushButton:hover { border-color: #999aaa; }
+        """
+        self.wifi_toggle_channel_btn = QPushButton("Canal")
+        self.wifi_toggle_channel_btn.setCheckable(True)
+        self.wifi_toggle_channel_btn.setChecked(True)
+        self.wifi_toggle_channel_btn.setFixedHeight(24)
+        self.wifi_toggle_channel_btn.setStyleSheet(_toggle_style)
+        self.wifi_toggle_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_toggle_channel_btn.setToolTip("Mostrar/ocultar gráfico de canais")
+
+        self.wifi_toggle_history_btn = QPushButton("Histórico")
+        self.wifi_toggle_history_btn.setCheckable(True)
+        self.wifi_toggle_history_btn.setChecked(False)
+        self.wifi_toggle_history_btn.setFixedHeight(24)
+        self.wifi_toggle_history_btn.setStyleSheet(_toggle_style)
+        self.wifi_toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_toggle_history_btn.setToolTip("Mostrar/ocultar histórico de sinal")
+
+        graphs_cell = QWidget()
+        graphs_cell_layout = QHBoxLayout(graphs_cell)
+        graphs_cell_layout.setContentsMargins(0, 0, 0, 0)
+        graphs_cell_layout.setSpacing(4)
+        graphs_cell_layout.addWidget(self.wifi_toggle_channel_btn)
+        graphs_cell_layout.addWidget(self.wifi_toggle_history_btn)
+        graphs_cell_layout.addStretch()
+
+        config_layout.addWidget(_lbl("Gráficos:"), 3, 0)
+        config_layout.addWidget(graphs_cell,        3, 1, 1, 3)
+
         config_group.setLayout(config_layout)
         shadow1 = QGraphicsDropShadowEffect()
         shadow1.setBlurRadius(12); shadow1.setXOffset(0); shadow1.setYOffset(2)
@@ -7858,6 +7897,28 @@ class SerialTerminalGUI(QMainWindow):
         shadow3.setBlurRadius(20); shadow3.setXOffset(0); shadow3.setYOffset(4)
         shadow3.setColor(QColor(0, 0, 0, 70))
         chart_group.setGraphicsEffect(shadow3)
+
+        # Keep reference so the close button eventFilter can find it
+        self.wifi_chart_group = chart_group
+
+        # Style for overlay X buttons (shared by both charts)
+        _close_btn_style = """
+            QPushButton {
+                background-color: rgba(20,20,30,180);
+                color: #8b949e; border: none; border-radius: 4px;
+                font-size: 9pt; font-weight: bold;
+            }
+            QPushButton:hover { background-color: rgba(200,40,40,200); color: white; }
+        """
+        self._close_channel_btn = QPushButton("✕", chart_group)
+        self._close_channel_btn.setFixedSize(20, 20)
+        self._close_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_channel_btn.setStyleSheet(_close_btn_style)
+        self._close_channel_btn.clicked.connect(
+            lambda: self._wifi_set_chart_visible('channel', False))
+        self._close_channel_btn.raise_()
+        chart_group.installEventFilter(self)
+
         # === Signal history widget (shown side-by-side when a network is selected) ===
         self.wifi_signal_history = SignalHistoryWidget()
         self.wifi_signal_history.setObjectName("signalHistoryPanel")
@@ -7869,7 +7930,21 @@ class SerialTerminalGUI(QMainWindow):
                 border-radius: 10px;
             }
         """)
+        self._close_history_btn = QPushButton("✕", self.wifi_signal_history)
+        self._close_history_btn.setFixedSize(20, 20)
+        self._close_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_history_btn.setStyleSheet(_close_btn_style)
+        self._close_history_btn.clicked.connect(
+            lambda: self._wifi_set_chart_visible('history', False))
+        self._close_history_btn.raise_()
+        self.wifi_signal_history.installEventFilter(self)
         self.wifi_signal_history.hide()
+
+        # Connect toggle buttons (defined in config section above)
+        self.wifi_toggle_channel_btn.toggled.connect(
+            lambda checked: self._wifi_set_chart_visible('channel', checked))
+        self.wifi_toggle_history_btn.toggled.connect(
+            lambda checked: self._wifi_set_chart_visible('history', checked))
 
         charts_row = QWidget()
         charts_layout = QHBoxLayout(charts_row)
@@ -9076,11 +9151,41 @@ class SerialTerminalGUI(QMainWindow):
 
         self.wifi_table.setRowHeight(row, 24)
 
+    # ── Chart visibility helpers ───────────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.Resize:
+            if obj is getattr(self, 'wifi_chart_group', None):
+                btn = getattr(self, '_close_channel_btn', None)
+                if btn:
+                    btn.move(obj.width() - 24, 4)
+            elif obj is getattr(self, 'wifi_signal_history', None):
+                btn = getattr(self, '_close_history_btn', None)
+                if btn:
+                    btn.move(obj.width() - 24, 4)
+        return super().eventFilter(obj, event)
+
+    def _wifi_set_chart_visible(self, which, visible):
+        """Show/hide a chart panel and keep toggle button in sync."""
+        if which == 'channel':
+            widget = getattr(self, 'wifi_chart_group', None)
+            btn    = getattr(self, 'wifi_toggle_channel_btn', None)
+        else:
+            widget = getattr(self, 'wifi_signal_history', None)
+            btn    = getattr(self, 'wifi_toggle_history_btn', None)
+        if widget:
+            widget.setVisible(visible)
+        if btn and btn.isChecked() != visible:
+            btn.blockSignals(True)
+            btn.setChecked(visible)
+            btn.blockSignals(False)
+
     def _wifi_table_selection_changed(self, current, _previous):
         """Highlight the selected network's curve in the chart and show signal history."""
         if current is None:
             self.wifi_channel_chart.select_bssid(None)
-            self.wifi_signal_history.hide()
+            self._wifi_set_chart_visible('history', False)
             return
         bssid_item = self.wifi_table.item(current.row(), 2)
         ssid_item  = self.wifi_table.item(current.row(), 1)
@@ -9106,6 +9211,12 @@ class SerialTerminalGUI(QMainWindow):
             # Slide-in animation: expand maximumWidth from 0 → unconstrained
             self.wifi_signal_history.setMaximumWidth(0)
             self.wifi_signal_history.show()
+            # Sync toggle button
+            btn = getattr(self, 'wifi_toggle_history_btn', None)
+            if btn and not btn.isChecked():
+                btn.blockSignals(True)
+                btn.setChecked(True)
+                btn.blockSignals(False)
             target = self.wifi_signal_history.parentWidget().width() // 2
             anim = QPropertyAnimation(self.wifi_signal_history, b'maximumWidth', self)
             anim.setDuration(300)
