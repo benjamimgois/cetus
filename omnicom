@@ -2508,6 +2508,7 @@ class WifiChannelChart(QWidget):
         # Mouse tracking for tooltips
         self.setMouseTracking(True)
         self._hovered_ssid = None
+        self._selected_bssid = None  # BSSID highlighted from table selection
         self._ssid_curves = {}  # ssid_bssid → curve info for hit detection
         self._hidden_ssids = set()  # Set of hidden SSIDs
 
@@ -2597,6 +2598,22 @@ class WifiChannelChart(QWidget):
         import math
         return math.exp(-0.5 * ((x - center) / sigma) ** 2)
 
+    def select_bssid(self, bssid):
+        """Highlight a specific BSSID from table selection."""
+        self._selected_bssid = bssid
+        self.update()
+
+    def _bssid_color(self, bssid, ssid=''):
+        """Generate a stable, well-distributed HSL color from BSSID/SSID hash."""
+        import hashlib
+        from PyQt6.QtGui import QColor
+        key = (bssid or ssid or 'unknown').encode()
+        h = int(hashlib.md5(key).hexdigest()[:6], 16)
+        # Golden-angle distribution across hue wheel for maximum separation
+        hue = (h * 137.508) % 360
+        color = QColor.fromHsvF(hue / 360.0, 0.88, 1.0)
+        return color.name()
+
     def paintEvent(self, event):
         from PyQt6.QtGui import (QPainter, QColor, QFont, QPen,
                                   QLinearGradient, QPainterPath)
@@ -2613,8 +2630,8 @@ class WifiChannelChart(QWidget):
         chart_w = W - pad_l - pad_r
         chart_h = H - pad_b - pad_t
 
-        # dBm range for display
-        dbm_min, dbm_max = -100, -50
+        # dBm range for display (dbm_max is set dynamically after collecting networks)
+        dbm_min = -100
 
         # Frequency ranges for selected band
         if self.band == '2.4GHz':
@@ -2677,10 +2694,21 @@ class WifiChannelChart(QWidget):
                 net_copy['display_dbm'] = dbm
                 all_networks.append(net_copy)
 
+        # ── Dynamic Y-axis range ──────────────────────────────────────────
+        # Find the strongest signal and add 15 dBm headroom so curves never
+        # hit the ceiling. Clamp between -45 (min headroom) and -20 (max).
+        if all_networks:
+            max_dbm = max(n.get('display_dbm', -100) for n in all_networks)
+            dbm_max = max(-45, min(-20, int(max_dbm) + 15))
+        else:
+            dbm_max = -45
+
         # ── Grid lines + Y-axis labels (dBm) ─────────────────────────────
         font_mono = QFont('Monospace', 7)
         painter.setFont(font_mono)
-        for dbm_val in [-50, -60, -70, -80, -90, -100]:
+        # Generate grid ticks every 10 dBm within the dynamic range
+        grid_top = (dbm_max // 10) * 10  # round down to nearest 10
+        for dbm_val in range(grid_top, dbm_min - 1, -10):
             y = self._dbm_to_y(dbm_val, chart_h, pad_t, dbm_min, dbm_max)
             grid_pen = QPen(QColor('#1E2A3A'))
             grid_pen.setWidth(1)
@@ -2739,67 +2767,61 @@ class WifiChannelChart(QWidget):
             painter.setFont(font_mono)
 
         # ── Gaussian Curves for each network (grouped by BSSID) ──────────
-        # Color palette for different networks
-        colors = [
-            '#00E5FF', '#FFD740', '#FF6E40', '#B388FF', '#69F0AE',
-            '#FF80AB', '#64FFDA', '#FFD180', '#EA80FC', '#82B1FF'
-        ]
+
+        # Sort weakest first so strongest signals render on top
+        all_networks.sort(key=lambda n: n.get('display_dbm', -100))
 
         # Clear curve tracking for hover detection
         self._ssid_curves = {}
 
+        # Track label placements for collision avoidance: list of (x1, y1, x2, y2)
+        placed_labels = []
+
         # Draw each network as a gaussian curve
-        for net_idx, net in enumerate(all_networks):
+        num_points = 100
+        for net in all_networks:
             ch = net.get('channel')
             bandwidth = net.get('bandwidth', 20)
             dbm = net.get('display_dbm', -90)
             bssid = net.get('bssid', '')
             ssid = net.get('ssid', '') or '<hidden>'
 
-            # Get color for this network
-            color = colors[net_idx % len(colors)]
+            # Stable HSL color derived from BSSID hash
+            color = self._bssid_color(bssid, ssid)
 
-            # Check if this curve is being hovered
+            # Active state: hovered or selected from table
             is_hovered = (ssid == self._hovered_ssid)
+            is_selected = (bssid == self._selected_bssid) if self._selected_bssid else False
+            is_active = is_hovered or is_selected
 
             # Get center frequency
             center_freq = net.get('freq_mhz', self._channel_to_freq(ch))
 
-            # Calculate sigma (standard deviation) based on bandwidth in MHz
-            # For WiFi, -3dB points are at half-power bandwidth
-            # Gaussian sigma ≈ FWHM / 2.355
-            # bandwidth is the actual MHz width (20/40/80/160)
-            sigma_mhz = bandwidth / 2.355
-            # Convert MHz to pixels
+            # sigma: use narrower coefficient (2.5 instead of 2.355) and limit at 4σ
+            # Switch from 20*log10 to 10*log10 in amplitude→dBm to reduce tail spread
+            sigma_mhz = bandwidth / 2.5
             mhz_to_px = chart_w / (freq_max - freq_min)
             sigma_px = sigma_mhz * mhz_to_px
 
-            # Center position based on frequency
             center_x = self._freq_to_x(center_freq, freq_min, freq_max, chart_w, pad_l)
             peak_y = self._dbm_to_y(dbm, chart_h, pad_t, dbm_min, dbm_max)
             base_y = self._dbm_to_y(dbm_min, chart_h, pad_t, dbm_min, dbm_max)
 
-            # Draw gaussian curve
+            # Build filled curve path
             curve_path = QPainterPath()
             curve_path.moveTo(center_x - 4 * sigma_px, base_y)
-
-            # Sample points along the curve
-            num_points = 100
             for i in range(num_points + 1):
                 x_offset = -4 * sigma_px + (8 * sigma_px * i / num_points)
                 x = center_x + x_offset
-                # Gaussian amplitude
                 amplitude = self._gaussian(x_offset, 0, sigma_px)
-                # Convert amplitude to dBm (gaussian in dB domain)
-                y_dbm = dbm + 20 * math.log10(amplitude) if amplitude > 0.001 else dbm_min
+                # 10*log10 instead of 20*log10 → narrower tails
+                y_dbm = dbm + 10 * math.log10(amplitude) if amplitude > 0.001 else dbm_min
                 y = self._dbm_to_y(y_dbm, chart_h, pad_t, dbm_min, dbm_max)
                 curve_path.lineTo(x, y)
-
             curve_path.lineTo(center_x + 4 * sigma_px, base_y)
             curve_path.closeSubpath()
 
-            # Store curve info for hover detection
-            # Use a unique key combining SSID and BSSID to handle duplicate SSIDs
+            # Store for hover detection
             curve_key = f"{ssid}_{bssid}"
             self._ssid_curves[curve_key] = {
                 'path': curve_path,
@@ -2810,64 +2832,76 @@ class WifiChannelChart(QWidget):
                 'bssid': bssid
             }
 
-            # Fill the curve with gradient
-            fill_color = QColor(color)
-            fill_alpha = 150 if is_hovered else 100
-            fill_color.setAlpha(fill_alpha)
+            # Gradient fill: opaque at peak, transparent at base
+            grad = QLinearGradient(QPointF(center_x, peak_y), QPointF(center_x, base_y))
+            fill_color_top = QColor(color)
+            fill_color_bot = QColor(color)
+            fill_color_top.setAlpha(90 if is_active else 45)
+            fill_color_bot.setAlpha(0)
+            grad.setColorAt(0.0, fill_color_top)
+            grad.setColorAt(1.0, fill_color_bot)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(fill_color)
+            painter.setBrush(grad)
             painter.drawPath(curve_path)
 
-            # Draw outline with glow effect (brighter if hovered)
-            glow_levels = [(6, 60), (4, 100), (2, 200)] if is_hovered else [(5, 40), (3, 80), (1.5, 180)]
+            # Outline glow (brighter when active)
+            glow_levels = [(6, 80), (3, 160), (1.5, 255)] if is_active else [(4, 30), (2, 90), (1, 200)]
+            top_curve = QPainterPath()
+            top_curve.moveTo(center_x - 4 * sigma_px, base_y)
+            for i in range(num_points + 1):
+                x_offset = -4 * sigma_px + (8 * sigma_px * i / num_points)
+                x = center_x + x_offset
+                amplitude = self._gaussian(x_offset, 0, sigma_px)
+                y_dbm = dbm + 10 * math.log10(amplitude) if amplitude > 0.001 else dbm_min
+                y = self._dbm_to_y(y_dbm, chart_h, pad_t, dbm_min, dbm_max)
+                top_curve.lineTo(x, y)
             for width, alpha in glow_levels:
-                glow_pen = QPen(QColor(color))
-                glow_pen.setWidthF(width)
                 glow_color = QColor(color)
                 glow_color.setAlpha(alpha)
-                glow_pen.setColor(glow_color)
+                glow_pen = QPen(glow_color)
+                glow_pen.setWidthF(width)
                 painter.setPen(glow_pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-
-                # Draw just the top curve (not the fill)
-                top_curve = QPainterPath()
-                top_curve.moveTo(center_x - 4 * sigma_px, base_y)
-                for i in range(num_points + 1):
-                    x_offset = -4 * sigma_px + (8 * sigma_px * i / num_points)
-                    x = center_x + x_offset
-                    amplitude = self._gaussian(x_offset, 0, sigma_px)
-                    y_dbm = dbm + 20 * math.log10(amplitude) if amplitude > 0.001 else dbm_min
-                    y = self._dbm_to_y(y_dbm, chart_h, pad_t, dbm_min, dbm_max)
-                    top_curve.lineTo(x, y)
                 painter.drawPath(top_curve)
 
-            # ── Mark -3dB points (half-power points) ─────────────────────
-            # -3dB points are at ±sigma (for gaussian approximation)
-            db_3_amplitude = 0.707  # -3dB in linear scale
+            # ── Mark -3dB points ─────────────────────────────────────────
             x_3db_left = center_x - sigma_px
             x_3db_right = center_x + sigma_px
             y_3db = self._dbm_to_y(dbm - 3, chart_h, pad_t, dbm_min, dbm_max)
-
             marker_color = QColor(color)
             marker_color.setAlpha(255)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(marker_color)
-            # Draw small circles at -3dB points
             painter.drawEllipse(QPointF(x_3db_left, y_3db), 3, 3)
             painter.drawEllipse(QPointF(x_3db_right, y_3db), 3, 3)
 
-            # ── SSID label at peak ───────────────────────────────────────
-            painter.setPen(QColor(color))
-            font_size = 8 if not is_hovered else 9
+            # ── SSID label with collision avoidance ──────────────────────
+            font_size = 8 if not is_active else 9
             painter.setFont(QFont('Sans Serif', font_size, QFont.Weight.Bold))
             fm = painter.fontMetrics()
+            label_h = fm.height()
             label_w = fm.horizontalAdvance(ssid)
-            label_x = center_x - label_w // 2
-            label_y = peak_y - 8
-            # Shadow
+            label_x = int(center_x - label_w / 2)
+            label_y = peak_y - 6  # start just above peak
+
+            # Push label up until it doesn't overlap any placed label
+            max_attempts = 12
+            for _ in range(max_attempts):
+                ly1, ly2 = label_y - label_h, label_y
+                lx1, lx2 = label_x, label_x + label_w
+                overlap = any(
+                    lx1 < px2 and lx2 > px1 and ly1 < py2 and ly2 > py1
+                    for (px1, py1, px2, py2) in placed_labels
+                )
+                if not overlap:
+                    break
+                label_y -= label_h + 2
+
+            placed_labels.append((label_x, label_y - label_h, label_x + label_w, label_y))
+
+            # Shadow then main text
             painter.setPen(QColor(0, 0, 0, 180))
             painter.drawText(label_x + 1, label_y + 1, ssid)
-            # Main text
             painter.setPen(marker_color)
             painter.drawText(label_x, label_y, ssid)
             painter.setFont(font_mono)
@@ -7581,6 +7615,9 @@ class SerialTerminalGUI(QMainWindow):
         # Connect cell changed to handle visibility checkbox
         self.wifi_table.itemChanged.connect(self._wifi_visibility_changed)
 
+        # Connect row selection to highlight the curve in the chart
+        self.wifi_table.currentItemChanged.connect(self._wifi_table_selection_changed)
+
         results_group.setLayout(results_layout)
         shadow2 = QGraphicsDropShadowEffect()
         shadow2.setBlurRadius(12); shadow2.setXOffset(0); shadow2.setYOffset(2)
@@ -8781,6 +8818,15 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setItem(row, 9, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
+
+    def _wifi_table_selection_changed(self, current, _previous):
+        """Highlight the selected network's curve in the chart."""
+        if current is None:
+            self.wifi_channel_chart.select_bssid(None)
+            return
+        bssid_item = self.wifi_table.item(current.row(), 2)
+        if bssid_item:
+            self.wifi_channel_chart.select_bssid(bssid_item.text())
 
     def _wifi_visibility_changed(self, item):
         """Handle visibility checkbox changes."""
