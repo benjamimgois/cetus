@@ -259,7 +259,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget
+    QMenu, QScrollArea, QTabWidget, QFrame
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
@@ -2656,12 +2656,16 @@ class SignalHistoryWidget(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(_x(visible[0][0]), _y(visible[0][1])), 3.5, 3.5)
 
-        # Title
+        # Title — "Power Analysis" + SSID · BSSID subtitle
         painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
         painter.setPen(QColor('#c9d1d9'))
+        painter.drawText(PL, 1, cw, 12, Qt.AlignmentFlag.AlignCenter, 'Power Analysis')
+
         ssid_label = self._ssid if self._ssid and self._ssid != '<hidden>' else '<hidden>'
-        title = f'{ssid_label}  ·  {self._bssid}'
-        painter.drawText(PL, 2, cw, PT - 2, Qt.AlignmentFlag.AlignCenter, title)
+        subtitle = f'{ssid_label}  ·  {self._bssid}'
+        painter.setFont(QFont('Sans Serif', 7))
+        painter.setPen(QColor('#8b949e'))
+        painter.drawText(PL, 12, cw, 10, Qt.AlignmentFlag.AlignCenter, subtitle)
 
         # Y-axis title (rotated)
         painter.save()
@@ -2818,7 +2822,7 @@ class WifiChannelChart(QWidget):
 
         W = self.width()
         H = self.height()
-        pad_l, pad_r, pad_b, pad_t = 44, 16, 25, 4
+        pad_l, pad_r, pad_b, pad_t = 44, 16, 25, 22
         chart_w = W - pad_l - pad_r
         chart_h = H - pad_b - pad_t
 
@@ -3131,6 +3135,15 @@ class WifiChannelChart(QWidget):
         painter.setFont(QFont('Sans Serif', 8))
         painter.drawText(-22, -6, 44, 14, Qt.AlignmentFlag.AlignCenter, 'dBm')
         painter.restore()
+
+        # ── Chart title (top-left overlay) ────────────────────────────────
+        band_label = {'2.4GHz': '2.4 GHz', '5GHz': '5 GHz'}.get(self.band, '2.4 & 5 GHz')
+        chart_title = f'Spectrum View  —  {band_label}'
+        painter.setFont(QFont('Sans Serif', 9, QFont.Weight.Bold))
+        painter.setPen(QColor('#c9d1d9'))
+        painter.drawText(pad_l + 6, 2, chart_w - 12, 18,
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         chart_title)
 
         painter.end()
 
@@ -7651,12 +7664,6 @@ class SerialTerminalGUI(QMainWindow):
 
         # === Configuration group ===
         config_group = QGroupBox("WiFi Configuration")
-        config_layout = QGridLayout()
-        config_layout.setVerticalSpacing(6)
-        config_layout.setHorizontalSpacing(8)
-        config_layout.setContentsMargins(12, 8, 12, 10)
-        config_layout.setColumnStretch(1, 1)
-        config_layout.setColumnStretch(3, 1)
 
         _lbl_style = "color: #555555; font-size: 9pt;"
 
@@ -7720,45 +7727,6 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_interval_combo.setFixedWidth(70)
         self.wifi_interval_combo.setStyleSheet(combo_style)
 
-        # ── Row 0: Interface  |  Band filter ─────────────────────────────────
-        iface_cell = QWidget()
-        iface_cell_layout = QHBoxLayout(iface_cell)
-        iface_cell_layout.setContentsMargins(0, 0, 0, 0)
-        iface_cell_layout.setSpacing(4)
-        iface_cell_layout.addWidget(self.wifi_iface_combo)
-        iface_cell_layout.addWidget(refresh_iface_btn)
-        iface_cell_layout.addStretch()
-
-        config_layout.addWidget(_lbl("Interface:"),  0, 0)
-        config_layout.addWidget(iface_cell,          0, 1)
-        config_layout.addWidget(_lbl("Band filter:"), 0, 2)
-        config_layout.addWidget(self.wifi_band_combo, 0, 3)
-
-        # ── Row 1: Chart band  |  Min signal ──────────────────────────────────
-        config_layout.addWidget(_lbl("Chart band:"),         1, 0)
-        config_layout.addWidget(self.wifi_chart_band_combo,  1, 1)
-        config_layout.addWidget(_lbl("Min signal:"),         1, 2)
-        config_layout.addWidget(self.wifi_min_signal_combo,  1, 3)
-
-        # ── Row 2: Auto-refresh (full width) ──────────────────────────────────
-        auto_cell = QWidget()
-        auto_cell_layout = QHBoxLayout(auto_cell)
-        auto_cell_layout.setContentsMargins(0, 0, 0, 0)
-        auto_cell_layout.setSpacing(6)
-        auto_cell_layout.addWidget(self.wifi_auto_refresh_cb)
-        interval_lbl = QLabel("every")
-        interval_lbl.setStyleSheet(_lbl_style)
-        auto_cell_layout.addWidget(interval_lbl)
-        auto_cell_layout.addWidget(self.wifi_interval_combo)
-        unit_lbl = QLabel("seconds")
-        unit_lbl.setStyleSheet(_lbl_style)
-        auto_cell_layout.addWidget(unit_lbl)
-        auto_cell_layout.addStretch()
-
-        config_layout.addWidget(_lbl("Auto-refresh:"), 2, 0)
-        config_layout.addWidget(auto_cell,             2, 1, 1, 3)
-
-        # ── Row 3: Graph visibility toggles ───────────────────────────────────
         _toggle_style = """
             QPushButton {
                 background-color: #3a3a4a; border: 1px solid #555566;
@@ -7786,6 +7754,57 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_toggle_history_btn.setToolTip("Mostrar/ocultar histórico de sinal")
 
+        # ── Left panel: Scan controls ─────────────────────────────────────────
+        left_panel = QWidget()
+        left_grid = QGridLayout(left_panel)
+        left_grid.setVerticalSpacing(6)
+        left_grid.setHorizontalSpacing(8)
+        left_grid.setContentsMargins(0, 0, 0, 0)
+        left_grid.setColumnStretch(1, 1)
+
+        iface_cell = QWidget()
+        iface_cell_layout = QHBoxLayout(iface_cell)
+        iface_cell_layout.setContentsMargins(0, 0, 0, 0)
+        iface_cell_layout.setSpacing(4)
+        iface_cell_layout.addWidget(self.wifi_iface_combo)
+        iface_cell_layout.addWidget(refresh_iface_btn)
+        iface_cell_layout.addStretch()
+
+        auto_cell = QWidget()
+        auto_cell_layout = QHBoxLayout(auto_cell)
+        auto_cell_layout.setContentsMargins(0, 0, 0, 0)
+        auto_cell_layout.setSpacing(6)
+        auto_cell_layout.addWidget(self.wifi_auto_refresh_cb)
+        interval_lbl = QLabel("every")
+        interval_lbl.setStyleSheet(_lbl_style)
+        auto_cell_layout.addWidget(interval_lbl)
+        auto_cell_layout.addWidget(self.wifi_interval_combo)
+        unit_lbl = QLabel("s")
+        unit_lbl.setStyleSheet(_lbl_style)
+        auto_cell_layout.addWidget(unit_lbl)
+        auto_cell_layout.addStretch()
+
+        left_grid.addWidget(_lbl("Interface:"),   0, 0)
+        left_grid.addWidget(iface_cell,           0, 1)
+        left_grid.addWidget(_lbl("Band filter:"), 1, 0)
+        left_grid.addWidget(self.wifi_band_combo, 1, 1)
+        left_grid.addWidget(_lbl("Auto-refresh:"),2, 0)
+        left_grid.addWidget(auto_cell,            2, 1)
+
+        # ── Vertical separator ────────────────────────────────────────────────
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet("color: #d0d0d0;")
+
+        # ── Right panel: Chart controls ───────────────────────────────────────
+        right_panel = QWidget()
+        right_grid = QGridLayout(right_panel)
+        right_grid.setVerticalSpacing(6)
+        right_grid.setHorizontalSpacing(8)
+        right_grid.setContentsMargins(0, 0, 0, 0)
+        right_grid.setColumnStretch(1, 1)
+
         graphs_cell = QWidget()
         graphs_cell_layout = QHBoxLayout(graphs_cell)
         graphs_cell_layout.setContentsMargins(0, 0, 0, 0)
@@ -7794,8 +7813,20 @@ class SerialTerminalGUI(QMainWindow):
         graphs_cell_layout.addWidget(self.wifi_toggle_history_btn)
         graphs_cell_layout.addStretch()
 
-        config_layout.addWidget(_lbl("Gráficos:"), 3, 0)
-        config_layout.addWidget(graphs_cell,        3, 1, 1, 3)
+        right_grid.addWidget(_lbl("Banda:"),              0, 0)
+        right_grid.addWidget(self.wifi_chart_band_combo,  0, 1)
+        right_grid.addWidget(_lbl("Sinal mín.:"),         1, 0)
+        right_grid.addWidget(self.wifi_min_signal_combo,  1, 1)
+        right_grid.addWidget(_lbl("Mostrar:"),            2, 0)
+        right_grid.addWidget(graphs_cell,                 2, 1)
+
+        # ── Outer layout: left | separator | right ────────────────────────────
+        config_layout = QHBoxLayout()
+        config_layout.setContentsMargins(12, 8, 12, 10)
+        config_layout.setSpacing(16)
+        config_layout.addWidget(left_panel, 1)
+        config_layout.addWidget(separator)
+        config_layout.addWidget(right_panel, 1)
 
         config_group.setLayout(config_layout)
         shadow1 = QGraphicsDropShadowEffect()
