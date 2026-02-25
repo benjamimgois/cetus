@@ -9591,6 +9591,8 @@ class SerialTerminalGUI(QMainWindow):
         ssh_action = menu.addAction("Connect via SSH")
         telnet_action = menu.addAction("Connect via Telnet")
         menu.addSeparator()
+        snmpwalk_action = menu.addAction("SNMP Walk")
+        menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
         action = menu.exec(self.scan_results_table.viewport().mapToGlobal(pos))
@@ -9605,6 +9607,11 @@ class SerialTerminalGUI(QMainWindow):
             self._scan_open_connection(ip, 'ssh')
         elif action == telnet_action:
             self._scan_open_connection(ip, 'telnet')
+        elif action == snmpwalk_action:
+            self.snmp_host_input.setText(ip)
+            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self.switch_tab(4)
+            self.execute_snmp_query()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
