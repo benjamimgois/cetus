@@ -261,7 +261,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget
 )
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
 
 try:
@@ -2491,8 +2491,197 @@ class MtrWorker(QThread):
 
 
 
+class SignalHistoryWidget(QWidget):
+    """Time-series signal-strength graph for a selected WiFi network."""
+
+    WINDOW_S = 120  # 2-minute rolling window
+
+    def __init__(self, parent=None):
+        import time as _time
+        super().__init__(parent)
+        self._bssid  = None
+        self._ssid   = ''
+        self._points = []          # [(elapsed_s, dbm), ...]
+        self._color  = QColor('#E91E63')
+        self._t_ref  = _time.monotonic()  # monotonic epoch matching the scan timestamps
+        self.setMinimumWidth(180)
+        self.setStyleSheet("background: transparent;")
+
+        # Continuous scroll: repaint at ~30 fps
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setInterval(33)
+        self._scroll_timer.timeout.connect(self.update)
+
+    def set_network(self, bssid, ssid, points, color=None, t_ref=None):
+        self._bssid  = bssid
+        self._ssid   = ssid
+        self._points = list(points)
+        if color is not None:
+            self._color = QColor(color) if isinstance(color, str) else color
+        if t_ref is not None:
+            self._t_ref = t_ref
+        if not self._scroll_timer.isActive():
+            self._scroll_timer.start()
+        self.update()
+
+    def hideEvent(self, event):
+        self._scroll_timer.stop()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        if self._bssid:
+            self._scroll_timer.start()
+        super().showEvent(event)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        W, H = self.width(), self.height()
+        PL, PR, PT, PB = 46, 12, 22, 28
+        cw, ch = W - PL - PR, H - PT - PB
+
+        # Background
+        painter.fillRect(0, 0, W, H, QColor('#0D1117'))
+
+        if not self._bssid:
+            painter.setPen(QColor('#8b949e'))
+            painter.setFont(QFont('Sans Serif', 8))
+            painter.drawText(0, 0, W, H, Qt.AlignmentFlag.AlignCenter,
+                             'Select a network\nto see signal history')
+            return
+
+        # dBm axis range
+        DBM_MIN, DBM_MAX = -100, -20
+
+        # "Agora" no lado direito: cada ponto é posicionado pela sua IDADE
+        # conforme o tempo passa a idade aumenta e o ponto desliza para a esquerda
+        import time as _time
+        now = _time.monotonic() - self._t_ref  # tempo atual em segundos desde o início dos scans
+        W_S = float(self.WINDOW_S)
+
+        def _x(pt):
+            """Posição X de um ponto: direita = agora, esquerda = agora - WINDOW_S."""
+            age = now - pt
+            return PL + (1.0 - age / W_S) * cw
+
+        def _y(dbm):
+            clamped = max(DBM_MIN, min(DBM_MAX, dbm))
+            return PT + ch - (clamped - DBM_MIN) / (DBM_MAX - DBM_MIN) * ch
+
+        # Grid horizontal (dBm)
+        grid_pen = QPen(QColor('#21262d'))
+        grid_pen.setWidthF(0.8)
+        painter.setPen(grid_pen)
+        for dbm in range(DBM_MIN, DBM_MAX + 1, 10):
+            y = int(_y(dbm))
+            painter.drawLine(PL, y, PL + cw, y)
+
+        # Grid vertical: linhas fixas a cada 30 s (posição não muda entre frames)
+        step_s = 30
+        for age_mark in range(step_s, int(W_S) + 1, step_s):
+            x = int(PL + (1.0 - age_mark / W_S) * cw)
+            if PL <= x <= PL + cw:
+                painter.drawLine(x, PT, x, PT + ch)
+
+        # Axes
+        ax_pen = QPen(QColor('#30363d'))
+        painter.setPen(ax_pen)
+        painter.drawLine(PL, PT, PL, PT + ch)
+        painter.drawLine(PL, PT + ch, PL + cw, PT + ch)
+
+        # Y-axis labels
+        painter.setFont(QFont('Sans Serif', 7))
+        painter.setPen(QColor('#8b949e'))
+        for dbm in range(DBM_MIN, DBM_MAX + 1, 10):
+            y = int(_y(dbm))
+            painter.drawText(0, y - 7, PL - 4, 14,
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             str(dbm))
+
+        # X-axis labels: fixos — direita = "agora", esquerda = "-120s"
+        painter.setFont(QFont('Sans Serif', 7))
+        painter.setPen(QColor('#8b949e'))
+        for age_mark in range(0, int(W_S) + 1, step_s):
+            x = int(PL + (1.0 - age_mark / W_S) * cw)
+            label = 'agora' if age_mark == 0 else f'-{age_mark}s'
+            painter.drawText(x - 22, PT + ch + 3, 44, 14,
+                             Qt.AlignmentFlag.AlignCenter, label)
+
+        # Curva de sinal: filtra pontos dentro da janela de tempo
+        visible = [(pt, d) for pt, d in self._points if 0.0 <= (now - pt) <= W_S]
+        if len(visible) >= 2:
+            color = self._color
+
+            # Área preenchida
+            area = QPainterPath()
+            area.moveTo(_x(visible[0][0]), _y(DBM_MIN))
+            area.lineTo(_x(visible[0][0]), _y(visible[0][1]))
+            for pt, d in visible[1:]:
+                area.lineTo(_x(pt), _y(d))
+            area.lineTo(_x(visible[-1][0]), _y(DBM_MIN))
+            area.closeSubpath()
+            fill = QColor(color)
+            fill.setAlpha(35)
+            painter.setBrush(fill)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPath(area)
+
+            # Linha
+            line = QPainterPath()
+            line.moveTo(_x(visible[0][0]), _y(visible[0][1]))
+            for pt, d in visible[1:]:
+                line.lineTo(_x(pt), _y(d))
+            lp = QPen(color)
+            lp.setWidthF(1.8)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(lp)
+            painter.drawPath(line)
+
+            # Ponto mais recente (lado direito)
+            lx = _x(visible[-1][0])
+            ly = _y(visible[-1][1])
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(lx, ly), 3.5, 3.5)
+
+            # Rótulo dBm
+            painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
+            painter.setPen(color)
+            painter.drawText(int(lx) + 5, int(ly) + 4, f'{int(visible[-1][1])} dBm')
+        elif len(visible) == 1:
+            # Ponto único
+            color = self._color
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(_x(visible[0][0]), _y(visible[0][1])), 3.5, 3.5)
+
+        # Title
+        painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
+        painter.setPen(QColor('#c9d1d9'))
+        ssid_label = self._ssid if self._ssid and self._ssid != '<hidden>' else '<hidden>'
+        title = f'{ssid_label}  ·  {self._bssid}'
+        painter.drawText(PL, 2, cw, PT - 2, Qt.AlignmentFlag.AlignCenter, title)
+
+        # Y-axis title (rotated)
+        painter.save()
+        painter.translate(9, PT + ch // 2)
+        painter.rotate(-90)
+        painter.setFont(QFont('Sans Serif', 7))
+        painter.setPen(QColor('#8b949e'))
+        painter.drawText(-20, -8, 40, 16, Qt.AlignmentFlag.AlignCenter, 'dBm')
+        painter.restore()
+
+        # X-axis title
+        painter.setFont(QFont('Sans Serif', 7))
+        painter.setPen(QColor('#8b949e'))
+        painter.drawText(PL, PT + ch + 16, cw, 12, Qt.AlignmentFlag.AlignCenter, 'Tempo (s)')
+
+
 class WifiChannelChart(QWidget):
     """Custom widget that draws a bar chart of WiFi channel usage."""
+
+    carrier_clicked = pyqtSignal(str, str)  # bssid, ssid
 
     def __init__(self, parent=None):
         from PyQt6.QtCore import QTimer
@@ -2974,6 +3163,16 @@ class WifiChannelChart(QWidget):
         # Redraw if hover state changed
         if old_hovered != self._hovered_ssid:
             self.update()
+
+    def mousePressEvent(self, event):
+        """Emit carrier_clicked when user clicks on a curve."""
+        from PyQt6.QtCore import QPointF
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
+            for curve_info in self._ssid_curves.values():
+                if curve_info['path'].contains(QPointF(pos.x(), pos.y())):
+                    self.carrier_clicked.emit(curve_info['bssid'], curve_info['ssid'])
+                    break
 
     def leaveEvent(self, event):
         """Handle mouse leaving the widget"""
@@ -7641,6 +7840,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_chart_band_combo.currentTextChanged.connect(self._wifi_update_chart)
 
         self.wifi_channel_chart = WifiChannelChart()
+        self.wifi_channel_chart.carrier_clicked.connect(self._on_chart_carrier_clicked)
         chart_layout.addWidget(self.wifi_channel_chart)
         chart_group.setLayout(chart_layout)
         chart_group.setStyleSheet("""
@@ -7658,7 +7858,26 @@ class SerialTerminalGUI(QMainWindow):
         shadow3.setBlurRadius(20); shadow3.setXOffset(0); shadow3.setYOffset(4)
         shadow3.setColor(QColor(0, 0, 0, 70))
         chart_group.setGraphicsEffect(shadow3)
-        main_layout.addWidget(chart_group, 4)
+        # === Signal history widget (shown side-by-side when a network is selected) ===
+        self.wifi_signal_history = SignalHistoryWidget()
+        self.wifi_signal_history.setObjectName("signalHistoryPanel")
+        self.wifi_signal_history.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.wifi_signal_history.setStyleSheet("""
+            QWidget#signalHistoryPanel {
+                background-color: #0D1117;
+                border: 1px solid #2A3040;
+                border-radius: 10px;
+            }
+        """)
+        self.wifi_signal_history.hide()
+
+        charts_row = QWidget()
+        charts_layout = QHBoxLayout(charts_row)
+        charts_layout.setContentsMargins(0, 0, 0, 0)
+        charts_layout.setSpacing(6)
+        charts_layout.addWidget(chart_group, 1)
+        charts_layout.addWidget(self.wifi_signal_history, 1)
+        main_layout.addWidget(charts_row, 4)
 
         # === Bottom button row ===
         btn_row = QHBoxLayout()
@@ -8858,13 +9077,56 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setRowHeight(row, 24)
 
     def _wifi_table_selection_changed(self, current, _previous):
-        """Highlight the selected network's curve in the chart."""
+        """Highlight the selected network's curve in the chart and show signal history."""
         if current is None:
             self.wifi_channel_chart.select_bssid(None)
+            self.wifi_signal_history.hide()
             return
         bssid_item = self.wifi_table.item(current.row(), 2)
+        ssid_item  = self.wifi_table.item(current.row(), 1)
         if bssid_item:
-            self.wifi_channel_chart.select_bssid(bssid_item.text())
+            bssid = bssid_item.text()
+            ssid  = ssid_item.text().lstrip('● ') if ssid_item else ''
+            self.wifi_channel_chart.select_bssid(bssid)
+            self._wifi_show_signal_history(bssid, ssid)
+
+    def _wifi_show_signal_history(self, bssid, ssid):
+        """Show/update the signal history panel for the given BSSID."""
+        if not hasattr(self, '_wifi_signal_history'):
+            self._wifi_signal_history = {}
+        h = self._wifi_signal_history.get(bssid, {})
+        color = self.wifi_channel_chart._bssid_color(bssid, ssid)
+        t_ref = getattr(self, '_wifi_history_t0', None)
+        self.wifi_signal_history.set_network(
+            bssid, ssid, h.get('points', []), color=color, t_ref=t_ref
+        )
+
+        already_visible = self.wifi_signal_history.isVisible()
+        if not already_visible:
+            # Slide-in animation: expand maximumWidth from 0 → unconstrained
+            self.wifi_signal_history.setMaximumWidth(0)
+            self.wifi_signal_history.show()
+            target = self.wifi_signal_history.parentWidget().width() // 2
+            anim = QPropertyAnimation(self.wifi_signal_history, b'maximumWidth', self)
+            anim.setDuration(300)
+            anim.setStartValue(0)
+            anim.setEndValue(target)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.finished.connect(lambda: self.wifi_signal_history.setMaximumWidth(16777215))
+            # Keep reference so it isn't garbage-collected
+            self._signal_history_anim = anim
+            anim.start()
+
+    def _on_chart_carrier_clicked(self, bssid, ssid):
+        """Handle click on a carrier in the channel chart."""
+        self.wifi_channel_chart.select_bssid(bssid)
+        self._wifi_show_signal_history(bssid, ssid)
+        # Sync table selection
+        for row in range(self.wifi_table.rowCount()):
+            item = self.wifi_table.item(row, 2)
+            if item and item.text() == bssid:
+                self.wifi_table.selectRow(row)
+                break
 
     def _wifi_visibility_changed(self, item):
         """Handle visibility checkbox changes."""
@@ -8892,6 +9154,29 @@ class SerialTerminalGUI(QMainWindow):
 
     def _on_wifi_scan_finished(self, total):
         """Handle scan completion — swap table contents atomically to avoid flicker."""
+        import time as _time
+
+        # Record signal history timestamp
+        now = _time.monotonic()
+        if not hasattr(self, '_wifi_history_t0'):
+            self._wifi_history_t0 = now
+        elapsed = round(now - self._wifi_history_t0, 1)
+
+        if not hasattr(self, '_wifi_signal_history'):
+            self._wifi_signal_history = {}  # bssid → {'ssid': str, 'points': [(t, dbm)]}
+
+        for net in self._wifi_new_networks:
+            bssid = net['bssid']
+            if bssid not in self._wifi_signal_history:
+                self._wifi_signal_history[bssid] = {'ssid': net['ssid'], 'points': []}
+            self._wifi_signal_history[bssid]['points'].append((elapsed, net['dbm']))
+
+        # Refresh history widget if a network is currently selected
+        if self.wifi_signal_history.isVisible() and self.wifi_signal_history._bssid:
+            sel_bssid = self.wifi_signal_history._bssid
+            h = self._wifi_signal_history.get(sel_bssid, {})
+            self.wifi_signal_history.set_network(sel_bssid, h.get('ssid', ''), h.get('points', []))
+
         # Freeze rendering while we clear + repopulate
         self.wifi_table.setUpdatesEnabled(False)
         self.wifi_table.blockSignals(True)
