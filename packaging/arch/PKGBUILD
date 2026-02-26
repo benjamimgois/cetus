@@ -9,7 +9,7 @@ license=('MIT')
 depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo')
 makedepends=('imagemagick')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/omnicom/archive/refs/tags/${pkgver}.tar.gz")
-sha256sums=('54223098b702e81f06db928ed0af5bb062270bfa23a5118bc0bcc3f62821975f')
+sha256sums=('4bbf67936d7e6090340705620dbf0ee7b88139cc52b3ae3ef19741d5e74e3aeb')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
