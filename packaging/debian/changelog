@@ -11,8 +11,19 @@ omnicom (1.5-1) jammy; urgency=medium
   * Improve read-only filesystem handling for traceroute capabilities
   * Optimize field layouts and widths for better content visibility
   * Fix MTR fields visibility on initial load
+  * Add WiFi Site Survey with network scanning and channel usage chart
+  * Add WiFi channel chart with Gaussian curves, BSSID grouping and animation
+  * Refactor WiFi survey from BSSID to SSID grouping with Both-band support
+  * Add Power Analysis graph (SignalHistoryWidget) with scrolling time-series
+  * Add signal loss detection with persistent red markers on Power Analysis graph
+  * Add segmented curve drawing to avoid lines across loss regions
+  * Add adjustable time window slider for Power Analysis X-axis
+  * Add audio feedback for Power Analysis: pitched double-beep per scan cycle
+  * Add repeating harsh alarm tone while signal is absent (repeats every 4 s)
+  * Add audio enable/disable checkbox in Power Analysis controls
+  * Translate all UI strings to English
 
- -- Benjamim Gois <benjamimgois@example.com>  Sun, 23 Feb 2026 14:00:00 -0300
+ -- Benjamim Gois <benjamimgois@example.com>  Thu, 26 Feb 2026 12:00:00 -0300
 
 omnicom (1.4-1) jammy; urgency=medium
 
