@@ -259,7 +259,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame
+    QMenu, QScrollArea, QTabWidget, QFrame, QSlider
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
@@ -2469,8 +2469,6 @@ class MtrWorker(QThread):
 class SignalHistoryWidget(QWidget):
     """Time-series signal-strength graph for a selected WiFi network."""
 
-    WINDOW_S = 120  # 2-minute rolling window
-
     def __init__(self, parent=None):
         import time as _time
         super().__init__(parent)
@@ -2482,10 +2480,18 @@ class SignalHistoryWidget(QWidget):
         self.setMinimumWidth(180)
         self.setStyleSheet("background: transparent;")
 
+        self._window_s = 120        # visible time window in seconds
+        self._loss_threshold_s = 15.0  # seconds without a point → "signal lost"
+
         # Continuous scroll: repaint at ~30 fps
         self._scroll_timer = QTimer(self)
         self._scroll_timer.setInterval(33)
         self._scroll_timer.timeout.connect(self.update)
+
+    def set_window_s(self, seconds: int):
+        """Change the X-axis time window and trigger a repaint."""
+        self._window_s = max(30, int(seconds))
+        self.update()
 
     def set_network(self, bssid, ssid, points, color=None, t_ref=None):
         self._bssid  = bssid
@@ -2516,6 +2522,11 @@ class SignalHistoryWidget(QWidget):
         PL, PR, PT, PB = 46, 12, 22, 28
         cw, ch = W - PL - PR, H - PT - PB
 
+        # Clip all painting to the rounded rectangle so corners stay clean
+        _clip = QPainterPath()
+        _clip.addRoundedRect(0.0, 0.0, float(W), float(H), 10.0, 10.0)
+        painter.setClipPath(_clip)
+
         # Background
         painter.fillRect(0, 0, W, H, QColor('#0D1117'))
 
@@ -2533,10 +2544,10 @@ class SignalHistoryWidget(QWidget):
         # conforme o tempo passa a idade aumenta e o ponto desliza para a esquerda
         import time as _time
         now = _time.monotonic() - self._t_ref  # tempo atual em segundos desde o início dos scans
-        W_S = float(self.WINDOW_S)
+        W_S = float(self._window_s)
 
         def _x(pt):
-            """Posição X de um ponto: direita = agora, esquerda = agora - WINDOW_S."""
+            """Posição X de um ponto: direita = agora, esquerda = agora - _window_s."""
             age = now - pt
             return PL + (1.0 - age / W_S) * cw
 
@@ -2552,8 +2563,17 @@ class SignalHistoryWidget(QWidget):
             y = int(_y(dbm))
             painter.drawLine(PL, y, PL + cw, y)
 
-        # Grid vertical: linhas fixas a cada 30 s (posição não muda entre frames)
-        step_s = 30
+        # Grid step: adapts to the visible window
+        if W_S <= 60:
+            step_s = 10
+        elif W_S <= 180:
+            step_s = 30
+        elif W_S <= 360:
+            step_s = 60
+        else:
+            step_s = 120
+
+        # Grid vertical: linhas fixas (posição não muda entre frames)
         for age_mark in range(step_s, int(W_S) + 1, step_s):
             x = int(PL + (1.0 - age_mark / W_S) * cw)
             if PL <= x <= PL + cw:
@@ -2574,7 +2594,7 @@ class SignalHistoryWidget(QWidget):
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              str(dbm))
 
-        # X-axis labels: fixos — direita = "agora", esquerda = "-120s"
+        # X-axis labels
         painter.setFont(QFont('Sans Serif', 7))
         painter.setPen(QColor('#8b949e'))
         for age_mark in range(0, int(W_S) + 1, step_s):
@@ -2583,53 +2603,106 @@ class SignalHistoryWidget(QWidget):
             painter.drawText(x - 22, PT + ch + 3, 44, 14,
                              Qt.AlignmentFlag.AlignCenter, label)
 
+        def _ny(pt_ts, d):
+            return _y(d)
+
         # Curva de sinal: filtra pontos dentro da janela de tempo
         visible = [(pt, d) for pt, d in self._points if 0.0 <= (now - pt) <= W_S]
-        if len(visible) >= 2:
-            color = self._color
 
-            # Área preenchida
-            area = QPainterPath()
-            area.moveTo(_x(visible[0][0]), _y(DBM_MIN))
-            area.lineTo(_x(visible[0][0]), _y(visible[0][1]))
-            for pt, d in visible[1:]:
-                area.lineTo(_x(pt), _y(d))
-            area.lineTo(_x(visible[-1][0]), _y(DBM_MIN))
-            area.closeSubpath()
-            fill = QColor(color)
-            fill.setAlpha(35)
-            painter.setBrush(fill)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawPath(area)
+        # Split into continuous segments — breaks at any gap >= threshold so
+        # the curve is never drawn through a signal-loss region.
+        _segs = []
+        if visible:
+            _seg = [visible[0]]
+            for _i in range(1, len(visible)):
+                if visible[_i][0] - visible[_i - 1][0] >= self._loss_threshold_s:
+                    _segs.append(_seg)
+                    _seg = [visible[_i]]
+                else:
+                    _seg.append(visible[_i])
+            _segs.append(_seg)
 
-            # Linha
-            line = QPainterPath()
-            line.moveTo(_x(visible[0][0]), _y(visible[0][1]))
-            for pt, d in visible[1:]:
-                line.lineTo(_x(pt), _y(d))
-            lp = QPen(color)
-            lp.setWidthF(1.8)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(lp)
-            painter.drawPath(line)
+        color = self._color
 
-            # Ponto mais recente (lado direito)
-            lx = _x(visible[-1][0])
-            ly = _y(visible[-1][1])
+        for _seg in _segs:
+            if len(_seg) >= 2:
+                # Filled area
+                area = QPainterPath()
+                area.moveTo(_x(_seg[0][0]), _y(DBM_MIN))
+                area.lineTo(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1]))
+                for pt, d in _seg[1:]:
+                    area.lineTo(_x(pt), _ny(pt, d))
+                area.lineTo(_x(_seg[-1][0]), _y(DBM_MIN))
+                area.closeSubpath()
+                fill = QColor(color)
+                fill.setAlpha(35)
+                painter.setBrush(fill)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawPath(area)
+
+                # Line
+                line = QPainterPath()
+                line.moveTo(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1]))
+                for pt, d in _seg[1:]:
+                    line.lineTo(_x(pt), _ny(pt, d))
+                lp = QPen(color)
+                lp.setWidthF(1.8)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(lp)
+                painter.drawPath(line)
+            elif len(_seg) == 1:
+                painter.setBrush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1])), 3.5, 3.5)
+
+        # Dot + label on the most recent point of the last segment
+        if _segs and _segs[-1]:
+            _last = _segs[-1][-1]
+            lx = _x(_last[0])
+            ly = _ny(_last[0], _last[1])
             painter.setBrush(color)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(lx, ly), 3.5, 3.5)
-
-            # Rótulo dBm
             painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
             painter.setPen(color)
-            painter.drawText(int(lx) + 5, int(ly) + 4, f'{int(visible[-1][1])} dBm')
-        elif len(visible) == 1:
-            # Ponto único
-            color = self._color
-            painter.setBrush(color)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(_x(visible[0][0]), _y(visible[0][1])), 3.5, 3.5)
+            painter.drawText(int(lx) + 5, int(ly) + 4, f'{int(_last[1])} dBm')
+
+        # ── Signal-loss markers ───────────────────────────────────────────────
+        # Collect every dropout event from the full point history:
+        #   • gaps between consecutive points >= threshold  (historical)
+        #   • trailing gap from last point to "now" >= threshold  (ongoing)
+        # Each event is (t_loss, t_recovery_or_None).
+        # Markers are drawn even after the signal recovers so the history
+        # of outages stays visible as the time axis scrolls.
+        _pts = self._points
+        _loss_events = []
+        for _i in range(len(_pts) - 1):
+            _t1 = _pts[_i][0]
+            _t2 = _pts[_i + 1][0]
+            if _t2 - _t1 >= self._loss_threshold_s:
+                _loss_events.append((_t1, _t2))
+        if _pts and (now - _pts[-1][0]) >= self._loss_threshold_s:
+            _loss_events.append((_pts[-1][0], None))  # still lost
+
+        _loss_pen = QPen(QColor(220, 40, 40, 230))
+        _loss_pen.setWidthF(3.0)
+        for _t_loss, _t_rec in _loss_events:
+            _lx = _x(_t_loss)
+            if not (PL <= _lx <= PL + cw):
+                continue
+            _lxi = int(_lx)
+            # Red wash from loss point to recovery (or right edge if still lost)
+            _rx = min(int(_x(_t_rec)), PL + cw) if _t_rec is not None else PL + cw
+            if _rx > _lxi:
+                painter.fillRect(_lxi, PT, _rx - _lxi, ch, QColor(220, 40, 40, 30))
+            # Vertical bar
+            painter.setPen(_loss_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(_lxi, PT, _lxi, PT + ch)
+            # Label
+            painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
+            painter.setPen(QColor(220, 70, 70))
+            painter.drawText(_lxi + 5, PT + 14, 'Sinal perdido')
 
         # Title — "Power Analysis" + SSID · BSSID subtitle
         painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
@@ -7858,6 +7931,28 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_noise_btn.setToolTip("Sobrepor ruído branco animado no espectro")
 
+        # ── History window slider ──────────────────────────────────────────────
+        self._hist_window_slider = QSlider(Qt.Orientation.Horizontal)
+        self._hist_window_slider.setMinimum(30)
+        self._hist_window_slider.setMaximum(600)
+        self._hist_window_slider.setSingleStep(30)
+        self._hist_window_slider.setPageStep(60)
+        self._hist_window_slider.setValue(120)
+        self._hist_window_slider.setTickPosition(QSlider.TickPosition.NoTicks)
+        self._hist_window_slider.setToolTip("Janela de tempo do gráfico de potência")
+
+        self._hist_window_lbl = QLabel("120s")
+        self._hist_window_lbl.setFixedWidth(36)
+        self._hist_window_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._hist_window_lbl.setStyleSheet("color: #8b949e; font-size: 8pt;")
+
+        hist_window_cell = QWidget()
+        hist_window_layout = QHBoxLayout(hist_window_cell)
+        hist_window_layout.setContentsMargins(0, 0, 0, 0)
+        hist_window_layout.setSpacing(6)
+        hist_window_layout.addWidget(self._hist_window_slider)
+        hist_window_layout.addWidget(self._hist_window_lbl)
+
         right_grid.addWidget(_lbl("Banda:"),              0, 0)
         right_grid.addWidget(self.wifi_chart_band_combo,  0, 1)
         right_grid.addWidget(_lbl("Sinal mín.:"),         1, 0)
@@ -7866,6 +7961,8 @@ class SerialTerminalGUI(QMainWindow):
         right_grid.addWidget(graphs_cell,                 2, 1)
         right_grid.addWidget(_lbl("Efeitos:"),            3, 0)
         right_grid.addWidget(self.wifi_noise_btn,         3, 1)
+        right_grid.addWidget(_lbl("Janela:"),             4, 0)
+        right_grid.addWidget(hist_window_cell,            4, 1)
 
         # ── Outer layout: left | separator | right ────────────────────────────
         config_layout = QHBoxLayout()
@@ -8019,11 +8116,19 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_signal_history.installEventFilter(self)
         self.wifi_signal_history.hide()
 
+
         # Connect toggle buttons (defined in config section above)
         self.wifi_toggle_channel_btn.toggled.connect(
             lambda checked: self._wifi_set_chart_visible('channel', checked))
         self.wifi_toggle_history_btn.toggled.connect(
             lambda checked: self._wifi_set_chart_visible('history', checked))
+
+        # Wire history window slider
+        def _on_window_slider(val):
+            snapped = max(30, round(val / 30) * 30)
+            self._hist_window_lbl.setText(f'{snapped}s')
+            self.wifi_signal_history.set_window_s(snapped)
+        self._hist_window_slider.valueChanged.connect(_on_window_slider)
 
         charts_row = QWidget()
         charts_layout = QHBoxLayout(charts_row)
