@@ -16,6 +16,6 @@ pkgbase = omnicom
 	depends = picocom
 	depends = sudo
 	source = omnicom-1.5.tar.gz::https://github.com/benjamimgois/omnicom/archive/refs/tags/1.5.tar.gz
-	sha256sums = 54223098b702e81f06db928ed0af5bb062270bfa23a5118bc0bcc3f62821975f
+	sha256sums = 4bbf67936d7e6090340705620dbf0ee7b88139cc52b3ae3ef19741d5e74e3aeb
 
 pkgname = omnicom
