@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Omnicom - Graphical interface for serial communication via picocom
-Version: 1.4
+Version: 1.5
 """
 
 import sys
@@ -28,7 +28,7 @@ except ImportError:
 from pathlib import Path
 
 # Application version
-VERSION = "1.4"
+VERSION = "1.5"
 
 
 class TFTPHandler(socketserver.BaseRequestHandler):
