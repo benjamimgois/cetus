@@ -2483,6 +2483,17 @@ class SignalHistoryWidget(QWidget):
         self._window_s = 120        # visible time window in seconds
         self._loss_threshold_s = 15.0  # seconds without a point → "signal lost"
 
+        self._audio_enabled       = True
+        self._audio_last_ts       = None   # timestamp of last point when a tone was emitted
+        self._audio_loss_last_played = None  # monotonic time of last loss tone (None = no outage yet)
+
+        # Single worker thread + queue: only one aplay process at a time
+        import queue as _q, threading as _th
+        self._audio_queue = _q.Queue(maxsize=1)
+        _worker = _th.Thread(target=self._audio_worker_loop,
+                             args=(self._audio_queue,), daemon=True)
+        _worker.start()
+
         # Continuous scroll: repaint at ~30 fps
         self._scroll_timer = QTimer(self)
         self._scroll_timer.setInterval(33)
@@ -2493,7 +2504,121 @@ class SignalHistoryWidget(QWidget):
         self._window_s = max(30, int(seconds))
         self.update()
 
+    def set_audio(self, enabled: bool):
+        self._audio_enabled = enabled
+
+    # ── Audio helpers ─────────────────────────────────────────────────────────
+
+    _AUDIO_RATE = 48000   # native PipeWire/PulseAudio rate — no resampling
+
+    @staticmethod
+    def _build_pcm(freq_hz: float, duration_ms: int,
+                   volume: float = 0.45, sweep_to: float = None,
+                   clip: float = 1.0) -> bytes:
+        """Build S16LE mono PCM.  clip in (0, 1] controls waveform distortion:
+        1.0 = clean sine, <1.0 clips the sine towards a square wave."""
+        import math, struct
+        rate = SignalHistoryWidget._AUDIO_RATE
+        n    = int(rate * duration_ms / 1000)
+        fade = max(1, min(int(rate * 0.010), n // 4))   # 10 ms fade
+        clip = max(0.01, min(1.0, clip))
+        pcm  = []
+        for i in range(n):
+            f = freq_hz if sweep_to is None else freq_hz + (sweep_to - freq_hz) * i / n
+            s = math.sin(2.0 * math.pi * f * i / rate)
+            s = max(-clip, min(clip, s)) / clip   # clip then re-normalise to ±1
+            s *= volume
+            s *= min(i / fade, 1.0, (n - i) / fade)
+            pcm.append(max(-32767, min(32767, int(s * 32767))))
+        return struct.pack(f'<{n}h', *pcm)
+
+    @staticmethod
+    def _make_wav(pcm_bytes: bytes) -> bytes:
+        """Wrap S16LE mono PCM in a minimal WAV container."""
+        import struct
+        rate = SignalHistoryWidget._AUDIO_RATE
+        dlen = len(pcm_bytes)
+        hdr  = struct.pack('<4sI4s4sIHHIIHH4sI',
+                           b'RIFF', 36 + dlen, b'WAVE',
+                           b'fmt ', 16, 1, 1, rate, rate * 2, 2, 16,
+                           b'data', dlen)
+        return hdr + pcm_bytes
+
+    @staticmethod
+    def _audio_worker_loop(q):
+        """Single consumer: writes WAV to a temp file and plays it in full."""
+        import subprocess, shutil, tempfile, os
+        player = ('paplay' if shutil.which('paplay')
+                  else 'aplay' if shutil.which('aplay')
+                  else None)
+        while True:
+            wav = q.get()
+            if wav is None:
+                break
+            if player is None:
+                continue
+            tmp = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                        suffix='.wav', delete=False) as f:
+                    f.write(wav)
+                    tmp = f.name
+                cmd = ([player, '--volume=65536', tmp]
+                       if player == 'paplay' else [player, tmp])
+                subprocess.run(cmd, stderr=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL)
+            except Exception:
+                pass
+            finally:
+                if tmp:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+
+    def _enqueue(self, wav: bytes):
+        """Put WAV into the queue; replace stale item if full."""
+        try:
+            self._audio_queue.put_nowait(wav)
+        except Exception:
+            try:
+                self._audio_queue.get_nowait()
+                self._audio_queue.put_nowait(wav)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _preroll(ms: int = 250) -> bytes:
+        """Silent pre-roll: gives a suspended audio device time to wake up
+        before the first audible sample arrives."""
+        return bytes(int(SignalHistoryWidget._AUDIO_RATE * ms / 1000) * 2)
+
+    def _trigger_signal_tone(self, dbm: float):
+        """Double beep pitched to signal strength."""
+        freq = 250 + (dbm - (-100)) / 80.0 * 1550
+        freq = max(250.0, min(1800.0, freq))
+        rate = self._AUDIO_RATE
+        beep = self._build_pcm(freq, 150)
+        gap  = bytes(int(rate * 0.130) * 2)
+        self._enqueue(self._make_wav(self._preroll() + beep + gap + beep))
+
+    def _trigger_loss_tone(self):
+        """Harsh repeating alarm on signal loss: three sharp blips + falling sweep."""
+        rate    = self._AUDIO_RATE
+        silence = bytes(int(rate * 0.055) * 2)          # 55 ms gap between blips
+        # Sharp clipped blips (square-wave-like, high-freq → uncomfortable)
+        blip    = self._build_pcm(1900, 90, volume=0.80, clip=0.25)
+        # Falling glide (ominous "signal dying" sweep)
+        fall    = self._build_pcm(1600, 400, volume=0.70, clip=0.40, sweep_to=220)
+        self._enqueue(self._make_wav(
+            self._preroll(100)
+            + blip + silence + blip + silence + blip
+            + silence + fall
+        ))
+
     def set_network(self, bssid, ssid, points, color=None, t_ref=None):
+        _prev_last_ts = self._points[-1][0] if self._points else None
+
         self._bssid  = bssid
         self._ssid   = ssid
         self._points = list(points)
@@ -2501,6 +2626,28 @@ class SignalHistoryWidget(QWidget):
             self._color = QColor(color) if isinstance(color, str) else color
         if t_ref is not None:
             self._t_ref = t_ref
+
+        # ── Audio feedback ────────────────────────────────────────────────────
+        if self._audio_enabled and self._points:
+            _new_last_ts  = self._points[-1][0]
+            _new_last_dbm = self._points[-1][1]
+            if _new_last_ts != _prev_last_ts:
+                # Fresh measurement arrived — play signal tone and clear loss state
+                self._trigger_signal_tone(_new_last_dbm)
+                self._audio_last_ts       = _new_last_ts
+                self._audio_loss_last_played = None
+            else:
+                # No new point — check if signal is lost and repeat alarm every 4 s
+                import time as _t
+                _now_mono = _t.monotonic()
+                _age = _now_mono - self._t_ref - _new_last_ts
+                if _age >= self._loss_threshold_s:
+                    _repeat_s = 4.0
+                    if (self._audio_loss_last_played is None or
+                            _now_mono - self._audio_loss_last_played >= _repeat_s):
+                        self._trigger_loss_tone()
+                        self._audio_loss_last_played = _now_mono
+
         if not self._scroll_timer.isActive():
             self._scroll_timer.start()
         self.update()
@@ -2599,7 +2746,7 @@ class SignalHistoryWidget(QWidget):
         painter.setPen(QColor('#8b949e'))
         for age_mark in range(0, int(W_S) + 1, step_s):
             x = int(PL + (1.0 - age_mark / W_S) * cw)
-            label = 'agora' if age_mark == 0 else f'-{age_mark}s'
+            label = 'now' if age_mark == 0 else f'-{age_mark}s'
             painter.drawText(x - 22, PT + ch + 3, 44, 14,
                              Qt.AlignmentFlag.AlignCenter, label)
 
@@ -2702,7 +2849,7 @@ class SignalHistoryWidget(QWidget):
             # Label
             painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
             painter.setPen(QColor(220, 70, 70))
-            painter.drawText(_lxi + 5, PT + 14, 'Sinal perdido')
+            painter.drawText(_lxi + 5, PT + 14, 'Signal lost')
 
         # Title — "Power Analysis" + SSID · BSSID subtitle
         painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
@@ -2727,7 +2874,7 @@ class SignalHistoryWidget(QWidget):
         # X-axis title
         painter.setFont(QFont('Sans Serif', 7))
         painter.setPen(QColor('#8b949e'))
-        painter.drawText(PL, PT + ch + 16, cw, 12, Qt.AlignmentFlag.AlignCenter, 'Tempo (s)')
+        painter.drawText(PL, PT + ch + 16, cw, 12, Qt.AlignmentFlag.AlignCenter, 'Time (s)')
 
 
 class WifiChannelChart(QWidget):
@@ -7848,21 +7995,21 @@ class SerialTerminalGUI(QMainWindow):
             }
             QPushButton:hover { border-color: #999aaa; }
         """
-        self.wifi_toggle_channel_btn = QPushButton("Canal")
+        self.wifi_toggle_channel_btn = QPushButton("Channel")
         self.wifi_toggle_channel_btn.setCheckable(True)
         self.wifi_toggle_channel_btn.setChecked(True)
         self.wifi_toggle_channel_btn.setFixedHeight(24)
         self.wifi_toggle_channel_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.wifi_toggle_channel_btn.setToolTip("Mostrar/ocultar gráfico de canais")
+        self.wifi_toggle_channel_btn.setToolTip("Show/hide channel graph")
 
-        self.wifi_toggle_history_btn = QPushButton("Histórico")
+        self.wifi_toggle_history_btn = QPushButton("History")
         self.wifi_toggle_history_btn.setCheckable(True)
         self.wifi_toggle_history_btn.setChecked(False)
         self.wifi_toggle_history_btn.setFixedHeight(24)
         self.wifi_toggle_history_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.wifi_toggle_history_btn.setToolTip("Mostrar/ocultar histórico de sinal")
+        self.wifi_toggle_history_btn.setToolTip("Show/hide signal history")
 
         # ── Left panel: Scan controls ─────────────────────────────────────────
         left_panel = QWidget()
@@ -7923,13 +8070,13 @@ class SerialTerminalGUI(QMainWindow):
         graphs_cell_layout.addWidget(self.wifi_toggle_history_btn)
         graphs_cell_layout.addStretch()
 
-        self.wifi_noise_btn = QPushButton("Ruído Branco")
+        self.wifi_noise_btn = QPushButton("White Noise")
         self.wifi_noise_btn.setCheckable(True)
         self.wifi_noise_btn.setChecked(True)
         self.wifi_noise_btn.setFixedHeight(24)
         self.wifi_noise_btn.setStyleSheet(_toggle_style)
         self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.wifi_noise_btn.setToolTip("Sobrepor ruído branco animado no espectro")
+        self.wifi_noise_btn.setToolTip("Overlay animated white noise on spectrum")
 
         # ── History window slider ──────────────────────────────────────────────
         self._hist_window_slider = QSlider(Qt.Orientation.Horizontal)
@@ -7939,7 +8086,7 @@ class SerialTerminalGUI(QMainWindow):
         self._hist_window_slider.setPageStep(60)
         self._hist_window_slider.setValue(120)
         self._hist_window_slider.setTickPosition(QSlider.TickPosition.NoTicks)
-        self._hist_window_slider.setToolTip("Janela de tempo do gráfico de potência")
+        self._hist_window_slider.setToolTip("Time window of the power graph")
 
         self._hist_window_lbl = QLabel("120s")
         self._hist_window_lbl.setFixedWidth(36)
@@ -7953,16 +8100,24 @@ class SerialTerminalGUI(QMainWindow):
         hist_window_layout.addWidget(self._hist_window_slider)
         hist_window_layout.addWidget(self._hist_window_lbl)
 
-        right_grid.addWidget(_lbl("Banda:"),              0, 0)
+        self._hist_audio_chk = QCheckBox("Audio feedback")
+        self._hist_audio_chk.setChecked(True)
+        self._hist_audio_chk.setToolTip(
+            "Emit tones reflecting signal strength; distinct tone on signal loss")
+        self._hist_audio_chk.setStyleSheet("color: #8b949e; font-size: 8pt;")
+
+        right_grid.addWidget(_lbl("Band:"),                0, 0)
         right_grid.addWidget(self.wifi_chart_band_combo,  0, 1)
-        right_grid.addWidget(_lbl("Sinal mín.:"),         1, 0)
+        right_grid.addWidget(_lbl("Min. signal:"),        1, 0)
         right_grid.addWidget(self.wifi_min_signal_combo,  1, 1)
-        right_grid.addWidget(_lbl("Mostrar:"),            2, 0)
+        right_grid.addWidget(_lbl("Show:"),               2, 0)
         right_grid.addWidget(graphs_cell,                 2, 1)
-        right_grid.addWidget(_lbl("Efeitos:"),            3, 0)
+        right_grid.addWidget(_lbl("Effects:"),            3, 0)
         right_grid.addWidget(self.wifi_noise_btn,         3, 1)
-        right_grid.addWidget(_lbl("Janela:"),             4, 0)
+        right_grid.addWidget(_lbl("Window:"),             4, 0)
         right_grid.addWidget(hist_window_cell,            4, 1)
+        right_grid.addWidget(_lbl("Audio:"),              5, 0)
+        right_grid.addWidget(self._hist_audio_chk,        5, 1)
 
         # ── Outer layout: left | separator | right ────────────────────────────
         config_layout = QHBoxLayout()
@@ -8129,6 +8284,7 @@ class SerialTerminalGUI(QMainWindow):
             self._hist_window_lbl.setText(f'{snapped}s')
             self.wifi_signal_history.set_window_s(snapped)
         self._hist_window_slider.valueChanged.connect(_on_window_slider)
+        self._hist_audio_chk.toggled.connect(self.wifi_signal_history.set_audio)
 
         charts_row = QWidget()
         charts_layout = QHBoxLayout(charts_row)
