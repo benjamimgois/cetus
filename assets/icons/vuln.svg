@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 33.63 28.41"
+   width="1121"
+   height="947"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="vuln.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.70975843"
+     inkscape:cx="514.96394"
+     inkscape:cy="479.74069"
+     inkscape:window-width="1920"
+     inkscape:window-height="1012"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="SVGRepo_iconCarrier"
+     showgrid="false">
+    <inkscape:grid
+       id="grid1"
+       units="px"
+       originx="0"
+       originy="0"
+       spacingx="0.03"
+       spacingy="0.03"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="true"
+       visible="false" />
+  </sodipodi:namedview>
+  <g
+     id="SVGRepo_iconCarrier"
+     transform="translate(5.6907161,-0.25360746)"
+     style="fill:#f2f2f2">
+    <!-- Shield outline -->
+    <path
+       d="m 11.5,1.2 -9,4 v 6 c 0,2.944981 1.1892065,5.668714 3.0004044,7.822143 C 7.1332727,20.963547 9.2716802,22.441423 11.5,23.2 c 4.7,-1.6 9,-6.4 9,-12 v -6 z"
+       fill="none"
+       stroke="#ffffff"
+       stroke-width="1.6"
+       stroke-linejoin="round"
+       stroke-linecap="round"
+       id="path1"
+       style="fill:#cccccc"
+       sodipodi:nodetypes="ccsscscc" />
+    <!-- Magnifying glass circle -->
+    <circle
+       cx="10"
+       cy="10.5"
+       r="3.8"
+       fill="none"
+       stroke="#ffffff"
+       stroke-width="1.6"
+       id="circle1"
+       style="fill:#ffffff" />
+    <!-- Magnifying glass handle -->
+    <line
+       x1="12.7"
+       y1="13.2"
+       x2="15.8"
+       y2="16.299999"
+       stroke="#ffffff"
+       stroke-width="1.8"
+       stroke-linecap="round"
+       id="line1"
+       style="fill:#000000" />
+  </g>
+  <!-- Label -->
+  <text
+     x="-0.3690716"
+     y="28.364933"
+     style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:7.2px;font-family:sans-serif;fill:#ffffff"
+     id="text1">CVE SCAN</text>
+</svg>

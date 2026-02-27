@@ -259,7 +259,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame, QSlider
+    QMenu, QScrollArea, QTabWidget, QFrame, QSlider, QToolButton
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
@@ -416,7 +416,9 @@ class ConfigManager:
             'ssh_key_path': '',
             'ssh_profiles': '[]',
             # Serial profiles
-            'serial_profiles': '[]'
+            'serial_profiles': '[]',
+            # Vuln scanner
+            'vuln_community_history': '[]'
         }
 
         # Load settings
@@ -486,6 +488,21 @@ class ConfigManager:
         """Delete an SSH connection profile"""
         profiles = [p for p in self.get_ssh_profiles() if p.get('name') != name]
         self.set('ssh_profiles', json.dumps(profiles))
+
+    def get_vuln_community_history(self):
+        """Get list of previously used SNMP community strings (most recent first)."""
+        try:
+            return json.loads(self.settings.get('vuln_community_history', '[]'))
+        except Exception:
+            return []
+
+    def add_vuln_community(self, community):
+        """Prepend community to history, keeping at most 20 unique entries."""
+        history = self.get_vuln_community_history()
+        if community in history:
+            history.remove(community)
+        history.insert(0, community)
+        self.set('vuln_community_history', json.dumps(history[:20]))
 
     def get_serial_profiles(self):
         """Get list of saved serial connection profiles"""
@@ -2322,6 +2339,334 @@ class GeoFlagWorker(QThread):
         
     def enqueue(self, ip, is_mtr, hop_num, row_idx):
         self.queue.put((ip, is_mtr, hop_num, row_idx))
+
+
+class VulnScanWorker(QThread):
+    """Background worker that queries the NVD CVE database for vulnerabilities."""
+    cve_found      = pyqtSignal(dict)
+    scan_finished  = pyqtSignal(int, str)  # total, effective_keywords used
+    scan_error     = pyqtSignal(str)
+    scan_progress  = pyqtSignal(int)       # 0-100
+
+    def __init__(self, vendor, product, version, severity, api_key="", parent=None):
+        super().__init__(parent)
+        self.vendor   = vendor.strip()
+        self.product  = product.strip()
+        self.version  = version.strip()
+        self.severity = severity
+        self.api_key  = api_key.strip()
+        self._stop    = False
+
+    def stop(self):
+        self._stop = True
+
+    def _query_nvd(self, keywords):
+        """Perform a single NVD keyword search. Returns (vulnerabilities, totalResults)."""
+        import urllib.request
+        import urllib.parse
+
+        params = {
+            'keywordSearch':  keywords,
+            'resultsPerPage': 100,
+            'startIndex':     0,
+        }
+        if self.severity and self.severity != "All":
+            params['cvssV3Severity'] = self.severity.upper()
+
+        url = ("https://services.nvd.nist.gov/rest/json/cves/2.0?"
+               + urllib.parse.urlencode(params))
+        headers = {'User-Agent': 'Omnicom/1.5 (github.com/benjamimgois/omnicom)'}
+        if self.api_key:
+            headers['apiKey'] = self.api_key
+
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        return data.get('vulnerabilities', []), data.get('totalResults', 0)
+
+    def run(self):
+        vendor  = self.vendor
+        product = self.product
+        version = self.version
+
+        # Build a cascade of keyword queries from most specific to least:
+        #   1. vendor + product + version  (e.g. "Huawei VRP V200R022C00")
+        #   2. vendor + product            (e.g. "Huawei VRP")
+        #   3. vendor only                 (e.g. "Huawei")
+        # Stop at the first level that returns results.
+        candidates = []
+        full = " ".join(filter(None, [vendor, product, version]))
+        no_ver = " ".join(filter(None, [vendor, product]))
+        vendor_only = vendor
+
+        if full:
+            candidates.append(full)
+        if no_ver and no_ver != full:
+            candidates.append(no_ver)
+        if vendor_only and vendor_only not in (full, no_ver):
+            candidates.append(vendor_only)
+
+        if not candidates:
+            self.scan_error.emit("Informe ao menos um campo (Vendor, Model ou Version).")
+            return
+
+        try:
+            used_keywords = candidates[0]
+            vulns, total = [], 0
+
+            for kw in candidates:
+                if self._stop:
+                    break
+                vulns, total = self._query_nvd(kw)
+                used_keywords = kw
+                if total > 0:
+                    break   # found results — no need to fall back further
+
+            for i, v in enumerate(vulns):
+                if self._stop:
+                    break
+                self.cve_found.emit(self._parse_cve(v.get('cve', {})))
+                self.scan_progress.emit(int((i + 1) / max(len(vulns), 1) * 100))
+
+            self.scan_finished.emit(total, used_keywords)
+
+        except Exception as e:
+            self.scan_error.emit(str(e))
+
+    def _parse_cve(self, cve):
+        desc = next(
+            (d['value'] for d in cve.get('descriptions', []) if d.get('lang') == 'en'),
+            ''
+        )
+        metrics = cve.get('metrics', {})
+        cvss3   = metrics.get('cvssMetricV31', metrics.get('cvssMetricV30', []))
+        cvss2   = metrics.get('cvssMetricV2', [])
+
+        severity, score, vector = 'N/A', 0.0, ''
+        if cvss3:
+            d        = cvss3[0].get('cvssData', {})
+            severity = d.get('baseSeverity', 'N/A')
+            score    = d.get('baseScore', 0.0)
+            vector   = d.get('vectorString', '')
+        elif cvss2:
+            d     = cvss2[0].get('cvssData', {})
+            score = d.get('baseScore', 0.0)
+            severity = ('HIGH' if score >= 7.0 else
+                        'MEDIUM' if score >= 4.0 else 'LOW')
+            vector = d.get('vectorString', '')
+
+        cwes = [
+            desc_item['value']
+            for w in cve.get('weaknesses', [])
+            for desc_item in w.get('description', [])
+            if desc_item.get('lang') == 'en'
+        ]
+
+        return {
+            'id':          cve.get('id', ''),
+            'description': desc,
+            'severity':    severity,
+            'score':       score,
+            'vector':      vector,
+            'published':   cve.get('published', '')[:10],
+            'modified':    cve.get('lastModified', '')[:10],
+            'cwe':         ', '.join(cwes) if cwes else 'N/A',
+        }
+
+
+class SnmpDiscoverWorker(QThread):
+    """
+    Queries a device via SNMP (sysDescr, sysObjectID, sysName) and parses
+    the result to extract vendor, model and firmware version for CVE lookup.
+    """
+    device_info    = pyqtSignal(str, str, str, str)  # vendor, model, version, raw_sysdescr
+    discover_error = pyqtSignal(str)
+
+    # Standard MIB-II system OIDs
+    OID_SYSDESCR  = '1.3.6.1.2.1.1.1.0'
+    OID_SYSOID    = '1.3.6.1.2.1.1.2.0'
+    OID_SYSNAME   = '1.3.6.1.2.1.1.5.0'
+
+    def __init__(self, host, community, version, parent=None):
+        super().__init__(parent)
+        self.host      = host.strip()
+        self.community = community.strip()
+        self.version   = version   # 'v1' or 'v2c'
+
+    def run(self):
+        try:
+            import asyncio
+            from pysnmp.hlapi.v3arch.asyncio import (
+                SnmpEngine, CommunityData, UdpTransportTarget,
+                ContextData, ObjectType, ObjectIdentity, get_cmd
+            )
+
+            async def do_discover():
+                mp_model = 0 if self.version == 'v1' else 1
+                engine = SnmpEngine()
+                try:
+                    target = await UdpTransportTarget.create(
+                        (self.host, 161), timeout=4.0, retries=1)
+
+                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                        engine,
+                        CommunityData(self.community, mpModel=mp_model),
+                        target,
+                        ContextData(),
+                        ObjectType(ObjectIdentity(self.OID_SYSDESCR)),
+                        ObjectType(ObjectIdentity(self.OID_SYSOID)),
+                        ObjectType(ObjectIdentity(self.OID_SYSNAME)),
+                    )
+
+                    if errorIndication:
+                        self.discover_error.emit(f"SNMP error: {errorIndication}")
+                        return
+                    if errorStatus:
+                        self.discover_error.emit(
+                            f"SNMP error: {errorStatus.prettyPrint()}")
+                        return
+
+                    sys_descr = str(varBinds[0][1]) if varBinds else ''
+                    vendor, model, version = self._parse_sysdescr(sys_descr)
+                    self.device_info.emit(vendor, model, version, sys_descr)
+
+                finally:
+                    engine.close_dispatcher()
+
+            asyncio.run(do_discover())
+
+        except ImportError as e:
+            self.discover_error.emit(
+                f"pysnmp not installed.\n\nInstall with: pip install pysnmp\n\n{e}")
+        except Exception as e:
+            self.discover_error.emit(str(e))
+
+    def _parse_sysdescr(self, descr):
+        """Parse sysDescr string to extract (vendor, model, version)."""
+        import re
+        d = descr.strip()
+        dl = d.lower()
+
+        # ── Cisco IOS / IOS-XE / NX-OS ──────────────────────────────
+        # NVD: vendor "Cisco", product "IOS", "IOS XE", "NX-OS", "IOS XR"
+        # version "15.7(3)M8" or "17.3.1" — the version string after "Version"
+        if 'cisco' in dl:
+            vendor = 'Cisco'
+            if 'ios xe' in dl or 'ios-xe' in dl or 'iosxe' in dl:
+                model = 'IOS XE'
+            elif 'nx-os' in dl or 'nxos' in dl:
+                model = 'NX-OS'
+            elif 'ios xr' in dl or 'iosxr' in dl:
+                model = 'IOS XR'
+            else:
+                model = 'IOS'
+            ver_m = re.search(r'[Vv]ersion\s+([\d().A-Za-z]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Juniper JUNOS ─────────────────────────────────────────────
+        # NVD: vendor "Juniper Networks", product "Junos OS", version "21.4R1.12"
+        if 'juniper' in dl or 'junos' in dl:
+            vendor = 'Juniper Networks'
+            model  = 'Junos OS'   # NVD product name (not the hardware platform)
+            ver_m  = re.search(r'[Jj][Uu][Nn][Oo][Ss][\s:v]+([\d\w.]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── MikroTik RouterOS ─────────────────────────────────────────
+        # NVD: vendor "MikroTik", product "RouterOS", version "7.1.5"
+        if 'routeros' in dl or 'mikrotik' in dl:
+            vendor  = 'MikroTik'
+            model   = 'RouterOS'
+            ver_m   = re.search(r'[Rr]outer[Oo][Ss]\s+([\d.]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Huawei VRP ───────────────────────────────────────────────
+        # NVD lists Huawei CVEs under product "VRP" with versions like
+        # "V200R022C00" — NOT the hardware model or the internal "5.170" number.
+        if 'huawei' in dl:
+            vendor = 'Huawei'
+            model  = 'VRP'   # product name used in NVD for Huawei enterprise SW
+            # Extract formal Huawei version: V200R022C00 (drop service-pack suffix)
+            # sysDescr example: "Version 5.170 (S5735 V200R022C00SPC500)"
+            ver_m = re.search(r'\b(V\d+R\d+C\d+)', d)
+            if not ver_m:
+                ver_m = re.search(r'\b(V\d+R\d+)', d)  # e.g. V200R022
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Fortinet ─────────────────────────────────────────────────
+        # NVD: vendor "Fortinet", product "FortiOS" or "FortiGate", version "6.4.5"
+        if 'forti' in dl:
+            vendor = 'Fortinet'
+            # Prefer "FortiOS" as product (broader CVE coverage) but keep
+            # specific product if found (FortiSwitch, FortiAP, etc.)
+            prod_m = re.search(r'(Forti(?:OS|Gate|Switch|AP|Analyzer|Manager))', d, re.I)
+            model  = prod_m.group(1) if prod_m else 'FortiOS'
+            ver_m  = re.search(r'v([\d.]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Aruba / HP / HPE / H3C / Comware ────────────────────────
+        if 'aruba' in dl or 'comware' in dl or 'h3c' in dl or ('hp' in dl and ('switch' in dl or 'hpe' in dl)):
+            if 'aruba' in dl:
+                vendor = 'Aruba'
+                model = 'ArubaOS'
+                ver_m = re.search(r'ArubaOS\s+([\d.]+)', d, re.I)
+                version = ver_m.group(1) if ver_m else ''
+            elif 'comware' in dl or 'h3c' in dl:
+                # HP/HPE/H3C Comware switches — NVD product name is "Comware"
+                vendor = 'HP'
+                model = 'Comware'
+                ver_m = re.search(r'[Ss]oftware [Vv]ersion\s+([\d.]+)', d)
+                version = ver_m.group(1) if ver_m else ''
+            else:
+                vendor = 'HP'
+                model_m = re.search(r'([\w-]+\s+[Ss]witch)', d)
+                model = model_m.group(1) if model_m else ''
+                ver_m = re.search(r'[Rr]evision\s+(\S+)', d)
+                version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── D-Link ───────────────────────────────────────────────────
+        if 'd-link' in dl or 'dlink' in dl:
+            vendor = 'D-Link'
+            model_m = re.search(r'(D[GS]-\d+\S*)', d, re.I)
+            model = model_m.group(1) if model_m else ''
+            ver_m = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Linux (NET-SNMP) ─────────────────────────────────────────
+        if d.startswith('Linux') or 'linux kernel' in dl:
+            vendor = 'Linux'
+            ver_m = re.search(r'Linux\s+\S+\s+([\d.]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            for distro in ('ubuntu', 'debian', 'centos', 'fedora', 'rhel',
+                           'suse', 'arch', 'alpine'):
+                if distro in dl:
+                    model = distro.capitalize()
+                    break
+            else:
+                model = 'Linux'
+            return vendor, model, version
+
+        # ── Windows / Microsoft ───────────────────────────────────────
+        if 'windows' in dl or 'microsoft' in dl:
+            vendor = 'Microsoft'
+            model = 'Windows'
+            ver_m = re.search(r'([\d]+\.[\d]+\.[\d]+)', d)
+            version = ver_m.group(1) if ver_m else ''
+            return vendor, model, version
+
+        # ── Generic fallback ─────────────────────────────────────────
+        words = d.split()
+        vendor = words[0] if words else ''
+        ver_m = re.search(r'([\d]+\.[\d]+[.\d]*)', d)
+        version = ver_m.group(1) if ver_m else ''
+        model = (d[:80] if len(d) > 80 else d)
+        return vendor, model, version
 
 
 class MtrWorker(QThread):
@@ -6014,6 +6359,24 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_tab_btn.setStyleSheet(tab_btn_style.format(color='#E91E63'))
 
         tab_layout.addWidget(self.wifi_tab_btn)
+
+        # Vulnerability Scanner tab button (index 7)
+        self.vuln_tab_btn = QPushButton()
+        self.vuln_tab_btn.setFixedSize(62, 52)
+        vuln_icon_path = self.get_tab_icon_path('vuln.svg')
+        vuln_icon = load_svg_icon(vuln_icon_path, icon_size) if vuln_icon_path else None
+        if vuln_icon:
+            self.vuln_tab_btn.setIcon(vuln_icon)
+            self.vuln_tab_btn.setIconSize(self.vuln_tab_btn.size() * 0.7)
+        else:
+            self.vuln_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_MessageBoxWarning))
+        self.vuln_tab_btn.setToolTip("Vulnerability Scanner")
+        self.vuln_tab_btn.setCheckable(True)
+        self.vuln_tab_btn.clicked.connect(lambda: self.switch_tab(7))
+        self.vuln_tab_btn.setStyleSheet(tab_btn_style.format(color='#FF5722'))
+        tab_layout.addWidget(self.vuln_tab_btn)
+
         tab_layout.addStretch()
         self.tab_widget.setLayout(tab_layout)
 
@@ -6048,6 +6411,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_page = self.create_wifi_page()
         self.content_stack.addWidget(self.wifi_page)
 
+        # Create Vulnerability Scanner page (index 7)
+        self.vuln_page = self.create_vulnscan_page()
+        self.content_stack.addWidget(self.vuln_page)
+
         # Add to main layout
         main_h_layout.addWidget(self.tab_widget)
         main_h_layout.addWidget(self.content_stack, 1)
@@ -6058,7 +6425,7 @@ class SerialTerminalGUI(QMainWindow):
         self.update_port_list()
 
     def switch_tab(self, index):
-        """Switch between TFTP, Serial, SSH, IP Scanner, SNMP, Traceroute and WiFi tabs"""
+        """Switch between TFTP, Serial, SSH, IP Scanner, SNMP, Traceroute, WiFi and Vulnerability Scanner tabs"""
         self.content_stack.setCurrentIndex(index)
         self.tftp_tab_btn.setChecked(index == 0)
         self.serial_tab_btn.setChecked(index == 1)
@@ -6067,7 +6434,9 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_tab_btn.setChecked(index == 4)
         self.traceroute_tab_btn.setChecked(index == 5)
         self.wifi_tab_btn.setChecked(index == 6)
-        modes = {0: 'tftp', 1: 'serial', 2: 'ssh', 3: 'ipscan', 4: 'snmp', 5: 'traceroute', 6: 'wifi'}
+        self.vuln_tab_btn.setChecked(index == 7)
+        modes = {0: 'tftp', 1: 'serial', 2: 'ssh', 3: 'ipscan', 4: 'snmp',
+                 5: 'traceroute', 6: 'wifi', 7: 'vulnscan'}
         self.config.set('connection_mode', modes.get(index, 'tftp'))
 
     def create_serial_page(self):
@@ -7020,7 +7389,34 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_host_input = QLineEdit()
         self.snmp_host_input.setPlaceholderText("192.168.1.1")
         self.snmp_host_input.setStyleSheet(snmp_line_edit_style)
-        conn_layout.addRow("Host:", self.snmp_host_input)
+
+        _snmp_tool_btn_style = """
+            QToolButton {
+                border: 1px solid #cccccc; border-radius: 3px;
+                background-color: #f5f5f5; color: #444444;
+                font-size: 9pt; padding: 0px 4px;
+            }
+            QToolButton:hover { background-color: #e0e0e0; }
+            QToolButton:pressed { background-color: #cccccc; }
+        """
+
+        self.snmp_ip_profiles_btn = QToolButton()
+        self.snmp_ip_profiles_btn.setText("▾")
+        self.snmp_ip_profiles_btn.setFixedSize(22, 22)
+        self.snmp_ip_profiles_btn.setToolTip("Select from SSH profiles")
+        self.snmp_ip_profiles_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_ip_profiles_btn.setStyleSheet(_snmp_tool_btn_style)
+        self.snmp_ip_profiles_btn.clicked.connect(self._snmp_show_ip_menu)
+
+        snmp_host_widget = QWidget()
+        snmp_host_layout = QHBoxLayout()
+        snmp_host_layout.setContentsMargins(0, 0, 0, 0)
+        snmp_host_layout.setSpacing(4)
+        snmp_host_layout.addWidget(self.snmp_host_input)
+        snmp_host_layout.addWidget(self.snmp_ip_profiles_btn)
+        snmp_host_layout.addStretch()
+        snmp_host_widget.setLayout(snmp_host_layout)
+        conn_layout.addRow("Host:", snmp_host_widget)
 
         # Community + Version inline
         community_version_widget = QWidget()
@@ -7032,6 +7428,14 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_community_input.setText("public")
         self.snmp_community_input.setStyleSheet(snmp_line_edit_style)
 
+        self.snmp_community_hist_btn = QToolButton()
+        self.snmp_community_hist_btn.setText("▾")
+        self.snmp_community_hist_btn.setFixedSize(22, 22)
+        self.snmp_community_hist_btn.setToolTip("Community history")
+        self.snmp_community_hist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_community_hist_btn.setStyleSheet(_snmp_tool_btn_style)
+        self.snmp_community_hist_btn.clicked.connect(self._snmp_show_community_menu)
+
         version_sep = QLabel("version:")
         version_sep.setStyleSheet("color: #888888; font-size: 9pt;")
         version_sep.setFixedWidth(52)
@@ -7042,6 +7446,7 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_version_combo.setToolTip("SNMP version")
 
         community_version_layout.addWidget(self.snmp_community_input)
+        community_version_layout.addWidget(self.snmp_community_hist_btn)
         community_version_layout.addWidget(version_sep)
         community_version_layout.addWidget(self.snmp_version_combo)
         community_version_layout.addStretch()
@@ -7669,7 +8074,8 @@ class SerialTerminalGUI(QMainWindow):
         query_type = self.snmp_query_type_combo.currentText()
         version = self.snmp_version_combo.currentText()
         community = self.snmp_community_input.text().strip() or "public"
-        
+        self.config.add_vuln_community(community)
+
         # Validation
         if not host:
             self.snmp_results_table.setRowCount(0)
@@ -8971,6 +9377,7 @@ class SerialTerminalGUI(QMainWindow):
         menu.addSeparator()
         ipscan_action   = menu.addAction("IP Scan (TCP)")
         snmpwalk_action = menu.addAction("SNMP Walk")
+        cvescan_action  = menu.addAction("CVE Scan")
         menu.addSeparator()
         ip_details_action = menu.addAction("IP Details (Whois / Geo)")
         menu.addSeparator()
@@ -9001,6 +9408,8 @@ class SerialTerminalGUI(QMainWindow):
             self.snmp_query_type_combo.setCurrentText("snmpwalk")
             self.switch_tab(4)
             self.execute_snmp_query()
+        elif action == cvescan_action:
+            self._vuln_scan_ip(ip)
         elif action == ip_details_action:
             self._show_ip_details_dialog(ip, hostname)
         elif action == copy_ip_action:
@@ -10372,6 +10781,7 @@ class SerialTerminalGUI(QMainWindow):
         menu.addSeparator()
         snmpwalk_action = menu.addAction("SNMP Walk")
         tracert_action  = menu.addAction("Traceroute (ICMP MTR)")
+        cvescan_action  = menu.addAction("CVE Scan")
         menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
@@ -10397,6 +10807,8 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
             self.switch_tab(5)
             self._start_traceroute()
+        elif action == cvescan_action:
+            self._vuln_scan_ip(ip)
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
@@ -10442,6 +10854,7 @@ class SerialTerminalGUI(QMainWindow):
         ipscan_action  = menu.addAction("IP Scan (TCP)")
         snmpwalk_action = menu.addAction("SNMP Walk")
         tracert_action = menu.addAction("Traceroute (ICMP MTR)")
+        cvescan_action = menu.addAction("CVE Scan")
         menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
@@ -10469,6 +10882,8 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
             self.switch_tab(5)
             self._start_traceroute()
+        elif action == cvescan_action:
+            self._vuln_scan_ip(ip)
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
@@ -12109,6 +12524,829 @@ class SerialTerminalGUI(QMainWindow):
             self.status_label.setText("Connection error")
             self.status_label.setStyleSheet("color: #f38ba8; font-size: 10pt;")
             self.status_led.setStyleSheet("color: #f38ba8; font-size: 14px;")
+
+
+    # ──────────────────────────────────────────────────────────────────
+    #  VULNERABILITY SCANNER PAGE
+    # ──────────────────────────────────────────────────────────────────
+
+    def create_vulnscan_page(self):
+        """Create the Vulnerability Scanner page (NVD / MITRE CVE lookup)."""
+        from PyQt6.QtWidgets import QProgressBar, QSplitter
+
+        self._vuln_worker    = None
+        self._vuln_discover  = None
+        self._vuln_cve_list  = []   # cache for export / detail view
+
+        page = QWidget()
+        page_layout = QVBoxLayout()
+        page_layout.setSpacing(6)
+        page_layout.setContentsMargins(10, 8, 10, 8)
+
+        ACCENT  = '#FF5722'
+        lbl_css = "color: #555555; font-size: 9pt;"
+
+        # ── shared input style ──────────────────────────────────────────
+        input_style = f"""
+            QLineEdit {{
+                border: 1px solid #d0d0d0; border-radius: 4px;
+                padding: 2px 8px; background-color: #f5f5f5;
+                color: #333333; font-size: 9pt;
+            }}
+            QLineEdit:focus {{ border: 2px solid {ACCENT}; }}
+        """
+        input_autofill_style = f"""
+            QLineEdit {{
+                border: 1px solid #d0d0d0; border-radius: 4px;
+                padding: 2px 8px; background-color: #fff9f7;
+                color: #333333; font-size: 9pt;
+                border-left: 3px solid {ACCENT};
+            }}
+            QLineEdit:focus {{ border: 2px solid {ACCENT}; }}
+        """
+        combo_style = f"""
+            QComboBox {{
+                border: 1px solid #d0d0d0; border-radius: 4px;
+                padding: 2px 8px; background-color: #f5f5f5;
+                color: #333333; font-size: 9pt;
+            }}
+            QComboBox:focus {{ border: 2px solid {ACCENT}; }}
+        """
+
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(lbl_css)
+            l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            return l
+
+        # ══════════════════════════════════════════════════════════════
+        # SNMP DISCOVERY GROUP (full-width, above search params)
+        # ══════════════════════════════════════════════════════════════
+        disc_group = QGroupBox("Device Discovery via SNMP")
+        disc_group.setStyleSheet(f"""
+            QGroupBox {{ font-weight: bold; color: #444444;
+                         border: 1px solid #d0d0d0; border-radius: 6px;
+                         margin-top: 8px; padding-top: 4px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}
+        """)
+        disc_h = QHBoxLayout()
+        disc_h.setSpacing(8)
+        disc_h.setContentsMargins(8, 6, 8, 8)
+
+        _tool_btn_style = """
+            QToolButton {
+                border: 1px solid #cccccc; border-radius: 3px;
+                background-color: #f5f5f5; color: #444444;
+                font-size: 9pt; padding: 0px 4px;
+            }
+            QToolButton:hover { background-color: #e0e0e0; }
+            QToolButton:pressed { background-color: #cccccc; }
+        """
+
+        self.vuln_snmp_ip_edit = QLineEdit()
+        self.vuln_snmp_ip_edit.setPlaceholderText("IP address  (e.g. 192.168.1.1)")
+        self.vuln_snmp_ip_edit.setStyleSheet(input_style)
+        self.vuln_snmp_ip_edit.setFixedWidth(180)
+
+        self.vuln_ip_profiles_btn = QToolButton()
+        self.vuln_ip_profiles_btn.setText("▾")
+        self.vuln_ip_profiles_btn.setFixedSize(22, 22)
+        self.vuln_ip_profiles_btn.setToolTip("Select from SSH profiles")
+        self.vuln_ip_profiles_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_ip_profiles_btn.setStyleSheet(_tool_btn_style)
+        self.vuln_ip_profiles_btn.clicked.connect(self._vuln_show_ip_menu)
+
+        self.vuln_snmp_community_edit = QLineEdit()
+        self.vuln_snmp_community_edit.setText("public")
+        self.vuln_snmp_community_edit.setPlaceholderText("Community")
+        self.vuln_snmp_community_edit.setStyleSheet(input_style)
+        self.vuln_snmp_community_edit.setFixedWidth(110)
+
+        self.vuln_community_hist_btn = QToolButton()
+        self.vuln_community_hist_btn.setText("▾")
+        self.vuln_community_hist_btn.setFixedSize(22, 22)
+        self.vuln_community_hist_btn.setToolTip("Community history")
+        self.vuln_community_hist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_community_hist_btn.setStyleSheet(_tool_btn_style)
+        self.vuln_community_hist_btn.clicked.connect(self._vuln_show_community_menu)
+
+        self.vuln_snmp_version_combo = QComboBox()
+        self.vuln_snmp_version_combo.addItems(["v2c", "v1"])
+        self.vuln_snmp_version_combo.setFixedWidth(68)
+        self.vuln_snmp_version_combo.setStyleSheet(combo_style)
+
+        self.vuln_discover_btn = QPushButton("Discover & Scan")
+        self.vuln_discover_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT}; color: white; border: none;
+                border-radius: 4px; padding: 5px 14px; font-size: 9pt;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #E64A19; }}
+            QPushButton:disabled {{ background-color: #cccccc; color: #888888; }}
+        """)
+        self.vuln_discover_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_discover_btn.setToolTip(
+            "Discover device via SNMP and automatically search CVEs (single click)")
+        self.vuln_discover_btn.clicked.connect(self._vuln_start_discover)
+
+        self.vuln_discover_status = QLabel("Enter an IP and community string, then click Discover.")
+        self.vuln_discover_status.setStyleSheet("color: #888888; font-size: 8pt;")
+
+        disc_h.addWidget(_lbl("IP:"))
+        disc_h.addWidget(self.vuln_snmp_ip_edit)
+        disc_h.addWidget(self.vuln_ip_profiles_btn)
+        disc_h.addWidget(_lbl("Community:"))
+        disc_h.addWidget(self.vuln_snmp_community_edit)
+        disc_h.addWidget(self.vuln_community_hist_btn)
+        disc_h.addWidget(_lbl("Version:"))
+        disc_h.addWidget(self.vuln_snmp_version_combo)
+        disc_h.addWidget(self.vuln_discover_btn)
+        disc_h.addWidget(self.vuln_discover_status, 1)
+        disc_group.setLayout(disc_h)
+
+        # ══════════════════════════════════════════════════════════════
+        # TOP ROW — search params (left) + summary + buttons (right)
+        # ══════════════════════════════════════════════════════════════
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+
+        # ── Search Parameters group ────────────────────────────────────
+        search_group = QGroupBox("CVE Search Parameters")
+        search_group.setStyleSheet(f"""
+            QGroupBox {{ font-weight: bold; color: #444444;
+                         border: 1px solid #d0d0d0; border-radius: 6px;
+                         margin-top: 8px; padding-top: 4px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}
+        """)
+        form = QFormLayout()
+        form.setSpacing(5)
+        form.setContentsMargins(8, 6, 8, 8)
+
+        self.vuln_vendor_edit  = QLineEdit()
+        self.vuln_vendor_edit.setPlaceholderText("e.g. Cisco  (auto-filled by Discover)")
+        self.vuln_vendor_edit.setStyleSheet(input_style)
+
+        self.vuln_product_edit = QLineEdit()
+        self.vuln_product_edit.setPlaceholderText("e.g. IOS  (auto-filled by Discover)")
+        self.vuln_product_edit.setStyleSheet(input_style)
+
+        self.vuln_version_edit = QLineEdit()
+        self.vuln_version_edit.setPlaceholderText("e.g. 15.7  (auto-filled by Discover)")
+        self.vuln_version_edit.setStyleSheet(input_style)
+
+        self.vuln_severity_combo = QComboBox()
+        self.vuln_severity_combo.addItems(["All", "Critical", "High", "Medium", "Low"])
+        self.vuln_severity_combo.setFixedWidth(120)
+        self.vuln_severity_combo.setStyleSheet(combo_style)
+
+        self.vuln_apikey_edit = QLineEdit()
+        self.vuln_apikey_edit.setPlaceholderText("NVD API Key (optional — free at nvd.nist.gov)")
+        self.vuln_apikey_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.vuln_apikey_edit.setStyleSheet(input_style)
+
+        form.addRow(_lbl("Vendor:"),   self.vuln_vendor_edit)
+        form.addRow(_lbl("Model:"),    self.vuln_product_edit)
+        form.addRow(_lbl("Version:"),  self.vuln_version_edit)
+        form.addRow(_lbl("Severity:"), self.vuln_severity_combo)
+        form.addRow(_lbl("API Key:"),  self.vuln_apikey_edit)
+        search_group.setLayout(form)
+
+        # ── Right panel: summary + progress + buttons ──────────────────
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(6)
+
+        # Severity summary labels
+        summary_group = QGroupBox("Severity Summary")
+        summary_group.setStyleSheet(f"""
+            QGroupBox {{ font-weight: bold; color: #444444;
+                         border: 1px solid #d0d0d0; border-radius: 6px;
+                         margin-top: 8px; padding-top: 4px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}
+        """)
+        summary_grid = QGridLayout()
+        summary_grid.setSpacing(4)
+        summary_grid.setContentsMargins(8, 6, 8, 8)
+
+        def _sev_badge(color, text_color='white'):
+            lbl = QLabel("0")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setFixedSize(32, 22)
+            lbl.setStyleSheet(f"""
+                QLabel {{ background-color: {color}; color: {text_color};
+                          border-radius: 4px; font-weight: bold; font-size: 9pt; }}
+            """)
+            return lbl
+
+        self._vuln_badge = {
+            'CRITICAL': _sev_badge('#D32F2F'),
+            'HIGH':     _sev_badge('#FF5722'),
+            'MEDIUM':   _sev_badge('#FFC107', 'black'),
+            'LOW':      _sev_badge('#4CAF50'),
+            'N/A':      _sev_badge('#9E9E9E'),
+        }
+        self._vuln_counts = {k: 0 for k in self._vuln_badge}
+
+        for col, (label, key) in enumerate([
+            ("CRITICAL", 'CRITICAL'), ("HIGH", 'HIGH'),
+            ("MEDIUM",   'MEDIUM'),   ("LOW",  'LOW'),
+        ]):
+            summary_grid.addWidget(QLabel(label), 0, col)
+            summary_grid.addWidget(self._vuln_badge[key], 1, col)
+        summary_group.setLayout(summary_grid)
+
+        # Progress bar
+        self.vuln_progress_bar = QProgressBar()
+        self.vuln_progress_bar.setRange(0, 100)
+        self.vuln_progress_bar.setValue(0)
+        self.vuln_progress_bar.setFixedHeight(14)
+        self.vuln_progress_bar.setTextVisible(False)
+        self.vuln_progress_bar.setStyleSheet(f"""
+            QProgressBar {{ border: 1px solid #d0d0d0; border-radius: 3px;
+                            background-color: #f0f0f0; }}
+            QProgressBar::chunk {{ background-color: {ACCENT}; border-radius: 3px; }}
+        """)
+
+        self.vuln_status_lbl = QLabel("Ready — enter search terms and click Search")
+        self.vuln_status_lbl.setStyleSheet("color: #888888; font-size: 8pt;")
+
+        # Action buttons
+        btn_style = f"""
+            QPushButton {{
+                background-color: {ACCENT}; color: white; border: none;
+                border-radius: 4px; padding: 5px 14px; font-size: 9pt;
+            }}
+            QPushButton:hover {{ background-color: #E64A19; }}
+            QPushButton:disabled {{ background-color: #cccccc; color: #888888; }}
+        """
+        btn_neutral = """
+            QPushButton {
+                background-color: #e0e0e0; color: #333333; border: 1px solid #bdbdbd;
+                border-radius: 4px; padding: 5px 14px; font-size: 9pt;
+            }
+            QPushButton:hover { background-color: #bdbdbd; }
+            QPushButton:disabled { background-color: #f0f0f0; color: #aaaaaa; }
+        """
+
+        self.vuln_search_btn = QPushButton("Search")
+        self.vuln_search_btn.setStyleSheet(btn_style)
+        self.vuln_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_search_btn.setToolTip("Query NVD CVE database")
+        self.vuln_search_btn.clicked.connect(self._vuln_start_scan)
+
+        self.vuln_stop_btn = QPushButton("Stop")
+        self.vuln_stop_btn.setStyleSheet(btn_neutral)
+        self.vuln_stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_stop_btn.setEnabled(False)
+        self.vuln_stop_btn.clicked.connect(self._vuln_stop_scan)
+
+        self.vuln_clear_btn = QPushButton("Clear")
+        self.vuln_clear_btn.setStyleSheet(btn_neutral)
+        self.vuln_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_clear_btn.clicked.connect(self._vuln_clear)
+
+        self.vuln_export_btn = QPushButton("Export CSV")
+        self.vuln_export_btn.setStyleSheet(btn_neutral)
+        self.vuln_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_export_btn.clicked.connect(self._vuln_export_csv)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.addWidget(self.vuln_search_btn)
+        btn_row.addWidget(self.vuln_stop_btn)
+        btn_row.addWidget(self.vuln_clear_btn)
+        btn_row.addWidget(self.vuln_export_btn)
+        btn_row.addStretch()
+
+        right_panel.addWidget(summary_group)
+        right_panel.addWidget(self.vuln_progress_bar)
+        right_panel.addWidget(self.vuln_status_lbl)
+        right_panel.addLayout(btn_row)
+        right_panel.addStretch()
+
+        top_row.addWidget(search_group, 0)
+        top_row.addLayout(right_panel, 1)
+
+        # ══════════════════════════════════════════════════════════════
+        # CVE RESULTS TABLE
+        # ══════════════════════════════════════════════════════════════
+        results_group = QGroupBox("CVE Results")
+        results_group.setStyleSheet("""
+            QGroupBox { font-weight: bold; color: #444444;
+                        border: 1px solid #d0d0d0; border-radius: 6px;
+                        margin-top: 8px; padding-top: 4px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
+        """)
+        results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(6, 6, 6, 6)
+
+        self.vuln_table = QTableWidget()
+        self.vuln_table.setColumnCount(6)
+        self.vuln_table.setHorizontalHeaderLabels(
+            ["CVE ID", "Severity", "Score", "Published", "CWE", "Description"])
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.Stretch)
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents)
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents)
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents)
+        self.vuln_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents)
+        self.vuln_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self.vuln_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.vuln_table.setAlternatingRowColors(True)
+        self.vuln_table.verticalHeader().setVisible(False)
+        self.vuln_table.setShowGrid(True)
+        self.vuln_table.setStyleSheet("""
+            QTableWidget {
+                border: none; gridline-color: #e0e0e0;
+                background-color: #ffffff; alternate-background-color: #fafafa;
+                font-size: 9pt; color: #333333;
+            }
+            QTableWidget::item:selected {
+                background-color: #ffe0d4; color: #333333;
+            }
+            QHeaderView::section {
+                background-color: #f5f5f5; color: #555555;
+                border: none; border-bottom: 1px solid #d0d0d0;
+                padding: 4px 8px; font-weight: bold; font-size: 8pt;
+            }
+        """)
+        self.vuln_table.selectionModel().selectionChanged.connect(
+            self._vuln_on_row_selected)
+
+        results_layout.addWidget(self.vuln_table)
+        results_group.setLayout(results_layout)
+
+        # ══════════════════════════════════════════════════════════════
+        # DETAIL PANEL
+        # ══════════════════════════════════════════════════════════════
+        detail_group = QGroupBox("Details")
+        detail_group.setStyleSheet("""
+            QGroupBox { font-weight: bold; color: #444444;
+                        border: 1px solid #d0d0d0; border-radius: 6px;
+                        margin-top: 8px; padding-top: 4px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
+        """)
+        detail_layout = QVBoxLayout()
+        detail_layout.setContentsMargins(8, 6, 8, 8)
+        detail_layout.setSpacing(6)
+
+        self.vuln_detail_text = QTextEdit()
+        self.vuln_detail_text.setReadOnly(True)
+        self.vuln_detail_text.setMinimumHeight(120)
+        self.vuln_detail_text.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #e0e0e0; border-radius: 4px;
+                background-color: #fafafa; font-size: 9pt; color: #333333;
+            }
+        """)
+        self.vuln_detail_text.setPlaceholderText(
+            "Select a CVE row above to see full details…")
+
+        detail_btn_style = f"""
+            QPushButton {{
+                background-color: #3a3a4a; border: 1px solid #555566;
+                border-radius: 4px; color: #e0e0e0; font-size: 8pt;
+                padding: 3px 12px;
+            }}
+            QPushButton:hover {{ background-color: {ACCENT}; border-color: {ACCENT}; color: white; }}
+            QPushButton:disabled {{ background-color: #f0f0f0; color: #aaaaaa;
+                                    border-color: #e0e0e0; }}
+        """
+
+        self.vuln_btn_nvd = QPushButton("Open in NVD")
+        self.vuln_btn_nvd.setStyleSheet(detail_btn_style)
+        self.vuln_btn_nvd.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_btn_nvd.setEnabled(False)
+        self.vuln_btn_nvd.clicked.connect(self._vuln_open_nvd)
+
+        self.vuln_btn_mitre = QPushButton("Open in MITRE")
+        self.vuln_btn_mitre.setStyleSheet(detail_btn_style)
+        self.vuln_btn_mitre.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_btn_mitre.setEnabled(False)
+        self.vuln_btn_mitre.clicked.connect(self._vuln_open_mitre)
+
+        self.vuln_btn_copy = QPushButton("Copy CVE ID")
+        self.vuln_btn_copy.setStyleSheet(detail_btn_style)
+        self.vuln_btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_btn_copy.setEnabled(False)
+        self.vuln_btn_copy.clicked.connect(self._vuln_copy_cve_id)
+
+        detail_btn_row = QHBoxLayout()
+        detail_btn_row.setSpacing(6)
+        detail_btn_row.addWidget(self.vuln_btn_nvd)
+        detail_btn_row.addWidget(self.vuln_btn_mitre)
+        detail_btn_row.addWidget(self.vuln_btn_copy)
+        detail_btn_row.addStretch()
+
+        detail_layout.addWidget(self.vuln_detail_text)
+        detail_layout.addLayout(detail_btn_row)
+        detail_group.setLayout(detail_layout)
+
+        # ── Assemble page ──────────────────────────────────────────────
+        page_layout.addWidget(disc_group)
+        page_layout.addLayout(top_row)
+        page_layout.addWidget(results_group, 2)
+        page_layout.addWidget(detail_group, 1)
+        page.setLayout(page_layout)
+        return page
+
+    # ── Vulnerability Scanner slots ────────────────────────────────────
+
+    # ── SNMP Discovery slots ───────────────────────────────────────────
+
+    def _vuln_scan_ip(self, ip):
+        """Switch to the Vulnerability Scanner tab, set the IP and start discovery."""
+        if not ip or ip in ("*", "localhost"):
+            return
+        self.vuln_snmp_ip_edit.setText(ip)
+        self.switch_tab(7)
+        self._vuln_start_discover()
+
+    def _vuln_set_busy(self, busy):
+        """Lock/unlock the main action buttons during a running operation."""
+        self.vuln_discover_btn.setEnabled(not busy)
+        self.vuln_search_btn.setEnabled(not busy)
+        self.vuln_stop_btn.setEnabled(busy)
+
+    # ── SNMP tab — host/community helpers ─────────────────────────────
+
+    def _snmp_show_ip_menu(self):
+        """Show a dropdown of all SSH profiles so the user can pick a host."""
+        profiles = self.config.get_ssh_profiles()
+        menu = QMenu(self)
+        if not profiles:
+            act = menu.addAction("No SSH profiles registered")
+            act.setEnabled(False)
+        else:
+            for p in profiles:
+                name = p.get('name', '')
+                host = p.get('host', '')
+                label = f"{name}  ({host})" if name else host
+                action = menu.addAction(label)
+                action.setData(host)
+        btn = self.snmp_ip_profiles_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            self.snmp_host_input.setText(chosen.data())
+
+    def _snmp_show_community_menu(self):
+        """Show a dropdown of previously used SNMP community strings."""
+        history = self.config.get_vuln_community_history()
+        menu = QMenu(self)
+        if not history:
+            act = menu.addAction("No history yet")
+            act.setEnabled(False)
+        else:
+            for c in history:
+                menu.addAction(c)
+        btn = self.snmp_community_hist_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            self.snmp_community_input.setText(chosen.text())
+
+    # ── Vulnerability Scanner tab — host/community helpers ─────────────
+
+    def _vuln_show_ip_menu(self):
+        """Show a dropdown of all SSH profiles so the user can pick an IP."""
+        profiles = self.config.get_ssh_profiles()
+        menu = QMenu(self)
+        if not profiles:
+            act = menu.addAction("No SSH profiles registered")
+            act.setEnabled(False)
+        else:
+            for p in profiles:
+                name = p.get('name', '')
+                host = p.get('host', '')
+                label = f"{name}  ({host})" if name else host
+                action = menu.addAction(label)
+                action.setData(host)
+        btn = self.vuln_ip_profiles_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            self.vuln_snmp_ip_edit.setText(chosen.data())
+
+    def _vuln_show_community_menu(self):
+        """Show a dropdown of previously used SNMP community strings."""
+        history = self.config.get_vuln_community_history()
+        menu = QMenu(self)
+        if not history:
+            act = menu.addAction("No history yet")
+            act.setEnabled(False)
+        else:
+            for c in history:
+                menu.addAction(c)
+        btn = self.vuln_community_hist_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            self.vuln_snmp_community_edit.setText(chosen.text())
+
+    def _vuln_start_discover(self):
+        """Phase 1 — query the device via SNMP, then auto-launch CVE search."""
+        ip        = self.vuln_snmp_ip_edit.text().strip()
+        community = self.vuln_snmp_community_edit.text().strip() or 'public'
+        snmp_ver  = self.vuln_snmp_version_combo.currentText()
+
+        if not ip:
+            self.vuln_discover_status.setText("Please enter an IP address.")
+            self.vuln_discover_status.setStyleSheet("color: #c62828; font-size: 8pt;")
+            return
+
+        self.config.add_vuln_community(community)
+        self._vuln_set_busy(True)
+        self.vuln_discover_btn.setText("Discovering…")
+        self.vuln_discover_status.setText(f"[1/2] Contacting {ip} via SNMP {snmp_ver}…")
+        self.vuln_discover_status.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.vuln_status_lbl.setText("Waiting for SNMP discovery…")
+        self.vuln_status_lbl.setStyleSheet("color: #888888; font-size: 8pt;")
+        self.vuln_progress_bar.setValue(0)
+
+        if self._vuln_discover and self._vuln_discover.isRunning():
+            self._vuln_discover.terminate()
+
+        self._vuln_discover = SnmpDiscoverWorker(ip, community, snmp_ver)
+        self._vuln_discover.device_info.connect(self._vuln_on_device_info)
+        self._vuln_discover.discover_error.connect(self._vuln_on_discover_error)
+        self._vuln_discover.start()
+
+    def _vuln_on_device_info(self, vendor, model, version, raw_descr):
+        """Phase 1 complete — fill fields and immediately start CVE search."""
+        autofill_css = """
+            QLineEdit {
+                border: 1px solid #d0d0d0; border-radius: 4px;
+                padding: 2px 8px; background-color: #fff9f7;
+                color: #333333; font-size: 9pt;
+                border-left: 3px solid #FF5722;
+            }
+            QLineEdit:focus { border: 2px solid #FF5722; }
+        """
+        self.vuln_vendor_edit.setText(vendor)
+        self.vuln_vendor_edit.setStyleSheet(autofill_css)
+        self.vuln_product_edit.setText(model)
+        self.vuln_product_edit.setStyleSheet(autofill_css)
+        self.vuln_version_edit.setText(version)
+        self.vuln_version_edit.setStyleSheet(autofill_css)
+
+        short = raw_descr[:100] + ('…' if len(raw_descr) > 100 else '')
+        self.vuln_discover_status.setText(f"[1/2] Discovered: {short}")
+        self.vuln_discover_status.setStyleSheet("color: #2e7d32; font-size: 8pt;")
+
+        # Phase 2 — auto-start CVE scan (buttons stay locked)
+        self.vuln_discover_btn.setText("Discover & Scan")
+        self._vuln_start_scan(auto=True)
+
+    def _vuln_on_discover_error(self, msg):
+        """SNMP discovery failed — unlock UI so user can fill fields manually."""
+        self._vuln_set_busy(False)
+        self.vuln_discover_btn.setText("Discover & Scan")
+        self.vuln_discover_status.setText(
+            f"Discovery failed: {msg}  —  Fill fields manually and click Search.")
+        self.vuln_discover_status.setStyleSheet("color: #c62828; font-size: 8pt;")
+
+    # ── CVE Search slots ───────────────────────────────────────────────
+
+    def _vuln_start_scan(self, auto=False):
+        """Phase 2 — query NVD CVE database. Called directly or after SNMP discovery."""
+        vendor  = self.vuln_vendor_edit.text().strip()
+        product = self.vuln_product_edit.text().strip()
+        version = self.vuln_version_edit.text().strip()
+
+        if not any([vendor, product, version]):
+            if not auto:
+                QMessageBox.warning(self, "Vulnerability Scanner",
+                                    "Please fill in at least one field (Vendor, Model or Version).")
+            self._vuln_set_busy(False)
+            return
+
+        self._vuln_clear(keep_inputs=True)
+        self._vuln_set_busy(True)
+        self.vuln_progress_bar.setValue(0)
+        phase = "[2/2] " if auto else ""
+        self.vuln_status_lbl.setText(f"{phase}Searching CVEs for '{vendor} {product}'…")
+        self.vuln_status_lbl.setStyleSheet("color: #555555; font-size: 8pt;")
+
+        severity = self.vuln_severity_combo.currentText()
+        api_key  = self.vuln_apikey_edit.text().strip()
+
+        self._vuln_worker = VulnScanWorker(vendor, product, version, severity, api_key)
+        self._vuln_worker.cve_found.connect(self._vuln_on_cve_found)
+        self._vuln_worker.scan_finished.connect(self._vuln_on_finished)
+        self._vuln_worker.scan_error.connect(self._vuln_on_error)
+        self._vuln_worker.scan_progress.connect(self.vuln_progress_bar.setValue)
+        self._vuln_worker.start()
+
+    def _vuln_stop_scan(self):
+        if self._vuln_worker and self._vuln_worker.isRunning():
+            self._vuln_worker.stop()
+        self._vuln_set_busy(False)
+        self.vuln_status_lbl.setText("Search stopped.")
+        self.vuln_status_lbl.setStyleSheet("color: #888888; font-size: 8pt;")
+
+    def _vuln_clear(self, keep_inputs=False):
+        self.vuln_table.setRowCount(0)
+        self.vuln_detail_text.clear()
+        self._vuln_cve_list = []
+        self._vuln_counts = {k: 0 for k in self._vuln_badge}
+        for badge in self._vuln_badge.values():
+            badge.setText("0")
+        self.vuln_progress_bar.setValue(0)
+        self.vuln_btn_nvd.setEnabled(False)
+        self.vuln_btn_mitre.setEnabled(False)
+        self.vuln_btn_copy.setEnabled(False)
+        if not keep_inputs:
+            self.vuln_status_lbl.setText(
+                "Ready — enter search terms and click Search")
+            self.vuln_status_lbl.setStyleSheet("color: #888888; font-size: 8pt;")
+
+    def _vuln_on_cve_found(self, cve_data):
+        """Append one CVE row to the results table."""
+        self._vuln_cve_list.append(cve_data)
+
+        sev = cve_data.get('severity', 'N/A').upper()
+        if sev not in self._vuln_counts:
+            sev = 'N/A'
+        self._vuln_counts[sev] += 1
+        if sev in self._vuln_badge:
+            self._vuln_badge[sev].setText(str(self._vuln_counts[sev]))
+
+        sev_colors = {
+            'CRITICAL': ('#D32F2F', 'white'),
+            'HIGH':     ('#FF5722', 'white'),
+            'MEDIUM':   ('#FFC107', 'black'),
+            'LOW':      ('#4CAF50', 'white'),
+            'N/A':      ('#9E9E9E', 'white'),
+        }
+        bg, fg = sev_colors.get(sev, ('#9E9E9E', 'white'))
+
+        row = self.vuln_table.rowCount()
+        self.vuln_table.insertRow(row)
+
+        score_str = (f"{cve_data['score']:.1f}" if cve_data['score'] else 'N/A')
+
+        cells = [
+            cve_data.get('id', ''),
+            sev.capitalize(),
+            score_str,
+            cve_data.get('published', ''),
+            cve_data.get('cwe', 'N/A'),
+            cve_data.get('description', ''),
+        ]
+        for col, text in enumerate(cells):
+            item = QTableWidgetItem(str(text))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if col == 1:   # severity column — colour it
+                item.setBackground(QColor(bg))
+                item.setForeground(QColor(fg))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if col == 2:   # score — right-align
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.vuln_table.setItem(row, col, item)
+
+    def _vuln_on_finished(self, total, used_keywords):
+        self._vuln_set_busy(False)
+        shown = self.vuln_table.rowCount()
+
+        # Build requested keywords for comparison
+        requested = " ".join(filter(None, [
+            self.vuln_vendor_edit.text().strip(),
+            self.vuln_product_edit.text().strip(),
+            self.vuln_version_edit.text().strip(),
+        ]))
+        fell_back = used_keywords != requested and bool(requested)
+
+        if shown == 0:
+            msg = "No CVEs found even after broadening the search."
+            color = '#888888'
+        else:
+            if total > shown:
+                msg = (f"{shown} of {total} CVEs shown (first page). "
+                       "Add an NVD API Key for full results.")
+            else:
+                msg = f"{shown} CVE(s) found."
+
+            if fell_back:
+                msg += f"  [Searched: \"{used_keywords}\" — version not matched in NVD]"
+
+            color = ('#d32f2f' if self._vuln_counts.get('CRITICAL', 0) > 0 else
+                     '#e65100' if self._vuln_counts.get('HIGH', 0) > 0 else
+                     '#2e7d32')
+
+        self.vuln_status_lbl.setText(msg)
+        self.vuln_status_lbl.setStyleSheet(f"color: {color}; font-size: 8pt;")
+        self.vuln_progress_bar.setValue(100)
+
+    def _vuln_on_error(self, msg):
+        self._vuln_set_busy(False)
+        self.vuln_status_lbl.setText(f"Error: {msg}")
+        self.vuln_status_lbl.setStyleSheet("color: #c62828; font-size: 8pt;")
+
+    def _vuln_on_row_selected(self):
+        rows = self.vuln_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        if row >= len(self._vuln_cve_list):
+            return
+        cve = self._vuln_cve_list[row]
+
+        sev = cve.get('severity', 'N/A').upper()
+        sev_colors = {
+            'CRITICAL': '#D32F2F', 'HIGH': '#FF5722',
+            'MEDIUM':   '#FFC107', 'LOW':  '#4CAF50', 'N/A': '#9E9E9E',
+        }
+        sev_color = sev_colors.get(sev, '#9E9E9E')
+
+        # Build update suggestion
+        desc_lower = cve.get('description', '').lower()
+        if 'update' in desc_lower or 'upgrade' in desc_lower or 'patch' in desc_lower:
+            suggestion = "Apply the vendor-supplied patch or upgrade to the latest firmware version."
+        elif 'workaround' in desc_lower:
+            suggestion = ("A workaround may be available — review the full advisory at NVD "
+                          "and contact the vendor for official guidance.")
+        else:
+            suggestion = ("Update to the latest available firmware/software version from the vendor "
+                          "and monitor the NVD advisory for patches.")
+
+        html = (
+            f"<b style='color:{sev_color}'>{cve.get('id','')}</b> &nbsp;|&nbsp; "
+            f"Severity: <b>{sev}</b> &nbsp;|&nbsp; "
+            f"CVSS Score: <b>{cve.get('score', 0.0):.1f}</b><br>"
+            f"Published: {cve.get('published','N/A')} &nbsp;|&nbsp; "
+            f"Modified: {cve.get('modified','N/A')} &nbsp;|&nbsp; "
+            f"CWE: {cve.get('cwe','N/A')}<br>"
+            f"<small style='color:#777777'>Vector: {cve.get('vector','N/A')}</small><br><br>"
+            f"{cve.get('description','')}<br><br>"
+            f"<b style='color:#1565C0'>Update Suggestion:</b> {suggestion}"
+        )
+        self.vuln_detail_text.setHtml(html)
+        self.vuln_btn_nvd.setEnabled(True)
+        self.vuln_btn_mitre.setEnabled(True)
+        self.vuln_btn_copy.setEnabled(True)
+
+    def _vuln_open_nvd(self):
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        cve_id = self._vuln_selected_id()
+        if cve_id:
+            QDesktopServices.openUrl(
+                QUrl(f"https://nvd.nist.gov/vuln/detail/{cve_id}"))
+
+    def _vuln_open_mitre(self):
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        cve_id = self._vuln_selected_id()
+        if cve_id:
+            QDesktopServices.openUrl(
+                QUrl(f"https://cve.mitre.org/cgi-bin/cvename.cgi?name={cve_id}"))
+
+    def _vuln_copy_cve_id(self):
+        cve_id = self._vuln_selected_id()
+        if cve_id:
+            QApplication.clipboard().setText(cve_id)
+
+    def _vuln_selected_id(self):
+        rows = self.vuln_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        row = rows[0].row()
+        item = self.vuln_table.item(row, 0)
+        return item.text() if item else None
+
+    def _vuln_export_csv(self):
+        if not self._vuln_cve_list:
+            QMessageBox.information(self, "Export", "No CVE data to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export CVE Results", "cve_results.csv",
+            "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["CVE ID", "Severity", "Score", "Published",
+                                 "Modified", "CWE", "CVSS Vector", "Description"])
+                for cve in self._vuln_cve_list:
+                    writer.writerow([
+                        cve.get('id', ''),
+                        cve.get('severity', ''),
+                        cve.get('score', ''),
+                        cve.get('published', ''),
+                        cve.get('modified', ''),
+                        cve.get('cwe', ''),
+                        cve.get('vector', ''),
+                        cve.get('description', ''),
+                    ])
+            self.vuln_status_lbl.setText(f"Exported {len(self._vuln_cve_list)} CVEs to {path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", str(e))
 
 
 def main():
