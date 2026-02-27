@@ -2489,220 +2489,412 @@ class VulnScanWorker(QThread):
         }
 
 
-class SnmpDiscoverWorker(QThread):
+class DeviceDiscoverWorker(QThread):
     """
-    Queries a device via SNMP (sysDescr, sysObjectID, sysName) and parses
-    the result to extract vendor, model and firmware version for CVE lookup.
+    Multi-protocol device fingerprinting for CVE lookup.
+    Tries each method in order, stopping at the first success:
+      1. SNMP       — sysDescr + sysObjectID (with MikroTik OID refinement)
+      2. SSH banner — reads the protocol banner without authenticating
+      3. HTTP/HTTPS — parses page title and response headers
+      4. UPnP/SSDP  — unicast M-SEARCH + device description XML
+
+    Signals:
+      device_info(vendor, model, version, raw)  — successful identification
+      discover_error(msg)                        — all methods failed
+      discover_status(msg)                       — current method being tried
     """
-    device_info    = pyqtSignal(str, str, str, str)  # vendor, model, version, raw_sysdescr
-    discover_error = pyqtSignal(str)
+    device_info     = pyqtSignal(str, str, str, str)
+    discover_error  = pyqtSignal(str)
+    discover_status = pyqtSignal(str)
 
-    # Standard MIB-II system OIDs
-    OID_SYSDESCR  = '1.3.6.1.2.1.1.1.0'
-    OID_SYSOID    = '1.3.6.1.2.1.1.2.0'
-    OID_SYSNAME   = '1.3.6.1.2.1.1.5.0'
-
-    # MikroTik: entPhysicalDescr for index 65536 returns
-    # "RouterOS 7.20.2 (stable) on x86" — exact version string
+    OID_SYSDESCR         = '1.3.6.1.2.1.1.1.0'
+    OID_SYSOID           = '1.3.6.1.2.1.1.2.0'
+    OID_SYSNAME          = '1.3.6.1.2.1.1.5.0'
     OID_MIKROTIK_VERSION = '1.3.6.1.2.1.47.1.1.1.1.2.65536'
 
-    def __init__(self, host, community, version, parent=None):
+    def __init__(self, host, community='public', version='v2c', parent=None):
         super().__init__(parent)
         self.host      = host.strip()
         self.community = community.strip()
         self.version   = version   # 'v1' or 'v2c'
 
     def run(self):
-        try:
-            import asyncio
-            from pysnmp.hlapi.v3arch.asyncio import (
-                SnmpEngine, CommunityData, UdpTransportTarget,
-                ContextData, ObjectType, ObjectIdentity, get_cmd
-            )
+        methods = [
+            ('SNMP',       self._try_snmp),
+            ('SSH banner', self._try_ssh_banner),
+            ('HTTP/HTTPS', self._try_http),
+            ('UPnP/SSDP',  self._try_upnp),
+        ]
+        for name, method in methods:
+            self.discover_status.emit(f"Trying {name}…")
+            try:
+                result = method()
+            except Exception:
+                result = None
+            if result:
+                vendor, model, version, raw = result
+                self.device_info.emit(vendor, model, version, raw)
+                return
+        self.discover_error.emit(
+            "No protocol responded (SNMP / SSH / HTTP / UPnP). "
+            "Check IP, community string and firewall rules.")
 
-            async def do_discover():
-                mp_model = 0 if self.version == 'v1' else 1
-                engine = SnmpEngine()
-                try:
-                    target = await UdpTransportTarget.create(
-                        (self.host, 161), timeout=4.0, retries=1)
+    # ── 1. SNMP ───────────────────────────────────────────────────────────
 
-                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+    def _try_snmp(self):
+        import asyncio
+        from pysnmp.hlapi.v3arch.asyncio import (
+            SnmpEngine, CommunityData, UdpTransportTarget,
+            ContextData, ObjectType, ObjectIdentity, get_cmd
+        )
+        result = [None]
+
+        async def do_snmp():
+            mp_model = 0 if self.version == 'v1' else 1
+            engine   = SnmpEngine()
+            try:
+                target = await UdpTransportTarget.create(
+                    (self.host, 161), timeout=3.0, retries=1)
+                ei, es, _, vb = await get_cmd(
+                    engine,
+                    CommunityData(self.community, mpModel=mp_model),
+                    target, ContextData(),
+                    ObjectType(ObjectIdentity(self.OID_SYSDESCR)),
+                    ObjectType(ObjectIdentity(self.OID_SYSOID)),
+                    ObjectType(ObjectIdentity(self.OID_SYSNAME)),
+                )
+                if ei or es:
+                    return
+                sys_descr = str(vb[0][1]) if vb else ''
+                vendor, model, version = self._parse_sysdescr(sys_descr)
+                # MikroTik: refine version from entPhysicalDescr.65536
+                if vendor == 'MikroTik':
+                    ei2, es2, _, vb2 = await get_cmd(
                         engine,
                         CommunityData(self.community, mpModel=mp_model),
-                        target,
-                        ContextData(),
-                        ObjectType(ObjectIdentity(self.OID_SYSDESCR)),
-                        ObjectType(ObjectIdentity(self.OID_SYSOID)),
-                        ObjectType(ObjectIdentity(self.OID_SYSNAME)),
+                        target, ContextData(),
+                        ObjectType(ObjectIdentity(self.OID_MIKROTIK_VERSION)),
                     )
+                    if not ei2 and not es2:
+                        import re as _re
+                        raw2 = str(vb2[0][1]) if vb2 else ''
+                        m = _re.search(r'RouterOS\s+([\d.]+)', raw2)
+                        if m:
+                            version = m.group(1)
+                if vendor:
+                    result[0] = (vendor, model, version, sys_descr)
+            finally:
+                engine.close_dispatcher()
 
-                    if errorIndication:
-                        self.discover_error.emit(f"SNMP error: {errorIndication}")
-                        return
-                    if errorStatus:
-                        self.discover_error.emit(
-                            f"SNMP error: {errorStatus.prettyPrint()}")
-                        return
+        asyncio.run(do_snmp())
+        return result[0]
 
-                    sys_descr = str(varBinds[0][1]) if varBinds else ''
-                    vendor, model, version = self._parse_sysdescr(sys_descr)
+    # ── 2. SSH banner ──────────────────────────────────────────────────────
 
-                    # MikroTik: always refine version via entPhysicalDescr.65536
-                    # Returns e.g. "RouterOS 7.20.2 (stable) on x86"
-                    if vendor == 'MikroTik':
-                        ei2, es2, _, vb2 = await get_cmd(
-                            engine,
-                            CommunityData(self.community, mpModel=mp_model),
-                            target, ContextData(),
-                            ObjectType(ObjectIdentity(self.OID_MIKROTIK_VERSION)),
-                        )
-                        if not ei2 and not es2:
-                            import re as _re
-                            raw = str(vb2[0][1]) if vb2 else ''
-                            m = _re.search(r'RouterOS\s+([\d.]+)', raw)
-                            if m:
-                                version = m.group(1)
+    def _try_ssh_banner(self):
+        import socket
+        try:
+            s = socket.create_connection((self.host, 22), timeout=3)
+            banner = s.recv(256).decode('utf-8', errors='replace').strip()
+            s.close()
+        except OSError:
+            return None
+        if not banner.startswith('SSH-'):
+            return None
+        vendor, model, version = self._parse_ssh_banner(banner)
+        return (vendor, model, version, f'SSH: {banner}') if vendor else None
 
-                    self.device_info.emit(vendor, model, version, sys_descr)
+    def _parse_ssh_banner(self, banner):
+        import re
+        bl = banner.lower()
+        # SSH-2.0-RouterOS_7.20.2
+        m = re.search(r'routeros[_\s]+([\d.]+)', bl)
+        if m:
+            return 'MikroTik', 'RouterOS', m.group(1)
+        if 'routeros' in bl:
+            return 'MikroTik', 'RouterOS', ''
+        if 'cisco' in bl:
+            return 'Cisco', '', ''
+        if 'huawei' in bl:
+            return 'Huawei', 'VRP', ''
+        if 'comware' in bl:
+            return 'HP', 'Comware', ''
+        if 'forti' in bl:
+            return 'Fortinet', 'FortiOS', ''
+        if 'juniper' in bl:
+            return 'Juniper Networks', 'Junos OS', ''
+        if 'arubaos' in bl or 'aruba' in bl:
+            return 'Aruba', 'ArubaOS', ''
+        if 'panos' in bl or 'palo' in bl:
+            return 'Palo Alto Networks', 'PAN-OS', ''
+        return '', '', ''
 
-                finally:
-                    engine.close_dispatcher()
+    # ── 3. HTTP / HTTPS ────────────────────────────────────────────────────
 
-            asyncio.run(do_discover())
+    def _try_http(self):
+        import urllib.request, ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode    = ssl.CERT_NONE
+        for scheme, port in [('http', 80), ('https', 443),
+                              ('http', 8080), ('https', 8443)]:
+            try:
+                url = f'{scheme}://{self.host}:{port}/'
+                req = urllib.request.Request(
+                    url, headers={'User-Agent': 'Mozilla/5.0',
+                                  'Connection': 'close'})
+                kw = {'timeout': 3}
+                if scheme == 'https':
+                    kw['context'] = ctx
+                with urllib.request.urlopen(req, **kw) as r:
+                    hdrs = {k.lower(): v for k, v in r.headers.items()}
+                    body = r.read(8192).decode('utf-8', errors='replace')
+                result = self._parse_http(hdrs, body, url)
+                if result:
+                    return result
+            except Exception:
+                continue
+        return None
 
-        except ImportError as e:
-            self.discover_error.emit(
-                f"pysnmp not installed.\n\nInstall with: pip install pysnmp\n\n{e}")
-        except Exception as e:
-            self.discover_error.emit(str(e))
+    def _parse_http(self, hdrs, body, url):
+        import re
+        server = hdrs.get('server', '').lower()
+        auth   = hdrs.get('www-authenticate', '').lower()
+        title_m = re.search(r'<title[^>]*>([^<]{1,120})</title>', body, re.I)
+        title   = title_m.group(1).strip() if title_m else ''
+        tl      = title.lower()
+        bl      = body.lower()
+
+        def hit(vendor, model='', version=''):
+            return (vendor, model, version,
+                    f'HTTP: {url} | {title or server}')
+
+        if 'fortigate' in auth or 'fortios' in tl or 'fortigate' in tl:
+            ver_m = re.search(r'v([\d.]+)', title)
+            return hit('Fortinet', 'FortiOS', ver_m.group(1) if ver_m else '')
+        if 'forti' in tl:
+            prod_m = re.search(r'(forti\w+)', title, re.I)
+            return hit('Fortinet', prod_m.group(1) if prod_m else 'FortiOS')
+        if 'routeros' in tl or 'routeros' in server or 'mikrotik' in tl:
+            return hit('MikroTik', 'RouterOS')
+        if 'cisco' in tl or 'cisco' in server:
+            model_m = re.search(r'cisco\s+([\w-]+)', tl)
+            return hit('Cisco', model_m.group(1).upper() if model_m else '')
+        if 'junos' in tl or 'juniper' in tl:
+            return hit('Juniper Networks', 'Junos OS')
+        if 'huawei' in tl or 'huawei' in server:
+            return hit('Huawei', 'VRP')
+        if 'palo alto' in tl or 'pan-os' in tl:
+            return hit('Palo Alto Networks', 'PAN-OS')
+        if 'sonicwall' in tl or 'sonicos' in tl:
+            return hit('SonicWall', 'SonicOS')
+        if 'check point' in tl or ('gaia' in tl and 'portal' in tl):
+            return hit('Check Point', 'Gaia OS')
+        if 'aruba' in tl:
+            return hit('Aruba', 'ArubaOS')
+        if 'unifi' in tl or 'ubiquiti' in tl:
+            return hit('Ubiquiti', 'UniFi')
+        if 'd-link' in tl or 'dlink' in tl:
+            model_m = re.search(r'(D[A-Z]-\d+\w*)', title)
+            return hit('D-Link', model_m.group(1) if model_m else '')
+        if 'tp-link' in tl or 'jetstream' in tl:
+            model_m = re.search(r'(T[LGP]-[\w]+)', title, re.I)
+            return hit('TP-Link', model_m.group(1) if model_m else '')
+        if ('hp ' in tl or 'hpe ' in tl or 'procurve' in tl) and \
+                ('switch' in tl or 'router' in tl or 'procurve' in tl):
+            return hit('HP', 'Comware' if 'comware' in bl else '')
+        if 'h3c' in tl:
+            return hit('HP', 'Comware')
+        return None
+
+    # ── 4. UPnP / SSDP ────────────────────────────────────────────────────
+
+    def _try_upnp(self):
+        import socket, re, urllib.request, ssl
+        msg = (
+            'M-SEARCH * HTTP/1.1\r\n'
+            f'HOST: {self.host}:1900\r\n'
+            'MAN: "ssdp:discover"\r\nMX: 2\r\n'
+            'ST: upnp:rootdevice\r\n\r\n'
+        ).encode()
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(3)
+            s.sendto(msg, (self.host, 1900))
+            resp = s.recv(2048).decode('utf-8', errors='replace')
+            s.close()
+        except OSError:
+            return None
+        loc_m = re.search(r'LOCATION:\s*(\S+)', resp, re.I)
+        if not loc_m:
+            return None
+        xml_url = loc_m.group(1).strip()
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode    = ssl.CERT_NONE
+            req = urllib.request.Request(
+                xml_url, headers={'User-Agent': 'Omnicom/1.5'})
+            kw = {'timeout': 3}
+            if xml_url.startswith('https'):
+                kw['context'] = ctx
+            with urllib.request.urlopen(req, **kw) as r:
+                xml = r.read(8192).decode('utf-8', errors='replace')
+        except Exception:
+            return None
+
+        def xtag(tag):
+            m = re.search(rf'<{tag}[^>]*>([^<]+)</{tag}>', xml, re.I)
+            return m.group(1).strip() if m else ''
+
+        vendor  = xtag('manufacturer')
+        model   = xtag('modelName')
+        version = xtag('modelNumber') or xtag('softwareVersion')
+        raw     = f'UPnP: {vendor} {model} {version} ({xml_url})'
+        return (vendor, model, version, raw) if (vendor or model) else None
+
+    # ── sysDescr parser (shared by SNMP and Telnet methods) ───────────────
 
     def _parse_sysdescr(self, descr):
-        """Parse sysDescr string to extract (vendor, model, version)."""
+        """Parse a free-text device description to (vendor, model, version)."""
         import re
-        d = descr.strip()
+        d  = descr.strip()
         dl = d.lower()
 
-        # ── Cisco IOS / IOS-XE / NX-OS ──────────────────────────────
-        # NVD: vendor "Cisco", product "IOS", "IOS XE", "NX-OS", "IOS XR"
-        # version "15.7(3)M8" or "17.3.1" — the version string after "Version"
         if 'cisco' in dl:
             vendor = 'Cisco'
-            if 'ios xe' in dl or 'ios-xe' in dl or 'iosxe' in dl:
-                model = 'IOS XE'
-            elif 'nx-os' in dl or 'nxos' in dl:
-                model = 'NX-OS'
-            elif 'ios xr' in dl or 'iosxr' in dl:
-                model = 'IOS XR'
-            else:
-                model = 'IOS'
-            ver_m = re.search(r'[Vv]ersion\s+([\d().A-Za-z]+)', d)
+            if   'ios xe' in dl or 'ios-xe' in dl: model = 'IOS XE'
+            elif 'nx-os'  in dl or 'nxos'   in dl: model = 'NX-OS'
+            elif 'ios xr' in dl or 'iosxr'  in dl: model = 'IOS XR'
+            else:                                    model = 'IOS'
+            ver_m   = re.search(r'[Vv]ersion\s+([\d().A-Za-z]+)', d)
             version = ver_m.group(1) if ver_m else ''
             return vendor, model, version
 
-        # ── Juniper JUNOS ─────────────────────────────────────────────
-        # NVD: vendor "Juniper Networks", product "Junos OS", version "21.4R1.12"
         if 'juniper' in dl or 'junos' in dl:
-            vendor = 'Juniper Networks'
-            model  = 'Junos OS'   # NVD product name (not the hardware platform)
-            ver_m  = re.search(r'[Jj][Uu][Nn][Oo][Ss][\s:v]+([\d\w.]+)', d)
+            ver_m   = re.search(r'[Jj][Uu][Nn][Oo][Ss][\s:v]+([\d\w.]+)', d)
             version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            return 'Juniper Networks', 'Junos OS', version
 
-        # ── MikroTik RouterOS ─────────────────────────────────────────
-        # NVD: vendor "MikroTik", product "RouterOS", version "7.1.5"
         if 'routeros' in dl or 'mikrotik' in dl:
-            vendor  = 'MikroTik'
-            model   = 'RouterOS'
             ver_m   = re.search(r'[Rr]outer[Oo][Ss]\s+([\d.]+)', d)
             version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            return 'MikroTik', 'RouterOS', version
 
-        # ── Huawei VRP ───────────────────────────────────────────────
-        # NVD lists Huawei CVEs under product "VRP" with versions like
-        # "V200R022C00" — NOT the hardware model or the internal "5.170" number.
         if 'huawei' in dl:
-            vendor = 'Huawei'
-            model  = 'VRP'   # product name used in NVD for Huawei enterprise SW
-            # Extract formal Huawei version: V200R022C00 (drop service-pack suffix)
-            # sysDescr example: "Version 5.170 (S5735 V200R022C00SPC500)"
-            ver_m = re.search(r'\b(V\d+R\d+C\d+)', d)
-            if not ver_m:
-                ver_m = re.search(r'\b(V\d+R\d+)', d)  # e.g. V200R022
+            ver_m = re.search(r'\b(V\d+R\d+C\d+)', d) or \
+                    re.search(r'\b(V\d+R\d+)', d)
             version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            return 'Huawei', 'VRP', version
 
-        # ── Fortinet ─────────────────────────────────────────────────
-        # NVD: vendor "Fortinet", product "FortiOS" or "FortiGate", version "6.4.5"
         if 'forti' in dl:
-            vendor = 'Fortinet'
-            # Prefer "FortiOS" as product (broader CVE coverage) but keep
-            # specific product if found (FortiSwitch, FortiAP, etc.)
-            prod_m = re.search(r'(Forti(?:OS|Gate|Switch|AP|Analyzer|Manager))', d, re.I)
-            model  = prod_m.group(1) if prod_m else 'FortiOS'
-            ver_m  = re.search(r'v([\d.]+)', d)
+            prod_m  = re.search(r'(Forti(?:OS|Gate|Switch|AP|Analyzer|Manager))', d, re.I)
+            model   = prod_m.group(1) if prod_m else 'FortiOS'
+            ver_m   = re.search(r'v([\d.]+)', d)
             version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            return 'Fortinet', model, version
 
-        # ── Aruba / HP / HPE / H3C / Comware ────────────────────────
-        if 'aruba' in dl or 'comware' in dl or 'h3c' in dl or ('hp' in dl and ('switch' in dl or 'hpe' in dl)):
+        if 'aruba' in dl or 'comware' in dl or 'h3c' in dl or \
+                ('hp' in dl and ('switch' in dl or 'hpe' in dl)):
             if 'aruba' in dl:
-                vendor = 'Aruba'
-                model = 'ArubaOS'
                 ver_m = re.search(r'ArubaOS\s+([\d.]+)', d, re.I)
-                version = ver_m.group(1) if ver_m else ''
+                return 'Aruba', 'ArubaOS', ver_m.group(1) if ver_m else ''
             elif 'comware' in dl or 'h3c' in dl:
-                # HP/HPE/H3C Comware switches — NVD product name is "Comware"
-                vendor = 'HP'
-                model = 'Comware'
                 ver_m = re.search(r'[Ss]oftware [Vv]ersion\s+([\d.]+)', d)
-                version = ver_m.group(1) if ver_m else ''
+                return 'HP', 'Comware', ver_m.group(1) if ver_m else ''
             else:
-                vendor = 'HP'
                 model_m = re.search(r'([\w-]+\s+[Ss]witch)', d)
-                model = model_m.group(1) if model_m else ''
-                ver_m = re.search(r'[Rr]evision\s+(\S+)', d)
-                version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+                ver_m   = re.search(r'[Rr]evision\s+(\S+)', d)
+                return 'HP', (model_m.group(1) if model_m else ''), \
+                       (ver_m.group(1) if ver_m else '')
 
-        # ── D-Link ───────────────────────────────────────────────────
         if 'd-link' in dl or 'dlink' in dl:
-            vendor = 'D-Link'
             model_m = re.search(r'(D[GS]-\d+\S*)', d, re.I)
-            model = model_m.group(1) if model_m else ''
-            ver_m = re.search(r'[Vv]ersion\s+([\d.]+)', d)
-            version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            return 'D-Link', (model_m.group(1) if model_m else ''), \
+                   (ver_m.group(1) if ver_m else '')
 
-        # ── Linux (NET-SNMP) ─────────────────────────────────────────
-        if d.startswith('Linux') or 'linux kernel' in dl:
-            vendor = 'Linux'
-            ver_m = re.search(r'Linux\s+\S+\s+([\d.]+)', d)
+        if 'timos' in dl or ('nokia' in dl and 'sr' in dl):
+            ver_m   = re.search(r'TiMOS-[A-Z]-?([\d.R]+)', d, re.I)
             version = ver_m.group(1) if ver_m else ''
-            for distro in ('ubuntu', 'debian', 'centos', 'fedora', 'rhel',
-                           'suse', 'arch', 'alpine'):
+            return 'Nokia', 'SR OS', version
+
+        if 'palo alto' in dl or 'pan-os' in dl:
+            ver_m   = re.search(r'version\s+([\d.]+)', d, re.I)
+            version = ver_m.group(1) if ver_m else ''
+            return 'Palo Alto Networks', 'PAN-OS', version
+
+        if 'extremexos' in dl or 'extreme networks' in dl or 'enterasys' in dl:
+            model   = 'EOS' if 'enterasys' in dl else 'ExtremeXOS'
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            return 'Extreme Networks', model, (ver_m.group(1) if ver_m else '')
+
+        if 'tp-link' in dl or 'jetstream' in dl or 'tl-' in dl:
+            model_m = re.search(r'(T[LGP]-\w+)', d, re.I)
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            return 'TP-Link', (model_m.group(1) if model_m else ''), \
+                   (ver_m.group(1) if ver_m else '')
+
+        if 'ubiquiti' in dl or 'ubnt' in dl or 'unifi' in dl or \
+                'edgeos' in dl or 'airos' in dl:
+            if   'unifi'   in dl: model = 'UniFi'
+            elif 'edgeos'  in dl: model = 'EdgeOS'
+            elif 'airos'   in dl: model = 'AirOS'
+            else:                 model = ''
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d) or \
+                      re.search(r'\b([\d]+\.[\d]+\.[\d]+)\b', d)
+            version = ver_m.group(1) if ver_m else ''
+            return 'Ubiquiti', model, version
+
+        if 'checkpoint' in dl or 'check point' in dl:
+            ver_m   = re.search(r'R([\d]+\.[\d]+)', d)
+            version = ('R' + ver_m.group(1)) if ver_m else ''
+            return 'Check Point', 'Gaia OS', version
+
+        if 'watchguard' in dl or 'fireware' in dl:
+            ver_m   = re.search(r'v([\d.]+)', d)
+            return 'WatchGuard', 'Fireware', (ver_m.group(1) if ver_m else '')
+
+        if 'sonicwall' in dl or 'sonicos' in dl:
+            ver_m   = re.search(r'[Ss]onic[Oo][Ss]\s+([\d.]+)', d) or \
+                      re.search(r'([\d]+\.[\d]+\.[\d]+\.[\d]+)', d)
+            return 'SonicWall', 'SonicOS', (ver_m.group(1) if ver_m else '')
+
+        if 'brocade' in dl or 'foundry' in dl or 'ironware' in dl:
+            model   = 'FabricOS' if ('fabric' in dl or 'san' in dl) else 'IronWare'
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            return 'Brocade', model, (ver_m.group(1) if ver_m else '')
+
+        if 'zte' in dl or 'zxros' in dl:
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.]+)', d)
+            return 'ZTE', 'ZXROS', (ver_m.group(1) if ver_m else '')
+
+        if 'ruijie' in dl or 'rgos' in dl:
+            ver_m   = re.search(r'[Vv]ersion\s+([\d.()]+)', d)
+            return 'Ruijie', 'RGOS', (ver_m.group(1) if ver_m else '')
+
+        if d.startswith('Linux') or 'linux kernel' in dl:
+            ver_m = re.search(r'Linux\s+\S+\s+([\d.]+)', d)
+            for distro in ('ubuntu', 'debian', 'centos', 'fedora',
+                           'rhel', 'suse', 'arch', 'alpine'):
                 if distro in dl:
                     model = distro.capitalize()
                     break
             else:
                 model = 'Linux'
-            return vendor, model, version
+            return 'Linux', model, (ver_m.group(1) if ver_m else '')
 
-        # ── Windows / Microsoft ───────────────────────────────────────
         if 'windows' in dl or 'microsoft' in dl:
-            vendor = 'Microsoft'
-            model = 'Windows'
             ver_m = re.search(r'([\d]+\.[\d]+\.[\d]+)', d)
-            version = ver_m.group(1) if ver_m else ''
-            return vendor, model, version
+            return 'Microsoft', 'Windows', (ver_m.group(1) if ver_m else '')
 
-        # ── Generic fallback ─────────────────────────────────────────
-        words = d.split()
-        vendor = words[0] if words else ''
-        ver_m = re.search(r'([\d]+\.[\d]+[.\d]*)', d)
+        # Generic fallback
+        words   = d.split()
+        vendor  = words[0] if words else ''
+        ver_m   = re.search(r'([\d]+\.[\d]+[.\d]*)', d)
         version = ver_m.group(1) if ver_m else ''
-        model = (d[:80] if len(d) > 80 else d)
-        return vendor, model, version
+        return vendor, (d[:80] if len(d) > 80 else d), version
+
 
 
 class MtrWorker(QThread):
@@ -13274,9 +13466,10 @@ class SerialTerminalGUI(QMainWindow):
         if self._vuln_discover and self._vuln_discover.isRunning():
             self._vuln_discover.terminate()
 
-        self._vuln_discover = SnmpDiscoverWorker(ip, community, snmp_ver)
+        self._vuln_discover = DeviceDiscoverWorker(ip, community, snmp_ver)
         self._vuln_discover.device_info.connect(self._vuln_on_device_info)
         self._vuln_discover.discover_error.connect(self._vuln_on_discover_error)
+        self._vuln_discover.discover_status.connect(self._vuln_on_discover_status)
         self._vuln_discover.start()
 
     def _vuln_on_device_info(self, vendor, model, version, raw_descr):
@@ -13309,12 +13502,17 @@ class SerialTerminalGUI(QMainWindow):
         self._vuln_start_scan(auto=True)
 
     def _vuln_on_discover_error(self, msg):
-        """SNMP discovery failed — unlock UI so user can fill fields manually."""
+        """All discovery methods failed — unlock UI."""
         self._vuln_set_busy(False)
         self.vuln_discover_btn.setText("Discover & Scan")
         self.vuln_discover_status.setText(
             f"Discovery failed: {msg}  —  Fill fields manually and click Search.")
         self.vuln_discover_status.setStyleSheet("color: #c62828; font-size: 8pt;")
+
+    def _vuln_on_discover_status(self, msg):
+        """Show which discovery protocol is currently being tried."""
+        self.vuln_discover_status.setText(msg)
+        self.vuln_discover_status.setStyleSheet("color: #555555; font-size: 8pt;")
 
     # ── CVE Search slots ───────────────────────────────────────────────
 
