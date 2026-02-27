@@ -1,3 +1,13 @@
+omnicom (1.5-2) jammy; urgency=low
+
+  * Vulnerability Scanner: fix NVD keyword search — use major.minor version
+    only (e.g. 7.20 instead of 7.20.2) to avoid token noise in full-text search
+  * Vulnerability Scanner: add MikroTik version discovery via SNMP OID
+    1.3.6.1.2.1.47.1.1.1.1.2.65536 (entPhysicalDescr) for accurate RouterOS version
+  * Add beep and mtr as package dependencies
+
+ -- Benjamim Gois <benjamimgois@example.com>  Thu, 27 Feb 2026 12:00:00 -0300
+
 omnicom (1.5-1) jammy; urgency=medium
 
   * Reorganize Serial tab layout: Type and Port fields side-by-side

@@ -29,6 +29,7 @@ from pathlib import Path
 
 # Application version
 VERSION = "1.5"
+VERSION_LABEL = "1.5 git test build"
 
 
 class TFTPHandler(socketserver.BaseRequestHandler):
@@ -2390,12 +2391,26 @@ class VulnScanWorker(QThread):
         version = self.version
 
         # Build a cascade of keyword queries from most specific to least:
-        #   1. vendor + product + version  (e.g. "Huawei VRP V200R022C00")
-        #   2. vendor + product            (e.g. "Huawei VRP")
-        #   3. vendor only                 (e.g. "Huawei")
+        #   1. vendor + product + major.minor  (e.g. "MikroTik RouterOS 7.20")
+        #   2. vendor + product                (e.g. "MikroTik RouterOS")
+        #   3. vendor only                     (e.g. "MikroTik")
         # Stop at the first level that returns results.
+        #
+        # Why major.minor and not full X.Y.Z?
+        # NVD keyword search is full-text. "7.20.2" tokenises as "7.20" + "2",
+        # and the bare token "2" matches thousands of unrelated CVEs (e.g.
+        # "RouterOS 3.2", "before 6.40.2"). Using only X.Y avoids this noise.
+        # Non-numeric versions (e.g. Huawei "V200R022C00") are used as-is
+        # because they are already unique tokens.
+        import re as _re
+        ver_search = version
+        if version:
+            m = _re.match(r'^(\d+\.\d+)\.\d', version)
+            if m:
+                ver_search = m.group(1)   # "7.20.2" → "7.20"
+
         candidates = []
-        full = " ".join(filter(None, [vendor, product, version]))
+        full = " ".join(filter(None, [vendor, product, ver_search]))
         no_ver = " ".join(filter(None, [vendor, product]))
         vendor_only = vendor
 
@@ -2487,6 +2502,10 @@ class SnmpDiscoverWorker(QThread):
     OID_SYSOID    = '1.3.6.1.2.1.1.2.0'
     OID_SYSNAME   = '1.3.6.1.2.1.1.5.0'
 
+    # MikroTik: entPhysicalDescr for index 65536 returns
+    # "RouterOS 7.20.2 (stable) on x86" — exact version string
+    OID_MIKROTIK_VERSION = '1.3.6.1.2.1.47.1.1.1.1.2.65536'
+
     def __init__(self, host, community, version, parent=None):
         super().__init__(parent)
         self.host      = host.strip()
@@ -2528,6 +2547,23 @@ class SnmpDiscoverWorker(QThread):
 
                     sys_descr = str(varBinds[0][1]) if varBinds else ''
                     vendor, model, version = self._parse_sysdescr(sys_descr)
+
+                    # MikroTik: always refine version via entPhysicalDescr.65536
+                    # Returns e.g. "RouterOS 7.20.2 (stable) on x86"
+                    if vendor == 'MikroTik':
+                        ei2, es2, _, vb2 = await get_cmd(
+                            engine,
+                            CommunityData(self.community, mpModel=mp_model),
+                            target, ContextData(),
+                            ObjectType(ObjectIdentity(self.OID_MIKROTIK_VERSION)),
+                        )
+                        if not ei2 and not es2:
+                            import re as _re
+                            raw = str(vb2[0][1]) if vb2 else ''
+                            m = _re.search(r'RouterOS\s+([\d.]+)', raw)
+                            if m:
+                                version = m.group(1)
+
                     self.device_info.emit(vendor, model, version, sys_descr)
 
                 finally:
@@ -2809,6 +2845,55 @@ class MtrWorker(QThread):
 
         self.mtr_finished.emit()
 
+
+
+
+
+class DeviceImageWorker(QThread):
+    """Fetch a product image for a hardware model using DuckDuckGo image search."""
+    image_ready = pyqtSignal(bytes)   # raw JPEG/PNG bytes
+    image_error = pyqtSignal()
+
+    def __init__(self, query, parent=None):
+        super().__init__(parent)
+        self.query = query
+
+    def run(self):
+        import urllib.request, urllib.parse, re, json
+        try:
+            q   = urllib.parse.quote(self.query)
+            ua  = ('Mozilla/5.0 (X11; Linux x86_64) '
+                   'AppleWebKit/537.36 (KHTML, like Gecko) '
+                   'Chrome/120.0 Safari/537.36')
+            # ── Step 1: obtain VQD token ──────────────────────────────
+            req1 = urllib.request.Request(
+                f'https://duckduckgo.com/?q={q}&iax=images&ia=images',
+                headers={'User-Agent': ua, 'Accept-Language': 'en-US,en;q=0.9'})
+            with urllib.request.urlopen(req1, timeout=10) as r:
+                html = r.read().decode('utf-8', errors='replace')
+            vqd_m = re.search(r'vqd=(["\'])([^"\']+)\1', html)
+            if not vqd_m:
+                self.image_error.emit(); return
+            vqd = vqd_m.group(2)
+            # ── Step 2: image search ──────────────────────────────────
+            req2 = urllib.request.Request(
+                f'https://duckduckgo.com/i.js?q={q}&o=json&vqd={vqd}&f=,,,&p=1&v7exp=a',
+                headers={'User-Agent': ua, 'Accept': 'application/json',
+                         'Referer': 'https://duckduckgo.com/'})
+            with urllib.request.urlopen(req2, timeout=10) as r:
+                data = json.loads(r.read().decode())
+            results = data.get('results', [])
+            if not results:
+                self.image_error.emit(); return
+            thumb_url = results[0].get('thumbnail') or results[0].get('image', '')
+            if not thumb_url:
+                self.image_error.emit(); return
+            # ── Step 3: download thumbnail ────────────────────────────
+            req3 = urllib.request.Request(thumb_url, headers={'User-Agent': ua})
+            with urllib.request.urlopen(req3, timeout=10) as r:
+                self.image_ready.emit(r.read())
+        except Exception:
+            self.image_error.emit()
 
 
 class SignalHistoryWidget(QWidget):
@@ -6167,7 +6252,7 @@ Router#_\r
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"Omnicom v{VERSION}")
+        self.setWindowTitle(f"Omnicom v{VERSION_LABEL}")
         self.setMinimumSize(600, 780)
         self.resize(650, 780)
         self.terminal_dialog = None
@@ -9903,6 +9988,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def eventFilter(self, obj, event):
         from PyQt6.QtCore import QEvent
+        # ── WiFi chart resize ──────────────────────────────────────────
         if event.type() == QEvent.Type.Resize:
             if obj is getattr(self, 'wifi_chart_group', None):
                 btn = getattr(self, '_close_channel_btn', None)
@@ -9912,6 +9998,11 @@ class SerialTerminalGUI(QMainWindow):
                 btn = getattr(self, '_close_history_btn', None)
                 if btn:
                     btn.move(obj.width() - 24, 4)
+        # ── CVE Scanner device image click ────────────────────────────
+        if (event.type() == QEvent.Type.MouseButtonPress
+                and obj is getattr(self, 'vuln_device_img', None)):
+            self._vuln_show_device_image_fullsize()
+            return True
         return super().eventFilter(obj, event)
 
     def _wifi_set_chart_visible(self, which, visible):
@@ -12534,9 +12625,11 @@ class SerialTerminalGUI(QMainWindow):
         """Create the Vulnerability Scanner page (NVD / MITRE CVE lookup)."""
         from PyQt6.QtWidgets import QProgressBar, QSplitter
 
-        self._vuln_worker    = None
-        self._vuln_discover  = None
-        self._vuln_cve_list  = []   # cache for export / detail view
+        self._vuln_worker          = None
+        self._vuln_discover        = None
+        self._vuln_img_worker      = None
+        self._vuln_device_pixmap_full = None   # original full-res product image
+        self._vuln_cve_list        = []   # cache for export / detail view
 
         page = QWidget()
         page_layout = QVBoxLayout()
@@ -12653,6 +12746,37 @@ class SerialTerminalGUI(QMainWindow):
         self.vuln_discover_status = QLabel("Enter an IP and community string, then click Discover.")
         self.vuln_discover_status.setStyleSheet("color: #888888; font-size: 8pt;")
 
+        # ── Device product image (right side of disc_group) ─────────────
+        _disc_sep = QFrame()
+        _disc_sep.setFrameShape(QFrame.Shape.VLine)
+        _disc_sep.setFrameShadow(QFrame.Shadow.Sunken)
+        _disc_sep.setStyleSheet("color: #d0d0d0;")
+
+        self.vuln_device_img = QLabel()
+        self.vuln_device_img.setFixedSize(160, 80)
+        self.vuln_device_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vuln_device_img.setStyleSheet(
+            "border: 1px solid #e0e0e0; border-radius: 4px; background: #fafafa;")
+        self.vuln_device_img.setToolTip("Click to enlarge")
+        self.vuln_device_img.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vuln_device_img.installEventFilter(self)
+
+        self.vuln_device_name_lbl = QLabel()
+        self.vuln_device_name_lbl.setStyleSheet("color: #888888; font-size: 7.5pt;")
+        self.vuln_device_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vuln_device_name_lbl.setFixedWidth(160)
+
+        _device_img_vbox = QVBoxLayout()
+        _device_img_vbox.setSpacing(2)
+        _device_img_vbox.setContentsMargins(6, 0, 4, 0)
+        _device_img_vbox.addWidget(self.vuln_device_img, 0, Qt.AlignmentFlag.AlignCenter)
+        _device_img_vbox.addWidget(self.vuln_device_name_lbl, 0, Qt.AlignmentFlag.AlignCenter)
+        _device_img_widget = QWidget()
+        _device_img_widget.setLayout(_device_img_vbox)
+
+        # Seed with default icon while idle
+        self._vuln_update_device_image('Default', '')
+
         disc_h.addWidget(_lbl("IP:"))
         disc_h.addWidget(self.vuln_snmp_ip_edit)
         disc_h.addWidget(self.vuln_ip_profiles_btn)
@@ -12663,6 +12787,8 @@ class SerialTerminalGUI(QMainWindow):
         disc_h.addWidget(self.vuln_snmp_version_combo)
         disc_h.addWidget(self.vuln_discover_btn)
         disc_h.addWidget(self.vuln_discover_status, 1)
+        disc_h.addWidget(_disc_sep)
+        disc_h.addWidget(_device_img_widget)
         disc_group.setLayout(disc_h)
 
         # ══════════════════════════════════════════════════════════════
@@ -12962,6 +13088,83 @@ class SerialTerminalGUI(QMainWindow):
 
     # ── SNMP Discovery slots ───────────────────────────────────────────
 
+    def _vuln_update_device_image(self, vendor, model):
+        """Show vendor SVG logo as placeholder and then kick off web image fetch."""
+        _NORMALIZE = {
+            'hp':               'Aruba',
+            'hpe':              'Aruba',
+            'juniper networks': 'Juniper',
+            'h3c':              'H3C',
+        }
+        icon_vendor = _NORMALIZE.get(vendor.lower(), vendor)
+        icon_path   = self.get_vendor_icon_path(icon_vendor)
+        pixmap      = load_svg_pixmap(icon_path, 64)
+        if pixmap and not pixmap.isNull():
+            self.vuln_device_img.setPixmap(
+                pixmap.scaled(64, 64,
+                              Qt.AspectRatioMode.KeepAspectRatio,
+                              Qt.TransformationMode.SmoothTransformation))
+        else:
+            self.vuln_device_img.clear()
+        self.vuln_device_name_lbl.setText(model if model else vendor)
+
+    def _vuln_fetch_device_image(self, vendor, hw_model, raw_descr):
+        """Search the web for a product image of the discovered hardware model."""
+        import re
+        # Prefer hw_model from phase-2 SNMP OIDs; fall back to regex on sysDescr
+        if not hw_model:
+            hw_m = re.search(r'\b([A-Z]{1,5}[\d][\w\-/]{2,20})\b', raw_descr)
+            hw_model = hw_m.group(1) if hw_m else ''
+        query = f'{vendor} {hw_model}' if hw_model else f'{vendor} switch'
+
+        # Cancel any ongoing image fetch
+        if self._vuln_img_worker and self._vuln_img_worker.isRunning():
+            self._vuln_img_worker.terminate()
+
+        self.vuln_device_img.setText("⏳")
+        self.vuln_device_name_lbl.setText(hw_model or vendor)
+
+        self._vuln_img_worker = DeviceImageWorker(query)
+        self._vuln_img_worker.image_ready.connect(self._vuln_on_image_ready)
+        self._vuln_img_worker.image_error.connect(self._vuln_on_image_error)
+        self._vuln_img_worker.start()
+
+    def _vuln_on_image_ready(self, img_bytes):
+        """Display the downloaded product image, scaled to fit the label."""
+        pm = QPixmap()
+        if pm.loadFromData(img_bytes):
+            self._vuln_device_pixmap_full = pm
+            scaled = pm.scaled(160, 80,
+                               Qt.AspectRatioMode.KeepAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
+            self.vuln_device_img.setPixmap(scaled)
+            self.vuln_device_img.setText("")
+
+    def _vuln_on_image_error(self):
+        """On failure clear the loading indicator (vendor SVG stays from the placeholder)."""
+        self.vuln_device_img.setText("")
+
+    def _vuln_show_device_image_fullsize(self):
+        """Open a dialog showing the product image at a larger size."""
+        pm = self._vuln_device_pixmap_full
+        if not pm or pm.isNull():
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle(self.vuln_device_name_lbl.text() or "Device Image")
+        dlg.setStyleSheet("QDialog { background-color: #ffffff; }")
+        lay = QVBoxLayout()
+        lay.setContentsMargins(12, 12, 12, 12)
+        lbl = QLabel()
+        scaled = pm.scaled(800, 500,
+                           Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+        lbl.setPixmap(scaled)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(lbl)
+        dlg.setLayout(lay)
+        dlg.adjustSize()
+        dlg.exec()
+
     def _vuln_scan_ip(self, ip):
         """Switch to the Vulnerability Scanner tab, set the IP and start discovery."""
         if not ip or ip in ("*", "localhost"):
@@ -13077,7 +13280,7 @@ class SerialTerminalGUI(QMainWindow):
         self._vuln_discover.start()
 
     def _vuln_on_device_info(self, vendor, model, version, raw_descr):
-        """Phase 1 complete — fill fields and immediately start CVE search."""
+        """SNMP discovery complete — fill fields and immediately start CVE search."""
         autofill_css = """
             QLineEdit {
                 border: 1px solid #d0d0d0; border-radius: 4px;
@@ -13094,8 +13297,11 @@ class SerialTerminalGUI(QMainWindow):
         self.vuln_version_edit.setText(version)
         self.vuln_version_edit.setStyleSheet(autofill_css)
 
+        self._vuln_update_device_image(vendor, model)
+        self._vuln_fetch_device_image(vendor, model, raw_descr)
+
         short = raw_descr[:100] + ('…' if len(raw_descr) > 100 else '')
-        self.vuln_discover_status.setText(f"[1/2] Discovered: {short}")
+        self.vuln_discover_status.setText(f"Discovered: {short}")
         self.vuln_discover_status.setStyleSheet("color: #2e7d32; font-size: 8pt;")
 
         # Phase 2 — auto-start CVE scan (buttons stay locked)
@@ -13164,6 +13370,12 @@ class SerialTerminalGUI(QMainWindow):
             self.vuln_status_lbl.setText(
                 "Ready — enter search terms and click Search")
             self.vuln_status_lbl.setStyleSheet("color: #888888; font-size: 8pt;")
+            if self._vuln_img_worker and self._vuln_img_worker.isRunning():
+                self._vuln_img_worker.terminate()
+            self._vuln_device_pixmap_full = None
+            self._vuln_update_device_image('Default', '')
+            self.vuln_discover_status.setText(
+                "Enter an IP and community string, then click Discover.")
 
     def _vuln_on_cve_found(self, cve_data):
         """Append one CVE row to the results table."""
