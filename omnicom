@@ -8616,17 +8616,25 @@ class SerialTerminalGUI(QMainWindow):
         # ── Widgets ──────────────────────────────────────────────────────────
 
         self.wifi_iface_combo = QComboBox()
-        self.wifi_iface_combo.setFixedWidth(140)
+        self.wifi_iface_combo.setMinimumWidth(120)
+        self.wifi_iface_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.wifi_iface_combo.setToolTip("WiFi interface to use for scanning")
         self.wifi_iface_combo.setStyleSheet(combo_style)
 
-        refresh_iface_btn = QPushButton("↻")
+        _refresh_icon_path = self.get_tab_icon_path('refresh.svg')
+        _refresh_icon = load_svg_icon(_refresh_icon_path, 14) if _refresh_icon_path else None
+        refresh_iface_btn = QPushButton()
+        if _refresh_icon:
+            refresh_iface_btn.setIcon(_refresh_icon)
+            refresh_iface_btn.setIconSize(QSize(14, 14))
+        else:
+            refresh_iface_btn.setText("↻")
         refresh_iface_btn.setFixedSize(26, 26)
         refresh_iface_btn.setToolTip("Refresh interface list")
         refresh_iface_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_iface_btn.setStyleSheet("""
             QPushButton { background-color: #e0e0e0; border: 1px solid #bdbdbd;
-                          border-radius: 4px; font-size: 12pt; color: #555555; }
+                          border-radius: 4px; }
             QPushButton:hover { background-color: #bdbdbd; }
         """)
         refresh_iface_btn.clicked.connect(self._wifi_refresh_interfaces)
@@ -8696,7 +8704,18 @@ class SerialTerminalGUI(QMainWindow):
 
         # ── Left panel: Scan controls ─────────────────────────────────────────
         left_panel = QWidget()
-        left_grid = QGridLayout(left_panel)
+        left_outer = QVBoxLayout(left_panel)
+        left_outer.setContentsMargins(0, 0, 0, 0)
+        left_outer.setSpacing(4)
+
+        left_header = QLabel("⚙  General Settings")
+        left_header.setStyleSheet(
+            "color: #555555; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;"
+        )
+        left_outer.addWidget(left_header)
+
+        left_grid_widget = QWidget()
+        left_grid = QGridLayout(left_grid_widget)
         left_grid.setVerticalSpacing(6)
         left_grid.setHorizontalSpacing(8)
         left_grid.setContentsMargins(0, 0, 0, 0)
@@ -8719,9 +8738,6 @@ class SerialTerminalGUI(QMainWindow):
         interval_lbl.setStyleSheet(_lbl_style)
         auto_cell_layout.addWidget(interval_lbl)
         auto_cell_layout.addWidget(self.wifi_interval_combo)
-        unit_lbl = QLabel("s")
-        unit_lbl.setStyleSheet(_lbl_style)
-        auto_cell_layout.addWidget(unit_lbl)
         auto_cell_layout.addStretch()
 
         left_grid.addWidget(_lbl("Interface:"),   0, 0)
@@ -8731,6 +8747,9 @@ class SerialTerminalGUI(QMainWindow):
         left_grid.addWidget(_lbl("Auto-refresh:"),2, 0)
         left_grid.addWidget(auto_cell,            2, 1)
 
+        left_outer.addWidget(left_grid_widget)
+        left_outer.addStretch()
+
         # ── Vertical separator ────────────────────────────────────────────────
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.VLine)
@@ -8739,7 +8758,18 @@ class SerialTerminalGUI(QMainWindow):
 
         # ── Right panel: Chart controls ───────────────────────────────────────
         right_panel = QWidget()
-        right_grid = QGridLayout(right_panel)
+        right_outer = QVBoxLayout(right_panel)
+        right_outer.setContentsMargins(0, 0, 0, 0)
+        right_outer.setSpacing(4)
+
+        right_header = QLabel("📊  Graph Settings")
+        right_header.setStyleSheet(
+            "color: #555555; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;"
+        )
+        right_outer.addWidget(right_header)
+
+        right_grid_widget = QWidget()
+        right_grid = QGridLayout(right_grid_widget)
         right_grid.setVerticalSpacing(6)
         right_grid.setHorizontalSpacing(8)
         right_grid.setContentsMargins(0, 0, 0, 0)
@@ -8801,6 +8831,8 @@ class SerialTerminalGUI(QMainWindow):
         right_grid.addWidget(hist_window_cell,            4, 1)
         right_grid.addWidget(_lbl("Audio:"),              5, 0)
         right_grid.addWidget(self._hist_audio_chk,        5, 1)
+
+        right_outer.addWidget(right_grid_widget)
 
         # ── Outer layout: left | separator | right ────────────────────────────
         config_layout = QHBoxLayout()
