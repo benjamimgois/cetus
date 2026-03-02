@@ -3121,6 +3121,14 @@ class SignalHistoryWidget(QWidget):
         self._scroll_timer.setInterval(33)
         self._scroll_timer.timeout.connect(self.update)
 
+        # CRT Scanlines — enabled by default
+        self._scanlines_enabled = True
+        self._scanlines_offset  = 0.0
+        self._scanlines_timer   = QTimer(self)
+        self._scanlines_timer.setInterval(33)
+        self._scanlines_timer.timeout.connect(self._update_scanlines)
+        self._scanlines_timer.start()
+
     def set_window_s(self, seconds: int):
         """Change the X-axis time window and trigger a repaint."""
         self._window_s = max(30, int(seconds))
@@ -3128,6 +3136,19 @@ class SignalHistoryWidget(QWidget):
 
     def set_audio(self, enabled: bool):
         self._audio_enabled = enabled
+
+    def set_scanlines(self, enabled: bool):
+        """Enable or disable the CRT scanlines overlay."""
+        self._scanlines_enabled = enabled
+        if enabled:
+            self._scanlines_timer.start()
+        else:
+            self._scanlines_timer.stop()
+        self.update()
+
+    def _update_scanlines(self):
+        self._scanlines_offset = (self._scanlines_offset + 0.6) % 8.0
+        self.update()
 
     # ── Audio helpers ─────────────────────────────────────────────────────────
 
@@ -3498,6 +3519,21 @@ class SignalHistoryWidget(QWidget):
         painter.setPen(QColor('#8b949e'))
         painter.drawText(PL, PT + ch + 16, cw, 12, Qt.AlignmentFlag.AlignCenter, 'Time (s)')
 
+        # ── CRT Scanlines overlay ───────────────────────────────────────────
+        if getattr(self, '_scanlines_enabled', False):
+            from PyQt6.QtCore import QRectF as _QRF
+            _sl_spacing  = 8
+            _sl_thickness = 2
+            painter.setClipRect(_QRF(PL, PT, cw, ch))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 55))
+            _offset = int(getattr(self, '_scanlines_offset', 0.0)) % _sl_spacing
+            _y2 = PT - _sl_spacing + _offset
+            while _y2 < PT + ch + _sl_spacing:
+                painter.drawRect(_QRF(PL, _y2, cw, _sl_thickness))
+                _y2 += _sl_spacing
+            painter.setClipping(False)
+
 
 class WifiChannelChart(QWidget):
     """Custom widget that draws a bar chart of WiFi channel usage."""
@@ -3532,6 +3568,17 @@ class WifiChannelChart(QWidget):
         self._noise_timer.setInterval(33)   # 30 fps
         self._noise_timer.timeout.connect(self._update_noise)
         self._noise_timer.start()
+
+        # Glow effect — disabled by default
+        self._glow_enabled = False
+
+        # Scanlines (CRT) effect — enabled by default
+        self._scanlines_enabled = True
+        self._scanlines_offset  = 0.0   # scroll position (pixels, wraps)
+        self._scanlines_timer   = QTimer(self)
+        self._scanlines_timer.setInterval(33)   # 30 fps
+        self._scanlines_timer.timeout.connect(self._update_scanlines)
+        self._scanlines_timer.start()   # start immediately (enabled by default)
 
         # Tooltip styling
         self.setStyleSheet("""
@@ -3633,6 +3680,25 @@ class WifiChannelChart(QWidget):
 
     def _update_noise(self):
         """Request a repaint; noise is computed fresh inside paintEvent."""
+        self.update()
+
+    def set_glow(self, enabled: bool):
+        """Enable or disable the peak radial glow burst."""
+        self._glow_enabled = enabled
+        self.update()
+
+    def set_scanlines(self, enabled: bool):
+        """Enable or disable the CRT scanlines overlay."""
+        self._scanlines_enabled = enabled
+        if enabled:
+            self._scanlines_timer.start()
+        else:
+            self._scanlines_timer.stop()
+        self.update()
+
+    def _update_scanlines(self):
+        """Advance scanlines scroll and request repaint."""
+        self._scanlines_offset = (self._scanlines_offset + 0.6) % 8.0
         self.update()
 
     # ── BSSID selection ───────────────────────────────────────────────────────
@@ -3816,6 +3882,57 @@ class WifiChannelChart(QWidget):
         # Track label placements for collision avoidance: list of (x1, y1, x2, y2)
         placed_labels = []
 
+        # ── Best Channel: compute least-congested channel ─────────────────
+        # Only when not showing both bands simultaneously
+        _best_ch = None
+        _best_ch_x = None
+        _ch_load = {}
+        if not show_both_bands and all_networks:
+            _ch_load = {}
+            for _n in all_networks:
+                _c = _n.get('channel')
+                if _c is not None:
+                    _ch_load[_c] = _ch_load.get(_c, 0) + _n.get('signal_pct', 0)
+            # Find candidate channels for this band (non-overlapping preferred)
+            if self.band == '2.4GHz':
+                # Prefer non-overlapping: 1, 6, 11 (EU also 13)
+                _preferred = [1, 6, 11, 13]
+                _candidates = [c for c in _preferred if c not in _ch_load]
+                if _candidates:
+                    # Pick the candidate with center-most freq (6 or 11)
+                    _best_ch = min(_candidates, key=lambda c: abs(c - 7))
+                else:
+                    _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
+            else:
+                _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
+            _best_freq = self._channel_to_freq(_best_ch)
+            _best_ch_x = self._freq_to_x(_best_freq, freq_min, freq_max, chart_w, pad_l)
+
+        # ── Draw Best Channel background highlight ────────────────────────
+        if _best_ch_x is not None:
+            from PyQt6.QtGui import QRadialGradient
+            _bw_px = max(20, int(20 * chart_w / (freq_max - freq_min)))
+            _best_rect = QRectF(_best_ch_x - _bw_px, pad_t,
+                                _bw_px * 2, chart_h)
+            _bg_grad = QLinearGradient(
+                QPointF(_best_ch_x - _bw_px, 0), QPointF(_best_ch_x + _bw_px, 0))
+            _bg_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+            _bg_grad.setColorAt(0.5, QColor(0, 230, 120, 28))
+            _bg_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(_bg_grad)
+            painter.drawRect(_best_rect)
+            # Thin green border lines on each side
+            _edge_pen = QPen(QColor(0, 230, 120, 100))
+            _edge_pen.setWidthF(1.0)
+            _edge_pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(_edge_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(int(_best_ch_x - _bw_px), pad_t,
+                             int(_best_ch_x - _bw_px), pad_t + chart_h)
+            painter.drawLine(int(_best_ch_x + _bw_px), pad_t,
+                             int(_best_ch_x + _bw_px), pad_t + chart_h)
+
         # ── Pre-compute noise frame (always fresh — no timer dependency) ──
         # Two adjacent "slots" at 30 fps are blended so the animation is
         # perfectly smooth regardless of what triggered this repaint.
@@ -3973,6 +4090,26 @@ class WifiChannelChart(QWidget):
             painter.drawText(label_x, label_y, ssid)
             painter.setFont(font_mono)
 
+            # ── Peak radial glow burst ────────────────────────────────────
+            if self._glow_enabled:
+                from PyQt6.QtGui import QRadialGradient
+                _glow_r = max(18, sigma_px * 0.55)
+                _glow_color = QColor(color)
+                _glow_grad = QRadialGradient(QPointF(center_x, peak_y), _glow_r)
+                _alpha_center = 130 if is_active else 70
+                _glow_color.setAlpha(_alpha_center)
+                _glow_grad.setColorAt(0.0, _glow_color)
+                _glow_color2 = QColor(color)
+                _glow_color2.setAlpha(30 if is_active else 15)
+                _glow_grad.setColorAt(0.45, _glow_color2)
+                _glow_color3 = QColor(color)
+                _glow_color3.setAlpha(0)
+                _glow_grad.setColorAt(1.0, _glow_color3)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(_glow_grad)
+                painter.drawEllipse(QPointF(center_x, peak_y), _glow_r, _glow_r * 0.6)
+                painter.setFont(font_mono)
+
         # ── Frequency labels (X-axis) ─────────────────────────────────────
         painter.setPen(QColor('#4A6080'))
         painter.setFont(QFont('Monospace', 7))
@@ -4022,6 +4159,39 @@ class WifiChannelChart(QWidget):
         painter.drawText(pad_l, 2, chart_w, 18,
                          Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
                          chart_title)
+
+        # ── Best Channel badge (drawn on top of everything) ───────────────
+        if _best_ch_x is not None:
+            _badge_text = f'★ Best Ch: {_best_ch}'
+            painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
+            _bfm = painter.fontMetrics()
+            _bw = _bfm.horizontalAdvance(_badge_text) + 10
+            _bh = _bfm.height() + 4
+            _bx = int(_best_ch_x - _bw / 2)
+            _by = pad_t + 2
+            # Badge background
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 180, 90, 200))
+            painter.drawRoundedRect(QRectF(_bx, _by, _bw, _bh), 4, 4)
+            # Badge text
+            painter.setPen(QColor(255, 255, 255, 230))
+            painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
+            painter.drawText(int(_bx), int(_by), int(_bw), int(_bh),
+                             Qt.AlignmentFlag.AlignCenter, _badge_text)
+
+        # ── CRT Scanlines overlay (drawn last, on top of everything) ────────
+        if self._scanlines_enabled:
+            _sl_spacing  = 8     # px between scanline centers
+            _sl_thickness = 2    # dark stripe height in pixels
+            painter.setClipRect(QRectF(pad_l, pad_t, chart_w, chart_h))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 55))
+            _offset = int(self._scanlines_offset) % _sl_spacing
+            _y = pad_t - _sl_spacing + _offset
+            while _y < pad_t + chart_h + _sl_spacing:
+                painter.drawRect(QRectF(pad_l, _y, chart_w, _sl_thickness))
+                _y += _sl_spacing
+            painter.setClipping(False)
 
         painter.end()
 
@@ -8791,6 +8961,22 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_noise_btn.setToolTip("Overlay animated white noise on spectrum")
 
+        self.wifi_glow_btn = QPushButton("Glow")
+        self.wifi_glow_btn.setCheckable(True)
+        self.wifi_glow_btn.setChecked(False)
+        self.wifi_glow_btn.setFixedHeight(24)
+        self.wifi_glow_btn.setStyleSheet(_toggle_style)
+        self.wifi_glow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_glow_btn.setToolTip("Show neon glow burst at signal peaks")
+
+        self.wifi_scanlines_btn = QPushButton("Scanlines")
+        self.wifi_scanlines_btn.setCheckable(True)
+        self.wifi_scanlines_btn.setChecked(True)
+        self.wifi_scanlines_btn.setFixedHeight(24)
+        self.wifi_scanlines_btn.setStyleSheet(_toggle_style)
+        self.wifi_scanlines_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_scanlines_btn.setToolTip("CRT scanlines overlay (retro style)")
+
         # ── History window slider ──────────────────────────────────────────────
         self._hist_window_slider = QSlider(Qt.Orientation.Horizontal)
         self._hist_window_slider.setMinimum(30)
@@ -8826,7 +9012,16 @@ class SerialTerminalGUI(QMainWindow):
         right_grid.addWidget(_lbl("Show:"),               2, 0)
         right_grid.addWidget(graphs_cell,                 2, 1)
         right_grid.addWidget(_lbl("Effects:"),            3, 0)
-        right_grid.addWidget(self.wifi_noise_btn,         3, 1)
+        # Effects cell: White Noise | Glow | Scanlines
+        effects_cell = QWidget()
+        effects_layout = QHBoxLayout(effects_cell)
+        effects_layout.setContentsMargins(0, 0, 0, 0)
+        effects_layout.setSpacing(4)
+        effects_layout.addWidget(self.wifi_noise_btn)
+        effects_layout.addWidget(self.wifi_glow_btn)
+        effects_layout.addWidget(self.wifi_scanlines_btn)
+        effects_layout.addStretch()
+        right_grid.addWidget(effects_cell,                3, 1)
         right_grid.addWidget(_lbl("Window:"),             4, 0)
         right_grid.addWidget(hist_window_cell,            4, 1)
         right_grid.addWidget(_lbl("Audio:"),              5, 0)
@@ -8926,6 +9121,8 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_channel_chart = WifiChannelChart()
         self.wifi_channel_chart.carrier_clicked.connect(self._on_chart_carrier_clicked)
         self.wifi_noise_btn.toggled.connect(self.wifi_channel_chart.set_noise)
+        self.wifi_glow_btn.toggled.connect(self.wifi_channel_chart.set_glow)
+        self.wifi_scanlines_btn.toggled.connect(self.wifi_channel_chart.set_scanlines)
         chart_layout.addWidget(self.wifi_channel_chart)
         chart_group.setLayout(chart_layout)
         chart_group.setStyleSheet("""
@@ -9000,6 +9197,7 @@ class SerialTerminalGUI(QMainWindow):
             self.wifi_signal_history.set_window_s(snapped)
         self._hist_window_slider.valueChanged.connect(_on_window_slider)
         self._hist_audio_chk.toggled.connect(self.wifi_signal_history.set_audio)
+        self.wifi_scanlines_btn.toggled.connect(self.wifi_signal_history.set_scanlines)
 
         charts_row = QWidget()
         charts_layout = QHBoxLayout(charts_row)
