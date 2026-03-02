@@ -260,7 +260,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame, QSlider, QToolButton
+    QMenu, QScrollArea, QTabWidget, QFrame, QSlider, QToolButton, QListWidget, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
@@ -8027,7 +8027,7 @@ class SerialTerminalGUI(QMainWindow):
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 color: #333333;
-                font-size: 8pt;
+                font-size: 9pt;
                 gridline-color: #d0d0d0;
             }
             QTableWidget::item {
@@ -8043,10 +8043,52 @@ class SerialTerminalGUI(QMainWindow):
                 padding: 2px;
                 border: none;
                 font-weight: bold;
-                font-size: 8pt;
+                font-size: 9pt;
             }
         """)
-        results_layout.addWidget(self.snmp_results_table)
+        # Index panel (right side) — "Family Tree"
+        index_panel = QWidget()
+        index_panel.setFixedWidth(185)
+        index_panel_layout = QVBoxLayout(index_panel)
+        index_panel_layout.setContentsMargins(0, 0, 0, 0)
+        index_panel_layout.setSpacing(4)
+
+        family_tree_label = QLabel("Family Tree")
+        family_tree_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        family_tree_label.setFixedHeight(22)
+        family_tree_label.setStyleSheet("""
+            QLabel {
+                background-color: #d0d0d0;
+                color: #333333;
+                font-weight: bold;
+                font-size: 9pt;
+                border-radius: 4px;
+            }
+        """)
+        index_panel_layout.addWidget(family_tree_label)
+
+        self.snmp_index_list = QListWidget()
+        self.snmp_index_list.setSpacing(1)
+        self.snmp_index_list.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_index_list.setToolTip("Clique para navegar até a família")
+        # No ::item rule — lets setItemWidget colors render without interference
+        self.snmp_index_list.setStyleSheet("""
+            QListWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                outline: none;
+            }
+        """)
+        self.snmp_index_list.itemClicked.connect(self._snmp_index_item_clicked)
+        index_panel_layout.addWidget(self.snmp_index_list)
+
+        table_index_layout = QHBoxLayout()
+        table_index_layout.setSpacing(6)
+        table_index_layout.setContentsMargins(0, 0, 0, 0)
+        table_index_layout.addWidget(self.snmp_results_table, 1)
+        table_index_layout.addWidget(index_panel)
+        results_layout.addLayout(table_index_layout)
         self._enable_table_tooltips(self.snmp_results_table)
         self.snmp_results_group.setLayout(results_layout)
         self.snmp_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
@@ -8621,6 +8663,8 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_results_table.setRowCount(0)
         self._snmp_oid_family_colors = {}
         self._snmp_oid_color_index = 0
+        self._snmp_family_first_row = {}
+        self.snmp_index_list.clear()
         self.snmp_execute_btn.setEnabled(False)
         if query_type == "snmpwalk":
             self.snmp_execute_btn.setText("Walking 0%")
@@ -8780,6 +8824,195 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_worker.finished_result.connect(self._on_snmp_finished)
         self.snmp_worker.start()
     
+    # Known OID prefix → brief description (keys without leading dot)
+    _OID_DESCRIPTIONS = {
+        # System
+        "1.3.6.1.2.1.1":       "System",
+        "1.3.6.1.2.1.1.1":     "sysDescr",
+        "1.3.6.1.2.1.1.2":     "sysObjectID",
+        "1.3.6.1.2.1.1.3":     "sysUpTime",
+        "1.3.6.1.2.1.1.4":     "sysContact",
+        "1.3.6.1.2.1.1.5":     "sysName",
+        "1.3.6.1.2.1.1.6":     "sysLocation",
+        "1.3.6.1.2.1.1.7":     "sysServices",
+        # Interfaces (IF-MIB)
+        "1.3.6.1.2.1.2":       "Interfaces",
+        "1.3.6.1.2.1.2.1":     "ifNumber",
+        "1.3.6.1.2.1.2.2.1.1": "ifIndex",
+        "1.3.6.1.2.1.2.2.1.2": "ifDescr",
+        "1.3.6.1.2.1.2.2.1.3": "ifType",
+        "1.3.6.1.2.1.2.2.1.4": "ifMtu",
+        "1.3.6.1.2.1.2.2.1.5": "ifSpeed",
+        "1.3.6.1.2.1.2.2.1.6": "ifPhysAddress (MAC)",
+        "1.3.6.1.2.1.2.2.1.7": "ifAdminStatus",
+        "1.3.6.1.2.1.2.2.1.8": "ifOperStatus",
+        "1.3.6.1.2.1.2.2.1.9": "ifLastChange",
+        "1.3.6.1.2.1.2.2.1.10":"ifInOctets",
+        "1.3.6.1.2.1.2.2.1.11":"ifInUcastPkts",
+        "1.3.6.1.2.1.2.2.1.12":"ifInNUcastPkts",
+        "1.3.6.1.2.1.2.2.1.13":"ifInDiscards",
+        "1.3.6.1.2.1.2.2.1.14":"ifInErrors",
+        "1.3.6.1.2.1.2.2.1.16":"ifOutOctets",
+        "1.3.6.1.2.1.2.2.1.17":"ifOutUcastPkts",
+        "1.3.6.1.2.1.2.2.1.19":"ifOutDiscards",
+        "1.3.6.1.2.1.2.2.1.20":"ifOutErrors",
+        # IP
+        "1.3.6.1.2.1.4":       "IP",
+        "1.3.6.1.2.1.4.1":     "ipForwarding",
+        "1.3.6.1.2.1.4.2":     "ipDefaultTTL",
+        "1.3.6.1.2.1.4.3":     "ipInReceives",
+        "1.3.6.1.2.1.4.20.1.1":"ipAdEntAddr",
+        "1.3.6.1.2.1.4.20.1.2":"ipAdEntIfIndex",
+        "1.3.6.1.2.1.4.20.1.3":"ipAdEntNetMask",
+        "1.3.6.1.2.1.4.20.1.4":"ipAdEntBcastAddr",
+        "1.3.6.1.2.1.4.21":    "ipRouteTable",
+        "1.3.6.1.2.1.4.22":    "ARP (ipNetToMedia)",
+        # TCP
+        "1.3.6.1.2.1.6":       "TCP",
+        "1.3.6.1.2.1.6.1":     "tcpRtoAlgorithm",
+        "1.3.6.1.2.1.6.13":    "tcpConnTable",
+        # UDP
+        "1.3.6.1.2.1.7":       "UDP",
+        "1.3.6.1.2.1.7.5":     "udpTable",
+        # ICMP
+        "1.3.6.1.2.1.5":       "ICMP",
+        # SNMP
+        "1.3.6.1.2.1.11":      "SNMP Stats",
+        # Host Resources (HR-MIB)
+        "1.3.6.1.2.1.25":      "Host Resources",
+        "1.3.6.1.2.1.25.1":    "hrSystem",
+        "1.3.6.1.2.1.25.2":    "hrStorage",
+        "1.3.6.1.2.1.25.3":    "hrDevice",
+        "1.3.6.1.2.1.25.4":    "hrSWRun",
+        "1.3.6.1.2.1.25.5":    "hrSWRunPerf",
+        "1.3.6.1.2.1.25.6":    "hrSWInstalled",
+        # IF-MIB extended
+        "1.3.6.1.2.1.31":      "IF-MIB Extended",
+        "1.3.6.1.2.1.31.1.1.1.1": "ifName",
+        "1.3.6.1.2.1.31.1.1.1.6": "ifHCInOctets",
+        "1.3.6.1.2.1.31.1.1.1.10":"ifHCOutOctets",
+        "1.3.6.1.2.1.31.1.1.1.15":"ifHighSpeed",
+        "1.3.6.1.2.1.31.1.1.1.18":"ifAlias",
+        # Enterprises
+        "1.3.6.1.4.1":         "Enterprise (private)",
+        "1.3.6.1.4.1.9":       "Cisco",
+        "1.3.6.1.4.1.9.2":     "Cisco Local",
+        "1.3.6.1.4.1.9.9":     "Cisco MIBs",
+        "1.3.6.1.4.1.14988":   "MikroTik",
+        "1.3.6.1.4.1.2636":    "Juniper",
+        "1.3.6.1.4.1.2011":    "Huawei",
+        "1.3.6.1.4.1.12356":   "Fortinet",
+        "1.3.6.1.4.1.25506":   "HP/H3C",
+        "1.3.6.1.4.1.311":     "Microsoft",
+    }
+
+    # Known OID prefix → detailed tooltip (human-readable explanation)
+    _OID_TOOLTIPS = {
+        # System
+        "1.3.6.1.2.1.1":       "Grupo System (MIB-II)\nInformações gerais do dispositivo: nome, descrição,\nlocalização, contato e tempo de atividade.",
+        "1.3.6.1.2.1.1.1":     "sysDescr\nDescrição textual completa do dispositivo,\nincluindo hardware, SO e versão de firmware.",
+        "1.3.6.1.2.1.1.2":     "sysObjectID\nIdentificador de objeto do fabricante (OID enterprise)\nque identifica o modelo do dispositivo.",
+        "1.3.6.1.2.1.1.3":     "sysUpTime\nTempo decorrido (em centésimos de segundo) desde\no último reinício do agente SNMP.",
+        "1.3.6.1.2.1.1.4":     "sysContact\nNome ou e-mail do responsável pelo dispositivo.",
+        "1.3.6.1.2.1.1.5":     "sysName\nNome administrativo do dispositivo (hostname).",
+        "1.3.6.1.2.1.1.6":     "sysLocation\nLocalização física do dispositivo.",
+        "1.3.6.1.2.1.1.7":     "sysServices\nCamadas OSI (bitmask) em que o dispositivo opera\n(ex: 78 = camadas 1-4 e 7).",
+        # Interfaces
+        "1.3.6.1.2.1.2":       "Grupo Interfaces (MIB-II)\nInformações sobre todas as interfaces de rede\ndo dispositivo.",
+        "1.3.6.1.2.1.2.1":     "ifNumber\nNúmero total de interfaces de rede presentes.",
+        "1.3.6.1.2.1.2.2.1.1": "ifIndex\nÍndice único que identifica cada interface.",
+        "1.3.6.1.2.1.2.2.1.2": "ifDescr\nNome ou descrição textual da interface\n(ex: 'eth0', 'GigabitEthernet0/1').",
+        "1.3.6.1.2.1.2.2.1.3": "ifType\nTipo físico da interface (ex: ethernetCsmacd=6,\nsoftwareLoopback=24, ieee80211=71).",
+        "1.3.6.1.2.1.2.2.1.4": "ifMtu\nMáximo de bytes em um quadro transmissível\npela interface (MTU).",
+        "1.3.6.1.2.1.2.2.1.5": "ifSpeed\nVelocidade nominal da interface em bits/s\n(ex: 1000000000 = 1 Gbps).",
+        "1.3.6.1.2.1.2.2.1.6": "ifPhysAddress (MAC)\nEndereço físico da interface (ex: MAC address),\narmazenado como OctetString binário.",
+        "1.3.6.1.2.1.2.2.1.7": "ifAdminStatus\nEstado administrativo configurado:\n1=up, 2=down, 3=testing.",
+        "1.3.6.1.2.1.2.2.1.8": "ifOperStatus\nEstado operacional real da interface:\n1=up, 2=down, 3=testing, 4=unknown.",
+        "1.3.6.1.2.1.2.2.1.9": "ifLastChange\nSysUpTime no momento da última mudança\nde estado operacional.",
+        "1.3.6.1.2.1.2.2.1.10":"ifInOctets\nTotal de bytes recebidos pela interface,\nincluindo cabeçalhos de framing.",
+        "1.3.6.1.2.1.2.2.1.11":"ifInUcastPkts\nPacotes unicast recebidos e entregues\na uma camada superior.",
+        "1.3.6.1.2.1.2.2.1.12":"ifInNUcastPkts\nPacotes não-unicast (broadcast/multicast)\nrecebidos e entregues.",
+        "1.3.6.1.2.1.2.2.1.13":"ifInDiscards\nPacotes recebidos descartados (sem erros),\npor ex. falta de buffer.",
+        "1.3.6.1.2.1.2.2.1.14":"ifInErrors\nPacotes recebidos com erros (CRC, alinhamento,\noverfow, etc.).",
+        "1.3.6.1.2.1.2.2.1.16":"ifOutOctets\nTotal de bytes transmitidos pela interface,\nincluindo cabeçalhos de framing.",
+        "1.3.6.1.2.1.2.2.1.17":"ifOutUcastPkts\nPacotes unicast solicitados à camada superior\npara transmissão.",
+        "1.3.6.1.2.1.2.2.1.19":"ifOutDiscards\nPacotes saintes descartados sem erros,\npor ex. falta de buffer de saída.",
+        "1.3.6.1.2.1.2.2.1.20":"ifOutErrors\nPacotes que falharam na transmissão\ndevido a erros.",
+        # IP
+        "1.3.6.1.2.1.4":       "Grupo IP (MIB-II)\nEstatísticas e configurações da camada IP,\nincluindo roteamento e tabela de endereços.",
+        "1.3.6.1.2.1.4.1":     "ipForwarding\nIndica se o dispositivo age como roteador IP:\n1=forwarding, 2=notForwarding.",
+        "1.3.6.1.2.1.4.2":     "ipDefaultTTL\nValor padrão de TTL inserido nos datagramas IP.",
+        "1.3.6.1.2.1.4.3":     "ipInReceives\nTotal de datagramas IP recebidos,\nincluindo os com erros.",
+        "1.3.6.1.2.1.4.20.1.1":"ipAdEntAddr\nEndereço IP atribuído à interface.",
+        "1.3.6.1.2.1.4.20.1.2":"ipAdEntIfIndex\nÍndice da interface à qual o endereço IP pertence.",
+        "1.3.6.1.2.1.4.20.1.3":"ipAdEntNetMask\nMáscara de sub-rede associada ao endereço IP.",
+        "1.3.6.1.2.1.4.20.1.4":"ipAdEntBcastAddr\nBit menos significativo do endereço de broadcast.",
+        "1.3.6.1.2.1.4.21":    "ipRouteTable\nTabela de roteamento IP do dispositivo.",
+        "1.3.6.1.2.1.4.22":    "ARP (ipNetToMediaTable)\nTabela ARP: mapeamento entre endereços IP\ne endereços físicos (MAC).",
+        # TCP / UDP / ICMP / SNMP
+        "1.3.6.1.2.1.5":       "Grupo ICMP (MIB-II)\nContadores de mensagens ICMP enviadas e recebidas\n(echo, redirect, unreachable, etc.).",
+        "1.3.6.1.2.1.6":       "Grupo TCP (MIB-II)\nParâmetros e estatísticas da camada TCP,\nincluindo tabela de conexões ativas.",
+        "1.3.6.1.2.1.6.1":     "tcpRtoAlgorithm\nAlgoritmo de retransmissão usado:\n1=other, 2=constant, 3=rsre, 4=vanj.",
+        "1.3.6.1.2.1.6.13":    "tcpConnTable\nTabela de conexões TCP ativas: endereço local,\nporta local, endereço remoto, porta remota e estado.",
+        "1.3.6.1.2.1.7":       "Grupo UDP (MIB-II)\nEstatísticas de datagramas UDP enviados,\nrecebidos e com erros.",
+        "1.3.6.1.2.1.7.5":     "udpTable\nTabela de endpoints UDP ativos no dispositivo.",
+        "1.3.6.1.2.1.11":      "Grupo SNMP (MIB-II)\nEstatísticas do próprio agente SNMP:\npacotes recebidos, erros, gets, sets, traps.",
+        # Host Resources
+        "1.3.6.1.2.1.25":      "Host Resources MIB (RFC 2790)\nRecursos do sistema: CPU, memória, disco,\nprocessos e software instalado.",
+        "1.3.6.1.2.1.25.1":    "hrSystem\nInformações gerais do sistema: uptime,\ndata/hora e número de usuários.",
+        "1.3.6.1.2.1.25.2":    "hrStorage\nTabela de áreas de armazenamento: RAM,\nswap, sistemas de arquivos e uso atual.",
+        "1.3.6.1.2.1.25.3":    "hrDevice\nDispositivos detectados: processadores,\ninterfaces de rede, discos e impressoras.",
+        "1.3.6.1.2.1.25.4":    "hrSWRun\nTabela de processos em execução:\nnome, caminho, parâmetros e estado.",
+        "1.3.6.1.2.1.25.5":    "hrSWRunPerf\nPerformance por processo:\ntempo de CPU e uso de memória real.",
+        "1.3.6.1.2.1.25.6":    "hrSWInstalled\nSoftware instalado no sistema:\nnome, versão e data de instalação.",
+        # IF-MIB Extended
+        "1.3.6.1.2.1.31":      "IF-MIB Estendido (RFC 2863)\nExtensões da tabela de interfaces com contadores\nde 64 bits e informações adicionais.",
+        "1.3.6.1.2.1.31.1.1.1.1":  "ifName\nNome curto da interface (ex: 'eth0', 'Gi0/1'),\ncomo exibido no sistema operacional.",
+        "1.3.6.1.2.1.31.1.1.1.6":  "ifHCInOctets\nContador de 64 bits de bytes recebidos.\nSubstitui ifInOctets em links de alta velocidade.",
+        "1.3.6.1.2.1.31.1.1.1.10": "ifHCOutOctets\nContador de 64 bits de bytes transmitidos.\nSubstitui ifOutOctets em links de alta velocidade.",
+        "1.3.6.1.2.1.31.1.1.1.15": "ifHighSpeed\nVelocidade da interface em Mbps quando\nifSpeed (32 bits) não é suficiente.",
+        "1.3.6.1.2.1.31.1.1.1.18": "ifAlias\nNome descritivo atribuído pelo operador\nà interface (apelido configurável).",
+        # Enterprises
+        "1.3.6.1.4.1":         "Enterprise MIBs (OIDs privadas)\nÁrvore de OIDs proprietárias dos fabricantes,\ncada um com sua sub-árvore exclusiva.",
+        "1.3.6.1.4.1.9":       "Cisco Systems\nMIBs proprietárias da Cisco: interfaces,\nVLANs, CDP, spanning tree, QoS, etc.",
+        "1.3.6.1.4.1.9.2":     "Cisco Local MIB\nInformações locais do dispositivo Cisco:\nversão de IOS, memória e configuração.",
+        "1.3.6.1.4.1.9.9":     "Cisco Enterprise MIBs\nMIBs específicas de funcionalidades Cisco:\nVTP, EIGRP, BGP, HSRP, entre outras.",
+        "1.3.6.1.4.1.14988":   "MikroTik RouterOS\nMIBs proprietárias MikroTik: interfaces\nwireless, filas, health e licença.",
+        "1.3.6.1.4.1.2636":    "Juniper Networks\nMIBs proprietárias Juniper: chassis,\nBGP, MPLS e estatísticas de roteamento.",
+        "1.3.6.1.4.1.2011":    "Huawei Technologies\nMIBs proprietárias Huawei para roteadores,\nswitches e equipamentos de telecom.",
+        "1.3.6.1.4.1.12356":   "Fortinet\nMIBs proprietárias FortiGate: VPN,\nfirewall, UTM e estatísticas de sessão.",
+        "1.3.6.1.4.1.25506":   "HP/H3C\nMIBs proprietárias HP Networking / H3C\npara switches e roteadores da linha ProCurve.",
+        "1.3.6.1.4.1.311":     "Microsoft\nMIBs proprietárias Microsoft para sistemas\nWindows Server e serviços de rede.",
+    }
+
+    @staticmethod
+    def _snmp_describe_oid(oid):
+        """Return a brief label and detailed tooltip for an OID, walking up the hierarchy."""
+        key = oid.lstrip('.')
+        while key:
+            desc = SerialTerminalGUI._OID_DESCRIPTIONS.get(key)
+            if desc:
+                return desc
+            if '.' in key:
+                key = key.rsplit('.', 1)[0]
+            else:
+                break
+        return "—"
+
+    @staticmethod
+    def _snmp_tooltip_oid(oid):
+        """Return a detailed tooltip string for an OID, walking up the hierarchy."""
+        key = oid.lstrip('.')
+        while key:
+            tip = SerialTerminalGUI._OID_TOOLTIPS.get(key)
+            if tip:
+                return tip
+            if '.' in key:
+                key = key.rsplit('.', 1)[0]
+            else:
+                break
+        return oid
+
     # Pastel palette for OID family grouping (light background)
     _SNMP_FAMILY_PALETTE = [
         QColor(0xFF, 0xF0, 0x80),  # yellow
@@ -8801,8 +9034,10 @@ class SerialTerminalGUI(QMainWindow):
         if not hasattr(self, "_snmp_oid_family_colors"):
             self._snmp_oid_family_colors = {}
             self._snmp_oid_color_index = 0
+            self._snmp_family_first_row = {}
 
-        if family not in self._snmp_oid_family_colors:
+        is_new_family = family not in self._snmp_oid_family_colors
+        if is_new_family:
             palette = self._SNMP_FAMILY_PALETTE
             self._snmp_oid_family_colors[family] = palette[
                 self._snmp_oid_color_index % len(palette)
@@ -8814,9 +9049,44 @@ class SerialTerminalGUI(QMainWindow):
         row = self.snmp_results_table.rowCount()
         self.snmp_results_table.insertRow(row)
         for col, text in enumerate([oid, value, vtype]):
-            item = QTableWidgetItem(text)
-            item.setBackground(color)
-            self.snmp_results_table.setItem(row, col, item)
+            cell = QTableWidgetItem(text)
+            cell.setBackground(color)
+            self.snmp_results_table.setItem(row, col, cell)
+
+        if is_new_family:
+            self._snmp_family_first_row[family] = row
+            desc = self._snmp_describe_oid(family)
+            tip = self._snmp_tooltip_oid(family)
+            parts = family.lstrip('.').split('.')
+            short = ('…' + '.'.join(parts[-4:])) if len(parts) > 4 else family
+
+            # Build colored widget (setBackground() is suppressed by Qt stylesheets;
+            # setItemWidget() is the reliable alternative)
+            idx_widget = QWidget()
+            idx_widget.setStyleSheet(
+                f"QWidget {{ background-color: {color.name()}; }}"
+                "QLabel { background: transparent; }"
+            )
+            # Tooltip on the widget (idx_item tooltip is never shown with setItemWidget)
+            idx_widget.setToolTip(f"<b>{family}</b><hr>{tip}")
+            wlayout = QVBoxLayout(idx_widget)
+            wlayout.setContentsMargins(5, 3, 5, 3)
+            wlayout.setSpacing(1)
+            oid_lbl = QLabel(short)
+            oid_lbl.setFont(QFont("Monospace", 8))
+            oid_lbl.setStyleSheet("color: #444444;")
+            oid_lbl.setWordWrap(True)
+            desc_lbl = QLabel(desc)
+            desc_lbl.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+            desc_lbl.setStyleSheet("color: #111111;")
+            wlayout.addWidget(oid_lbl)
+            wlayout.addWidget(desc_lbl)
+
+            idx_item = QListWidgetItem()
+            idx_item.setData(Qt.ItemDataRole.UserRole, family)
+            idx_item.setSizeHint(idx_widget.sizeHint())
+            self.snmp_index_list.addItem(idx_item)
+            self.snmp_index_list.setItemWidget(idx_item, idx_widget)
         self.snmp_results_group.setTitle(f"Results — {row + 1} entries")
 
     def _on_snmp_finished(self, message, success):
@@ -8829,6 +9099,17 @@ class SerialTerminalGUI(QMainWindow):
             self.snmp_results_group.setTitle(f"Results — {count} entries")
         else:
             self.snmp_results_group.setTitle(f"Results — {message}")
+
+    def _snmp_index_item_clicked(self, item):
+        """Scroll the results table to the first row of the clicked OID family."""
+        family = item.data(Qt.ItemDataRole.UserRole)
+        first_row = getattr(self, "_snmp_family_first_row", {}).get(family)
+        if first_row is not None:
+            target = self.snmp_results_table.item(first_row, 0)
+            if target:
+                self.snmp_results_table.scrollToItem(
+                    target, QAbstractItemView.ScrollHint.PositionAtTop
+                )
 
     def _snmp_context_menu(self, pos):
         """Show context menu for SNMP results table"""
