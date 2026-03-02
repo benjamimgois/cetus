@@ -8032,7 +8032,6 @@ class SerialTerminalGUI(QMainWindow):
             }
             QTableWidget::item {
                 padding: 2px;
-                background-color: #e8e8e8;
             }
             QTableWidget::item:selected {
                 background-color: #FF9800;
@@ -8620,6 +8619,8 @@ class SerialTerminalGUI(QMainWindow):
         # Update UI
         self.snmp_results_group.setTitle(f"Results (executing {query_type}...)")
         self.snmp_results_table.setRowCount(0)
+        self._snmp_oid_family_colors = {}
+        self._snmp_oid_color_index = 0
         self.snmp_execute_btn.setEnabled(False)
         if query_type == "snmpwalk":
             self.snmp_execute_btn.setText("Walking 0%")
@@ -8658,10 +8659,25 @@ class SerialTerminalGUI(QMainWindow):
                 }
                 return type_map.get(type_name, type_name)
 
+            @staticmethod
+            def _format_value(val):
+                """Convert SNMP value to a readable string.
+                OctetStrings with non-printable bytes are shown as colon-separated hex."""
+                type_name = type(val).__name__
+                if type_name in ('OctetString', 'Bits', 'Opaque'):
+                    try:
+                        raw = val.asOctets()
+                        if all(0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D) for b in raw):
+                            return raw.decode('ascii', errors='replace').strip()
+                        return ':'.join(f'{b:02X}' for b in raw)
+                    except Exception:
+                        pass
+                return str(val)
+
             def _emit_varbind(self, varBind):
                 self.row_received.emit(
                     str(varBind[0]),
-                    str(varBind[1]),
+                    SNMPWorker._format_value(varBind[1]),
                     SNMPWorker._classify_type(varBind[1])
                 )
 
@@ -8764,13 +8780,43 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_worker.finished_result.connect(self._on_snmp_finished)
         self.snmp_worker.start()
     
+    # Pastel palette for OID family grouping (light background)
+    _SNMP_FAMILY_PALETTE = [
+        QColor(0xFF, 0xF0, 0x80),  # yellow
+        QColor(0xA8, 0xD8, 0xFF),  # sky blue
+        QColor(0xA8, 0xF0, 0xB8),  # mint green
+        QColor(0xFF, 0xC8, 0x90),  # peach
+        QColor(0xD8, 0xB8, 0xFF),  # lavender
+        QColor(0xFF, 0xB8, 0xCC),  # rose
+        QColor(0xA8, 0xF0, 0xE8),  # aqua
+        QColor(0xFF, 0xE0, 0xA8),  # apricot
+    ]
+
     def _on_snmp_row(self, oid, value, vtype):
         """Append a single SNMP result row to the table"""
+        # Determine family: OID prefix without the last segment
+        parts = oid.rsplit(".", 1)
+        family = parts[0] if len(parts) == 2 else oid
+
+        if not hasattr(self, "_snmp_oid_family_colors"):
+            self._snmp_oid_family_colors = {}
+            self._snmp_oid_color_index = 0
+
+        if family not in self._snmp_oid_family_colors:
+            palette = self._SNMP_FAMILY_PALETTE
+            self._snmp_oid_family_colors[family] = palette[
+                self._snmp_oid_color_index % len(palette)
+            ]
+            self._snmp_oid_color_index += 1
+
+        color = self._snmp_oid_family_colors[family]
+
         row = self.snmp_results_table.rowCount()
         self.snmp_results_table.insertRow(row)
-        self.snmp_results_table.setItem(row, 0, QTableWidgetItem(oid))
-        self.snmp_results_table.setItem(row, 1, QTableWidgetItem(value))
-        self.snmp_results_table.setItem(row, 2, QTableWidgetItem(vtype))
+        for col, text in enumerate([oid, value, vtype]):
+            item = QTableWidgetItem(text)
+            item.setBackground(color)
+            self.snmp_results_table.setItem(row, col, item)
         self.snmp_results_group.setTitle(f"Results — {row + 1} entries")
 
     def _on_snmp_finished(self, message, success):
