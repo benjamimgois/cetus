@@ -3309,7 +3309,7 @@ class SignalHistoryWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         W, H = self.width(), self.height()
-        PL, PR, PT, PB = 46, 12, 22, 28
+        PL, PR, PT, PB = 46, 40, 22, 28
         cw, ch = W - PL - PR, H - PT - PB
 
         # Clip all painting to the rounded rectangle so corners stay clean
@@ -3327,8 +3327,10 @@ class SignalHistoryWidget(QWidget):
                              'Select a network\nto see signal history')
             return
 
-        # dBm axis range
+        # dBm axis range (Left Y)
         DBM_MIN, DBM_MAX = -100, -20
+        # Score axis range (Right Y)
+        SCORE_MIN, SCORE_MAX = 0, 100
 
         # "Agora" no lado direito: cada ponto é posicionado pela sua IDADE
         # conforme o tempo passa a idade aumenta e o ponto desliza para a esquerda
@@ -3341,16 +3343,20 @@ class SignalHistoryWidget(QWidget):
             age = now - pt
             return PL + (1.0 - age / W_S) * cw
 
-        def _y(dbm):
+        def _y_dbm(dbm):
             clamped = max(DBM_MIN, min(DBM_MAX, dbm))
             return PT + ch - (clamped - DBM_MIN) / (DBM_MAX - DBM_MIN) * ch
 
-        # Grid horizontal (dBm)
+        def _y_score(score):
+            clamped = max(SCORE_MIN, min(SCORE_MAX, score))
+            return PT + ch - (clamped - SCORE_MIN) / (SCORE_MAX - SCORE_MIN) * ch
+
+        # Grid horizontal (dBm) - aligns with left Y
         grid_pen = QPen(QColor('#21262d'))
         grid_pen.setWidthF(0.8)
         painter.setPen(grid_pen)
         for dbm in range(DBM_MIN, DBM_MAX + 1, 10):
-            y = int(_y(dbm))
+            y = int(_y_dbm(dbm))
             painter.drawLine(PL, y, PL + cw, y)
 
         # Grid step: adapts to the visible window
@@ -3363,26 +3369,42 @@ class SignalHistoryWidget(QWidget):
         else:
             step_s = 120
 
-        # Grid vertical: linhas fixas (posição não muda entre frames)
+        # Grid vertical
         for age_mark in range(step_s, int(W_S) + 1, step_s):
             x = int(PL + (1.0 - age_mark / W_S) * cw)
             if PL <= x <= PL + cw:
                 painter.drawLine(x, PT, x, PT + ch)
 
-        # Axes
+        # Axes borders
         ax_pen = QPen(QColor('#30363d'))
         painter.setPen(ax_pen)
-        painter.drawLine(PL, PT, PL, PT + ch)
-        painter.drawLine(PL, PT + ch, PL + cw, PT + ch)
+        painter.drawLine(PL, PT, PL, PT + ch)            # Left Y
+        painter.drawLine(PL + cw, PT, PL + cw, PT + ch)  # Right Y
+        painter.drawLine(PL, PT + ch, PL + cw, PT + ch)  # Bottom X
 
-        # Y-axis labels
+        # Left Y-axis labels (dBm)
         painter.setFont(QFont('Sans Serif', 7))
         painter.setPen(QColor('#8b949e'))
         for dbm in range(DBM_MIN, DBM_MAX + 1, 10):
-            y = int(_y(dbm))
+            y = int(_y_dbm(dbm))
             painter.drawText(0, y - 7, PL - 4, 14,
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              str(dbm))
+
+        # Right Y-axis labels (Score)
+        painter.setPen(QColor('#f57f17'))  # Amber color for score labels
+        for score in range(SCORE_MIN, SCORE_MAX + 1, 25):
+            y = int(_y_score(score))
+            painter.drawText(PL + cw + 4, y - 7, PR - 4, 14,
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             str(score))
+        
+        # Right Y-axis Title
+        painter.save()
+        painter.translate(PL + cw + PR - 8, PT + ch // 2)
+        painter.rotate(-90)
+        painter.drawText(-60, -8, 120, 16, Qt.AlignmentFlag.AlignCenter, "Ch. Score")
+        painter.restore()
 
         # X-axis labels
         painter.setFont(QFont('Sans Serif', 7))
@@ -3393,11 +3415,9 @@ class SignalHistoryWidget(QWidget):
             painter.drawText(x - 22, PT + ch + 3, 44, 14,
                              Qt.AlignmentFlag.AlignCenter, label)
 
-        def _ny(pt_ts, d):
-            return _y(d)
-
         # Curva de sinal: filtra pontos dentro da janela de tempo
-        visible = [(pt, d) for pt, d in self._points if 0.0 <= (now - pt) <= W_S]
+        # Element format: (pt_ts, dbm, [score_optional])
+        visible = [p for p in self._points if 0.0 <= (now - p[0]) <= W_S]
 
         # Split into continuous segments — breaks at any gap >= threshold so
         # the curve is never drawn through a signal-loss region.
@@ -3416,13 +3436,13 @@ class SignalHistoryWidget(QWidget):
 
         for _seg in _segs:
             if len(_seg) >= 2:
-                # Filled area
+                # Filled area (signal)
                 area = QPainterPath()
-                area.moveTo(_x(_seg[0][0]), _y(DBM_MIN))
-                area.lineTo(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1]))
-                for pt, d in _seg[1:]:
-                    area.lineTo(_x(pt), _ny(pt, d))
-                area.lineTo(_x(_seg[-1][0]), _y(DBM_MIN))
+                area.moveTo(_x(_seg[0][0]), _y_dbm(DBM_MIN))
+                area.lineTo(_x(_seg[0][0]), _y_dbm(_seg[0][1]))
+                for p in _seg[1:]:
+                    area.lineTo(_x(p[0]), _y_dbm(p[1]))
+                area.lineTo(_x(_seg[-1][0]), _y_dbm(DBM_MIN))
                 area.closeSubpath()
                 fill = QColor(color)
                 fill.setAlpha(35)
@@ -3430,32 +3450,59 @@ class SignalHistoryWidget(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawPath(area)
 
-                # Line
+                # Line (signal)
                 line = QPainterPath()
-                line.moveTo(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1]))
-                for pt, d in _seg[1:]:
-                    line.lineTo(_x(pt), _ny(pt, d))
+                line.moveTo(_x(_seg[0][0]), _y_dbm(_seg[0][1]))
+                for p in _seg[1:]:
+                    line.lineTo(_x(p[0]), _y_dbm(p[1]))
                 lp = QPen(color)
                 lp.setWidthF(1.8)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.setPen(lp)
                 painter.drawPath(line)
+                
+                # Line (score) - if available
+                if len(_seg[0]) > 2:
+                    score_line = QPainterPath()
+                    score_line.moveTo(_x(_seg[0][0]), _y_score(_seg[0][2]))
+                    for p in _seg[1:]:
+                        if len(p) > 2:
+                            score_line.lineTo(_x(p[0]), _y_score(p[2]))
+                    sp = QPen(QColor(245, 127, 23, 160))  # Semi-transparent amber + dashed
+                    sp.setWidthF(1.5)
+                    sp.setStyle(Qt.PenStyle.DashLine)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.setPen(sp)
+                    painter.drawPath(score_line)
+
             elif len(_seg) == 1:
                 painter.setBrush(color)
                 painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPointF(_x(_seg[0][0]), _ny(_seg[0][0], _seg[0][1])), 3.5, 3.5)
+                painter.drawEllipse(QPointF(_x(_seg[0][0]), _y_dbm(_seg[0][1])), 3.5, 3.5)
+                if len(_seg[0]) > 2:
+                    painter.setBrush(QColor(245, 127, 23, 160))
+                    painter.drawEllipse(QPointF(_x(_seg[0][0]), _y_score(_seg[0][2])), 2.5, 2.5)
 
         # Dot + label on the most recent point of the last segment
         if _segs and _segs[-1]:
             _last = _segs[-1][-1]
             lx = _x(_last[0])
-            ly = _ny(_last[0], _last[1])
+            ly_dbm = _y_dbm(_last[1])
             painter.setBrush(color)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(lx, ly), 3.5, 3.5)
+            painter.drawEllipse(QPointF(lx, ly_dbm), 3.5, 3.5)
             painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
             painter.setPen(color)
-            painter.drawText(int(lx) + 5, int(ly) + 4, f'{int(_last[1])} dBm')
+            painter.drawText(int(lx) + 5, int(ly_dbm) + 4, f'{int(_last[1])} dBm')
+            
+            # Score label
+            if len(_last) > 2:
+                ly_score = _y_score(_last[2])
+                painter.setBrush(QColor(245, 127, 23))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(lx, ly_score), 2.5, 2.5)
+                painter.setPen(QColor(245, 127, 23))
+                painter.drawText(int(lx) + 5, int(ly_score) - 4, f'Score: {int(_last[2])}')
 
         # ── Signal-loss markers ───────────────────────────────────────────────
         # Collect every dropout event from the full point history:
@@ -3599,6 +3646,8 @@ class WifiChannelChart(QWidget):
         # We'll animate based on the strongest signal per channel
         new_targets = {}
         new_bandwidths = {}
+        # Compute channel-load for score annotation
+        _ch_load: dict = {}
         for net in networks:
             ch = net.get('channel')
             sig = net.get('signal_pct', 0)
@@ -3606,6 +3655,13 @@ class WifiChannelChart(QWidget):
             if ch is not None:
                 new_targets[ch] = max(new_targets.get(ch, 0), sig)
                 new_bandwidths[ch] = max(new_bandwidths.get(ch, 20), bw)
+                _ch_load[ch] = _ch_load.get(ch, 0) + sig
+        _max_load = max(_ch_load.values()) if _ch_load else 1
+        for net in networks:
+            _c = net.get('channel')
+            _raw = _ch_load.get(_c, 0) if _c is not None else 0
+            if 'channel_score' not in net:  # don't overwrite if already set by UI
+                net['channel_score'] = min(100, round(_raw * 100 / max(_max_load, 1)))
         # Include channels still animating down to 0
         all_channels = set(self._animated_sig.keys()) | set(new_targets.keys())
         self._target_sig = {ch: new_targets.get(ch, 0) for ch in all_channels}
@@ -3685,6 +3741,16 @@ class WifiChannelChart(QWidget):
     def set_glow(self, enabled: bool):
         """Enable or disable the peak radial glow burst."""
         self._glow_enabled = enabled
+        self.update()
+
+    def set_interference(self, enabled: bool):
+        """Enable or disable the interference heat pulse overlay."""
+        self._interference_enabled = enabled
+        self.update()
+
+    def set_score(self, enabled: bool):
+        """Enable or disable the per-channel congestion score bar."""
+        self._score_enabled = enabled
         self.update()
 
     def set_scanlines(self, enabled: bool):
@@ -4023,12 +4089,16 @@ class WifiChannelChart(QWidget):
             # Store for hover detection
             curve_key = f"{ssid}_{bssid}"
             self._ssid_curves[curve_key] = {
-                'path': curve_path,
-                'center_x': center_x,
-                'center_y': peak_y,
-                'sigma_px': sigma_px,
-                'ssid': ssid,
-                'bssid': bssid
+                'path':          curve_path,
+                'center_x':      center_x,
+                'center_y':      peak_y,
+                'sigma_px':      sigma_px,
+                'ssid':          ssid,
+                'bssid':         bssid,
+                'channel':       net.get('channel', '?'),
+                'dbm':           net.get('dbm', '?'),
+                'bandwidth':     net.get('bandwidth', '?'),
+                'channel_score': net.get('channel_score', '?'),
             }
 
             # Gradient fill: opaque at peak, transparent at base
@@ -4209,11 +4279,19 @@ class WifiChannelChart(QWidget):
             path = curve_info['path']
             # Check if mouse is inside the curve path
             if path.contains(QPointF(mx, my)):
-                ssid = curve_info['ssid']
-                bssid = curve_info['bssid']
+                ssid   = curve_info['ssid']
+                bssid  = curve_info['bssid']
+                ch     = curve_info.get('channel', '?')
+                dbm    = curve_info.get('dbm', '?')
+                bw     = curve_info.get('bandwidth', '?')
+                score  = curve_info.get('channel_score', '?')
                 self._hovered_ssid = ssid
-                # Show tooltip with SSID and BSSID
-                tooltip_text = f"SSID: {ssid}\nBSSID: {bssid}"
+                tooltip_text = (
+                    f"SSID: {ssid}\n"
+                    f"BSSID: {bssid}\n"
+                    f"Channel: {ch}  \u2022  {dbm} dBm  \u2022  {bw} MHz\n"
+                    f"Congestion score: {score}/100"
+                )
                 self.setToolTip(tooltip_text)
                 break
 
@@ -8815,16 +8893,43 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_band_combo.setToolTip("Filter results by frequency band")
         self.wifi_band_combo.setStyleSheet(combo_style)
 
-        self.wifi_chart_band_combo = QComboBox()
-        self.wifi_chart_band_combo.addItems(["2.4 GHz", "5 GHz", "Both"])
-        self.wifi_chart_band_combo.setFixedWidth(100)
-        self.wifi_chart_band_combo.setToolTip("Select band for channel usage chart")
-        self.wifi_chart_band_combo.setStyleSheet(combo_style)
+        _toggle_style = """
+            QPushButton {
+                background-color: #3a3a4a; border: 1px solid #555566;
+                border-radius: 4px; color: #8b949e; font-size: 8pt;
+                padding: 2px 12px; min-width: 64px;
+            }
+            QPushButton:checked {
+                background-color: #E91E63; border-color: #E91E63; color: white;
+            }
+            QPushButton:hover { border-color: #999aaa; }
+        """
 
-        self.wifi_min_signal_combo = QComboBox()
-        self.wifi_min_signal_combo.addItems(["Any", "≥ -88 dBm", "≥ -75 dBm", "≥ -63 dBm"])
-        self.wifi_min_signal_combo.setFixedWidth(100)
-        self.wifi_min_signal_combo.setStyleSheet(combo_style)
+        # Band selector: 3 exclusive toggle buttons
+        self.wifi_band_btn_24  = QPushButton("2.4 GHz")
+        self.wifi_band_btn_5   = QPushButton("5 GHz")
+        self.wifi_band_btn_both= QPushButton("Both")
+        for _btn, _tip in [
+            (self.wifi_band_btn_24,   "Show 2.4 GHz channels only"),
+            (self.wifi_band_btn_5,    "Show 5 GHz channels only"),
+            (self.wifi_band_btn_both, "Show both bands simultaneously"),
+        ]:
+            _btn.setCheckable(True)
+            _btn.setFixedHeight(24)
+            _btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            _btn.setToolTip(_tip)
+            _btn.setStyleSheet(_toggle_style)
+        self.wifi_band_btn_24.setChecked(True)   # default: 2.4 GHz
+
+        def _on_band_btn(btn):
+            """Exclusive selection: uncheck the other two, update chart."""
+            for b in (self.wifi_band_btn_24, self.wifi_band_btn_5, self.wifi_band_btn_both):
+                b.setChecked(b is btn)
+            self._wifi_update_chart()
+
+        self.wifi_band_btn_24.clicked.connect(lambda: _on_band_btn(self.wifi_band_btn_24))
+        self.wifi_band_btn_5.clicked.connect(lambda:  _on_band_btn(self.wifi_band_btn_5))
+        self.wifi_band_btn_both.clicked.connect(lambda: _on_band_btn(self.wifi_band_btn_both))
 
         self.wifi_auto_refresh_cb = QCheckBox("Enabled")
         self.wifi_auto_refresh_cb.setChecked(True)
@@ -8841,21 +8946,10 @@ class SerialTerminalGUI(QMainWindow):
 
         self.wifi_interval_combo = QComboBox()
         self.wifi_interval_combo.addItems(["1s", "2s", "5s", "10s", "15s", "30s"])
-        self.wifi_interval_combo.setCurrentText("5s")
+        self.wifi_interval_combo.setCurrentText("2s")
         self.wifi_interval_combo.setFixedWidth(70)
         self.wifi_interval_combo.setStyleSheet(combo_style)
 
-        _toggle_style = """
-            QPushButton {
-                background-color: #3a3a4a; border: 1px solid #555566;
-                border-radius: 4px; color: #8b949e; font-size: 8pt;
-                padding: 2px 12px; min-width: 64px;
-            }
-            QPushButton:checked {
-                background-color: #E91E63; border-color: #E91E63; color: white;
-            }
-            QPushButton:hover { border-color: #999aaa; }
-        """
         self.wifi_toggle_channel_btn = QPushButton("Channel")
         self.wifi_toggle_channel_btn.setCheckable(True)
         self.wifi_toggle_channel_btn.setChecked(True)
@@ -8976,6 +9070,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_scanlines_btn.setStyleSheet(_toggle_style)
         self.wifi_scanlines_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_scanlines_btn.setToolTip("CRT scanlines overlay (retro style)")
+        self.wifi_scanlines_btn.setToolTip("CRT scanlines overlay (retro style)")
 
         # ── History window slider ──────────────────────────────────────────────
         self._hist_window_slider = QSlider(Qt.Orientation.Horizontal)
@@ -9006,13 +9101,19 @@ class SerialTerminalGUI(QMainWindow):
         self._hist_audio_chk.setStyleSheet("color: #8b949e; font-size: 8pt;")
 
         right_grid.addWidget(_lbl("Band:"),                0, 0)
-        right_grid.addWidget(self.wifi_chart_band_combo,  0, 1)
-        right_grid.addWidget(_lbl("Min. signal:"),        1, 0)
-        right_grid.addWidget(self.wifi_min_signal_combo,  1, 1)
-        right_grid.addWidget(_lbl("Show:"),               2, 0)
-        right_grid.addWidget(graphs_cell,                 2, 1)
-        right_grid.addWidget(_lbl("Effects:"),            3, 0)
-        # Effects cell: White Noise | Glow | Scanlines
+        band_cell = QWidget()
+        band_cell_layout = QHBoxLayout(band_cell)
+        band_cell_layout.setContentsMargins(0, 0, 0, 0)
+        band_cell_layout.setSpacing(4)
+        band_cell_layout.addWidget(self.wifi_band_btn_24)
+        band_cell_layout.addWidget(self.wifi_band_btn_5)
+        band_cell_layout.addWidget(self.wifi_band_btn_both)
+        band_cell_layout.addStretch()
+        right_grid.addWidget(band_cell,                    0, 1)
+        right_grid.addWidget(_lbl("Show:"),               1, 0)
+        right_grid.addWidget(graphs_cell,                 1, 1)
+        right_grid.addWidget(_lbl("Effects:"),            2, 0)
+        # Effects row 1: White Noise | Glow | Scanlines
         effects_cell = QWidget()
         effects_layout = QHBoxLayout(effects_cell)
         effects_layout.setContentsMargins(0, 0, 0, 0)
@@ -9021,11 +9122,11 @@ class SerialTerminalGUI(QMainWindow):
         effects_layout.addWidget(self.wifi_glow_btn)
         effects_layout.addWidget(self.wifi_scanlines_btn)
         effects_layout.addStretch()
-        right_grid.addWidget(effects_cell,                3, 1)
-        right_grid.addWidget(_lbl("Window:"),             4, 0)
-        right_grid.addWidget(hist_window_cell,            4, 1)
-        right_grid.addWidget(_lbl("Audio:"),              5, 0)
-        right_grid.addWidget(self._hist_audio_chk,        5, 1)
+        right_grid.addWidget(effects_cell,                2, 1)
+        right_grid.addWidget(_lbl("Window:"),             3, 0)
+        right_grid.addWidget(hist_window_cell,            3, 1)
+        right_grid.addWidget(_lbl("Audio:"),              4, 0)
+        right_grid.addWidget(self._hist_audio_chk,        4, 1)
 
         right_outer.addWidget(right_grid_widget)
 
@@ -9051,9 +9152,9 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(4)
 
         self.wifi_table = QTableWidget()
-        self.wifi_table.setColumnCount(11)
+        self.wifi_table.setColumnCount(12)
         self.wifi_table.setHorizontalHeaderLabels(
-            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security"]
+            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security", "Score"]
         )
         # Column 0: Visibility checkbox
         self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -9067,7 +9168,7 @@ class SerialTerminalGUI(QMainWindow):
         # Column 3: Vendor (stretch)
         self.wifi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         # Other columns
-        for col, w in [(4, 110), (5, 70), (6, 40), (7, 60), (8, 65), (9, 100), (10, 110)]:
+        for col, w in [(4, 110), (5, 70), (6, 40), (7, 60), (8, 65), (9, 100), (10, 110), (11, 55)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -9115,14 +9216,14 @@ class SerialTerminalGUI(QMainWindow):
         chart_layout.setContentsMargins(4, 2, 4, 2)
         chart_layout.setSpacing(0)
 
-        # Connect chart band selector to update chart
-        self.wifi_chart_band_combo.currentTextChanged.connect(self._wifi_update_chart)
+        # Band buttons connect via _on_band_btn (defined during widget creation)
 
         self.wifi_channel_chart = WifiChannelChart()
         self.wifi_channel_chart.carrier_clicked.connect(self._on_chart_carrier_clicked)
         self.wifi_noise_btn.toggled.connect(self.wifi_channel_chart.set_noise)
         self.wifi_glow_btn.toggled.connect(self.wifi_channel_chart.set_glow)
         self.wifi_scanlines_btn.toggled.connect(self.wifi_channel_chart.set_scanlines)
+
         chart_layout.addWidget(self.wifi_channel_chart)
         chart_group.setLayout(chart_layout)
         chart_group.setStyleSheet("""
@@ -10306,12 +10407,6 @@ class SerialTerminalGUI(QMainWindow):
         if band_filter == "5 GHz" and net['band'] != '5GHz':
             return
 
-        # Apply min-signal filter
-        min_sig_text = self.wifi_min_signal_combo.currentText()
-        min_dbm_map = {"Any": -200, "≥ -88 dBm": -88, "≥ -75 dBm": -75, "≥ -63 dBm": -63}
-        if net['dbm'] < min_dbm_map.get(min_sig_text, -200):
-            return
-
         self._wifi_new_networks.append(net)
 
     def _add_wifi_row(self, net):
@@ -10405,6 +10500,19 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setItem(row, 10, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
+
+        # Col 11 — Channel congestion score (0–100, green → red)
+        score = net.get('channel_score', 0)
+        score_item = QTableWidgetItem(str(score))
+        score_item.setData(Qt.ItemDataRole.UserRole, score)  # numeric sort
+        score_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if score <= 30:
+            score_item.setForeground(QColor('#2e7d32'))  # green
+        elif score <= 60:
+            score_item.setForeground(QColor('#f57f17'))  # amber
+        else:
+            score_item.setForeground(QColor('#c62828'))  # red
+        self.wifi_table.setItem(row, 11, score_item)
 
     # ── Chart visibility helpers ───────────────────────────────────────────────
 
@@ -10537,11 +10645,23 @@ class SerialTerminalGUI(QMainWindow):
         if not hasattr(self, '_wifi_signal_history'):
             self._wifi_signal_history = {}  # bssid → {'ssid': str, 'points': [(t, dbm)]}
 
+        # Compute per-channel score (0–100) first so history points can store it
+        _ch_load: dict = {}
+        for _n in self._wifi_new_networks:
+            _c = _n.get('channel')
+            if _c is not None:
+                _ch_load[_c] = _ch_load.get(_c, 0) + _n.get('signal_pct', 0)
+        _max_load = max(_ch_load.values()) if _ch_load else 1
+        for net in self._wifi_new_networks:
+            _ch = net.get('channel')
+            _raw = _ch_load.get(_ch, 0) if _ch is not None else 0
+            net['channel_score'] = min(100, round(_raw * 100 / max(_max_load, 1)))
+
         for net in self._wifi_new_networks:
             bssid = net['bssid']
             if bssid not in self._wifi_signal_history:
                 self._wifi_signal_history[bssid] = {'ssid': net['ssid'], 'points': []}
-            self._wifi_signal_history[bssid]['points'].append((elapsed, net['dbm']))
+            self._wifi_signal_history[bssid]['points'].append((elapsed, net['dbm'], net['channel_score']))
 
         # Refresh history widget if a network is currently selected
         if self.wifi_signal_history.isVisible() and self.wifi_signal_history._bssid:
@@ -10616,12 +10736,10 @@ class SerialTerminalGUI(QMainWindow):
         """Refresh the channel chart with current scan data."""
         if not hasattr(self, '_wifi_networks'):
             return
-        band_text = self.wifi_chart_band_combo.currentText()
-        # Map band text to band key
-        if band_text == "Both":
-            band_key = 'Both'
-        elif '5' in band_text:
+        if self.wifi_band_btn_5.isChecked():
             band_key = '5GHz'
+        elif self.wifi_band_btn_both.isChecked():
+            band_key = 'Both'
         else:
             band_key = '2.4GHz'
         self.wifi_channel_chart.set_networks(self._wifi_networks, band_key)
