@@ -1,18 +1,25 @@
 # Maintainer: Benjamim Gois <benjamimgois@gmail.com>
-pkgname=omnicom
-pkgver=1.5
+pkgname=omnicom-git
+pkgver=r1.g0000000
 pkgrel=1
 pkgdesc="Modern graphical interface for network device management with Serial, SSH, Telnet, IP Scanner, SNMP and Traceroute support"
 arch=('any')
 url="https://github.com/benjamimgois/omnicom"
 license=('MIT')
 depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo')
-makedepends=('imagemagick')
-source=("${pkgname}-${pkgver}.tar.gz::https://github.com/benjamimgois/omnicom/archive/refs/tags/${pkgver}.tar.gz")
-sha256sums=('4bbf67936d7e6090340705620dbf0ee7b88139cc52b3ae3ef19741d5e74e3aeb')
+makedepends=('git' 'imagemagick')
+provides=('omnicom')
+conflicts=('omnicom')
+source=("${pkgname}::git+https://github.com/benjamimgois/omnicom.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "${srcdir}/${pkgname}"
+    printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
 
 package() {
-    cd "${srcdir}/${pkgname}-${pkgver}"
+    cd "${srcdir}/${pkgname}"
 
     # Install main script
     install -Dm755 omnicom "${pkgdir}/usr/bin/omnicom"
@@ -40,8 +47,8 @@ package() {
     install -Dm644 omnicom.desktop "${pkgdir}/usr/share/applications/omnicom.desktop"
 
     # Install documentation
-    install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
-    install -Dm644 docs/INTERFACE.md "${pkgdir}/usr/share/doc/${pkgname}/INTERFACE.md"
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/omnicom/README.md"
+    install -Dm644 docs/INTERFACE.md "${pkgdir}/usr/share/doc/omnicom/INTERFACE.md"
 
     # Install license
     install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
