@@ -7896,6 +7896,9 @@ class SerialTerminalGUI(QMainWindow):
         conn_layout = QFormLayout()
         conn_layout.setVerticalSpacing(4)
         conn_layout.setContentsMargins(8, 5, 8, 6)
+        conn_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        conn_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        conn_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         snmp_line_edit_style = """
             QLineEdit {
@@ -7939,7 +7942,6 @@ class SerialTerminalGUI(QMainWindow):
         snmp_host_layout.setSpacing(4)
         snmp_host_layout.addWidget(self.snmp_host_input)
         snmp_host_layout.addWidget(self.snmp_ip_profiles_btn)
-        snmp_host_layout.addStretch()
         snmp_host_widget.setLayout(snmp_host_layout)
         conn_layout.addRow("Host:", snmp_host_widget)
 
@@ -7961,22 +7963,156 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_community_hist_btn.setStyleSheet(_snmp_tool_btn_style)
         self.snmp_community_hist_btn.clicked.connect(self._snmp_show_community_menu)
 
-        version_sep = QLabel("version:")
-        version_sep.setStyleSheet("color: #888888; font-size: 9pt;")
-        version_sep.setFixedWidth(52)
-
-        self.snmp_version_combo = QComboBox()
-        self.snmp_version_combo.addItems(["v2c", "v1", "v3"])
-        self.snmp_version_combo.setFixedWidth(100)
-        self.snmp_version_combo.setToolTip("SNMP version")
-
         community_version_layout.addWidget(self.snmp_community_input)
         community_version_layout.addWidget(self.snmp_community_hist_btn)
-        community_version_layout.addWidget(version_sep)
-        community_version_layout.addWidget(self.snmp_version_combo)
-        community_version_layout.addStretch()
         community_version_widget.setLayout(community_version_layout)
         conn_layout.addRow("Community:", community_version_widget)
+
+        # Version buttons (below Community)
+        version_widget = QWidget()
+        version_layout = QHBoxLayout()
+        version_layout.setContentsMargins(0, 0, 0, 0)
+        version_layout.setSpacing(6)
+
+        version_btn_style = """
+            QPushButton {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px 12px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 9pt;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+            }
+            QPushButton:checked {
+                background-color: #FF9800;
+                color: #ffffff;
+                border: 1px solid #FF9800;
+                font-weight: bold;
+            }
+        """
+
+        self.snmp_version_v2c_btn = QPushButton("v2c")
+        self.snmp_version_v2c_btn.setCheckable(True)
+        self.snmp_version_v2c_btn.setChecked(True)
+        self.snmp_version_v2c_btn.setFixedWidth(60)
+        self.snmp_version_v2c_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_version_v2c_btn.setStyleSheet(version_btn_style)
+        self.snmp_version_v2c_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v2c"))
+
+        self.snmp_version_v1_btn = QPushButton("v1")
+        self.snmp_version_v1_btn.setCheckable(True)
+        self.snmp_version_v1_btn.setFixedWidth(60)
+        self.snmp_version_v1_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_version_v1_btn.setStyleSheet(version_btn_style)
+        self.snmp_version_v1_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v1"))
+
+        self.snmp_version_v3_btn = QPushButton("v3")
+        self.snmp_version_v3_btn.setCheckable(True)
+        self.snmp_version_v3_btn.setFixedWidth(60)
+        self.snmp_version_v3_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_version_v3_btn.setStyleSheet(version_btn_style)
+        self.snmp_version_v3_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v3"))
+
+        version_layout.addWidget(self.snmp_version_v2c_btn)
+        version_layout.addWidget(self.snmp_version_v1_btn)
+        version_layout.addWidget(self.snmp_version_v3_btn)
+        version_layout.addStretch()
+        version_widget.setLayout(version_layout)
+        conn_layout.addRow("Version:", version_widget)
+
+        # Store version buttons for easy access
+        self.snmp_version_buttons = {
+            'v2c': self.snmp_version_v2c_btn,
+            'v1': self.snmp_version_v1_btn,
+            'v3': self.snmp_version_v3_btn
+        }
+        self.snmp_current_version = "v2c"
+
+        # SNMPv3 fields (initially hidden)
+        # Username
+        self.snmp_v3_username_input = QLineEdit()
+        self.snmp_v3_username_input.setPlaceholderText("username")
+        self.snmp_v3_username_input.setStyleSheet(snmp_line_edit_style)
+        self.snmp_v3_username_label = QLabel("Username:")
+        conn_layout.addRow(self.snmp_v3_username_label, self.snmp_v3_username_input)
+
+        # Auth Protocol + Auth Password
+        v3_auth_widget = QWidget()
+        v3_auth_layout = QHBoxLayout()
+        v3_auth_layout.setContentsMargins(0, 0, 0, 0)
+        v3_auth_layout.setSpacing(6)
+
+        self.snmp_v3_auth_proto_combo = QComboBox()
+        self.snmp_v3_auth_proto_combo.addItems(["None", "MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"])
+        self.snmp_v3_auth_proto_combo.setFixedWidth(100)
+        self.snmp_v3_auth_proto_combo.setToolTip("Authentication protocol")
+
+        auth_pass_label = QLabel("password:")
+        auth_pass_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        auth_pass_label.setFixedWidth(65)
+
+        self.snmp_v3_auth_pass_input = QLineEdit()
+        self.snmp_v3_auth_pass_input.setPlaceholderText("auth password")
+        self.snmp_v3_auth_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.snmp_v3_auth_pass_input.setStyleSheet(snmp_line_edit_style)
+
+        v3_auth_layout.addWidget(self.snmp_v3_auth_proto_combo)
+        v3_auth_layout.addWidget(auth_pass_label)
+        v3_auth_layout.addWidget(self.snmp_v3_auth_pass_input)
+        v3_auth_layout.addStretch()
+        v3_auth_widget.setLayout(v3_auth_layout)
+        self.snmp_v3_auth_label = QLabel("Auth:")
+        conn_layout.addRow(self.snmp_v3_auth_label, v3_auth_widget)
+
+        # Privacy Protocol + Privacy Password
+        v3_priv_widget = QWidget()
+        v3_priv_layout = QHBoxLayout()
+        v3_priv_layout.setContentsMargins(0, 0, 0, 0)
+        v3_priv_layout.setSpacing(6)
+
+        self.snmp_v3_priv_proto_combo = QComboBox()
+        self.snmp_v3_priv_proto_combo.addItems(["None", "DES", "3DES", "AES", "AES192", "AES256"])
+        self.snmp_v3_priv_proto_combo.setFixedWidth(100)
+        self.snmp_v3_priv_proto_combo.setToolTip("Privacy protocol")
+
+        priv_pass_label = QLabel("password:")
+        priv_pass_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        priv_pass_label.setFixedWidth(65)
+
+        self.snmp_v3_priv_pass_input = QLineEdit()
+        self.snmp_v3_priv_pass_input.setPlaceholderText("priv password")
+        self.snmp_v3_priv_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.snmp_v3_priv_pass_input.setStyleSheet(snmp_line_edit_style)
+
+        v3_priv_layout.addWidget(self.snmp_v3_priv_proto_combo)
+        v3_priv_layout.addWidget(priv_pass_label)
+        v3_priv_layout.addWidget(self.snmp_v3_priv_pass_input)
+        v3_priv_layout.addStretch()
+        v3_priv_widget.setLayout(v3_priv_layout)
+        self.snmp_v3_priv_label = QLabel("Privacy:")
+        conn_layout.addRow(self.snmp_v3_priv_label, v3_priv_widget)
+
+        # Initially hide v3 fields
+        self.snmp_v3_username_label.setVisible(False)
+        self.snmp_v3_username_input.setVisible(False)
+        self.snmp_v3_auth_label.setVisible(False)
+        v3_auth_widget.setVisible(False)
+        self.snmp_v3_priv_label.setVisible(False)
+        v3_priv_widget.setVisible(False)
+
+        # Store v3 widgets for easy access
+        self.snmp_v3_widgets = {
+            'username_label': self.snmp_v3_username_label,
+            'username_input': self.snmp_v3_username_input,
+            'auth_label': self.snmp_v3_auth_label,
+            'auth_widget': v3_auth_widget,
+            'priv_label': self.snmp_v3_priv_label,
+            'priv_widget': v3_priv_widget
+        }
 
         conn_group.setLayout(conn_layout)
         conn_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -7987,10 +8123,63 @@ class SerialTerminalGUI(QMainWindow):
         query_layout = QFormLayout()
         query_layout.setVerticalSpacing(4)
         query_layout.setContentsMargins(8, 5, 8, 6)
+        query_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        query_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self.snmp_query_type_combo = QComboBox()
-        self.snmp_query_type_combo.addItems(["snmpwalk", "snmpget"])
-        query_layout.addRow("Type:", self.snmp_query_type_combo)
+        # Type buttons
+        type_widget = QWidget()
+        type_layout = QHBoxLayout()
+        type_layout.setContentsMargins(0, 0, 0, 0)
+        type_layout.setSpacing(6)
+
+        type_btn_style = """
+            QPushButton {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px 12px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 9pt;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+            }
+            QPushButton:checked {
+                background-color: #FF9800;
+                color: #ffffff;
+                border: 1px solid #FF9800;
+                font-weight: bold;
+            }
+        """
+
+        self.snmp_type_walk_btn = QPushButton("snmpwalk")
+        self.snmp_type_walk_btn.setCheckable(True)
+        self.snmp_type_walk_btn.setChecked(True)
+        self.snmp_type_walk_btn.setFixedWidth(90)
+        self.snmp_type_walk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_type_walk_btn.setStyleSheet(type_btn_style)
+        self.snmp_type_walk_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpwalk"))
+
+        self.snmp_type_get_btn = QPushButton("snmpget")
+        self.snmp_type_get_btn.setCheckable(True)
+        self.snmp_type_get_btn.setFixedWidth(90)
+        self.snmp_type_get_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_type_get_btn.setStyleSheet(type_btn_style)
+        self.snmp_type_get_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpget"))
+
+        type_layout.addWidget(self.snmp_type_walk_btn)
+        type_layout.addWidget(self.snmp_type_get_btn)
+        type_layout.addStretch()
+        type_widget.setLayout(type_layout)
+        query_layout.addRow("Type:", type_widget)
+
+        # Store type buttons for easy access
+        self.snmp_type_buttons = {
+            'snmpwalk': self.snmp_type_walk_btn,
+            'snmpget': self.snmp_type_get_btn
+        }
+        self.snmp_current_type = "snmpwalk"
 
         self.snmp_oid_input = QLineEdit()
         self.snmp_oid_input.setPlaceholderText(".1.3.6.1.2.1.1")
@@ -8008,12 +8197,13 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(6)
 
         self.snmp_results_table = QTableWidget()
-        self.snmp_results_table.setColumnCount(3)
-        self.snmp_results_table.setHorizontalHeaderLabels(["OID", "Value", "Type"])
-        self.snmp_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.snmp_results_table.setColumnCount(4)
+        self.snmp_results_table.setHorizontalHeaderLabels(["Family Tree", "OID", "Value", "Type"])
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.snmp_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.snmp_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.snmp_results_table.setColumnWidth(2, 65)
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.snmp_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.snmp_results_table.setColumnWidth(3, 65)
         self.snmp_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.snmp_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.snmp_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -8046,14 +8236,14 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 9pt;
             }
         """)
-        # Index panel (right side) — "Family Tree"
+        # Index panel (right side) — "Index"
         index_panel = QWidget()
         index_panel.setFixedWidth(185)
         index_panel_layout = QVBoxLayout(index_panel)
         index_panel_layout.setContentsMargins(0, 0, 0, 0)
         index_panel_layout.setSpacing(4)
 
-        family_tree_label = QLabel("Family Tree")
+        family_tree_label = QLabel("Index")
         family_tree_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         family_tree_label.setFixedHeight(22)
         family_tree_label.setStyleSheet("""
@@ -8637,15 +8827,30 @@ class SerialTerminalGUI(QMainWindow):
         host = self.snmp_host_input.text().strip()
         port = "161"
         oid = self.snmp_oid_input.text().strip()
-        query_type = self.snmp_query_type_combo.currentText()
-        version = self.snmp_version_combo.currentText()
+        query_type = self.snmp_current_type
+        version = self.snmp_current_version
         community = self.snmp_community_input.text().strip() or "public"
-        self.config.add_vuln_community(community)
+
+        # SNMPv3 parameters
+        v3_username = self.snmp_v3_username_input.text().strip()
+        v3_auth_proto = self.snmp_v3_auth_proto_combo.currentText()
+        v3_auth_pass = self.snmp_v3_auth_pass_input.text().strip()
+        v3_priv_proto = self.snmp_v3_priv_proto_combo.currentText()
+        v3_priv_pass = self.snmp_v3_priv_pass_input.text().strip()
+
+        if version != "v3":
+            self.config.add_vuln_community(community)
 
         # Validation
         if not host:
             self.snmp_results_table.setRowCount(0)
             self.snmp_results_group.setTitle("Results — Error: Host is required")
+            return
+
+        # v3 requires username
+        if version == "v3" and not v3_username:
+            self.snmp_results_table.setRowCount(0)
+            self.snmp_results_group.setTitle("Results — Error: Username is required for SNMPv3")
             return
 
         # OID is required only for snmpget, optional for snmpwalk
@@ -8664,6 +8869,7 @@ class SerialTerminalGUI(QMainWindow):
         self._snmp_oid_family_colors = {}
         self._snmp_oid_color_index = 0
         self._snmp_family_first_row = {}
+        self._snmp_family_counts = {}
         self.snmp_index_list.clear()
         self.snmp_execute_btn.setEnabled(False)
         if query_type == "snmpwalk":
@@ -8679,7 +8885,9 @@ class SerialTerminalGUI(QMainWindow):
             progress = pyqtSignal(int)  # percentage 0-100
             finished_result = pyqtSignal(str, bool)  # message, success
 
-            def __init__(self, host, port, oid, query_type, version, community):
+            def __init__(self, host, port, oid, query_type, version, community,
+                         v3_username=None, v3_auth_proto=None, v3_auth_pass=None,
+                         v3_priv_proto=None, v3_priv_pass=None):
                 super().__init__()
                 self.host = host
                 self.port = int(port)
@@ -8687,6 +8895,11 @@ class SerialTerminalGUI(QMainWindow):
                 self.query_type = query_type
                 self.version = version
                 self.community = community
+                self.v3_username = v3_username
+                self.v3_auth_proto = v3_auth_proto
+                self.v3_auth_pass = v3_auth_pass
+                self.v3_priv_proto = v3_priv_proto
+                self.v3_priv_pass = v3_priv_pass
 
             @staticmethod
             def _classify_type(value):
@@ -8729,18 +8942,58 @@ class SerialTerminalGUI(QMainWindow):
                 try:
                     import asyncio
                     from pysnmp.hlapi.v3arch.asyncio import (
-                        SnmpEngine, CommunityData, UdpTransportTarget,
+                        SnmpEngine, CommunityData, UsmUserData, UdpTransportTarget,
                         ContextData, ObjectType, ObjectIdentity,
-                        get_cmd, walk_cmd
+                        get_cmd, walk_cmd,
+                        usmHMACMD5AuthProtocol, usmHMACSHAAuthProtocol,
+                        usmHMAC128SHA224AuthProtocol, usmHMAC192SHA256AuthProtocol,
+                        usmHMAC256SHA384AuthProtocol, usmHMAC384SHA512AuthProtocol,
+                        usmDESPrivProtocol, usm3DESEDEPrivProtocol,
+                        usmAesCfb128Protocol, usmAesCfb192Protocol, usmAesCfb256Protocol,
+                        usmNoAuthProtocol, usmNoPrivProtocol
                     )
 
                     async def do_snmp_query():
+                        # Determine auth_data based on version
                         if self.version == "v1":
-                            mp_model = 0
+                            auth_data = CommunityData(self.community, mpModel=0)
                         elif self.version == "v2c":
-                            mp_model = 1
+                            auth_data = CommunityData(self.community, mpModel=1)
+                        elif self.version == "v3":
+                            # Map protocol names to pysnmp objects
+                            auth_protocols = {
+                                "None": usmNoAuthProtocol,
+                                "MD5": usmHMACMD5AuthProtocol,
+                                "SHA": usmHMACSHAAuthProtocol,
+                                "SHA224": usmHMAC128SHA224AuthProtocol,
+                                "SHA256": usmHMAC192SHA256AuthProtocol,
+                                "SHA384": usmHMAC256SHA384AuthProtocol,
+                                "SHA512": usmHMAC384SHA512AuthProtocol,
+                            }
+                            priv_protocols = {
+                                "None": usmNoPrivProtocol,
+                                "DES": usmDESPrivProtocol,
+                                "3DES": usm3DESEDEPrivProtocol,
+                                "AES": usmAesCfb128Protocol,
+                                "AES192": usmAesCfb192Protocol,
+                                "AES256": usmAesCfb256Protocol,
+                            }
+
+                            auth_proto = auth_protocols.get(self.v3_auth_proto, usmNoAuthProtocol)
+                            priv_proto = priv_protocols.get(self.v3_priv_proto, usmNoPrivProtocol)
+
+                            auth_key = self.v3_auth_pass if self.v3_auth_pass else None
+                            priv_key = self.v3_priv_pass if self.v3_priv_pass else None
+
+                            auth_data = UsmUserData(
+                                self.v3_username,
+                                authKey=auth_key,
+                                privKey=priv_key,
+                                authProtocol=auth_proto,
+                                privProtocol=priv_proto
+                            )
                         else:
-                            self.finished_result.emit("SNMPv3 not yet implemented", False)
+                            self.finished_result.emit(f"Unknown SNMP version: {self.version}", False)
                             return
 
                         count = 0
@@ -8756,7 +9009,7 @@ class SerialTerminalGUI(QMainWindow):
                             if self.query_type == "snmpget":
                                 errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                                     engine,
-                                    CommunityData(self.community, mpModel=mp_model),
+                                    auth_data,
                                     target,
                                     ContextData(),
                                     ObjectType(ObjectIdentity(self.oid))
@@ -8776,7 +9029,7 @@ class SerialTerminalGUI(QMainWindow):
                             else:  # snmpwalk
                                 async for (errorIndication, errorStatus, errorIndex, varBinds) in walk_cmd(
                                     engine,
-                                    CommunityData(self.community, mpModel=mp_model),
+                                    auth_data,
                                     target,
                                     ContextData(),
                                     ObjectType(ObjectIdentity(self.oid)),
@@ -8818,7 +9071,10 @@ class SerialTerminalGUI(QMainWindow):
 
                 # Create and start worker
         self.snmp_results_table.setSortingEnabled(False)
-        self.snmp_worker = SNMPWorker(host, port, oid, query_type, version, community)
+        self.snmp_worker = SNMPWorker(
+            host, port, oid, query_type, version, community,
+            v3_username, v3_auth_proto, v3_auth_pass, v3_priv_proto, v3_priv_pass
+        )
         self.snmp_worker.row_received.connect(self._on_snmp_row)
         self.snmp_worker.progress.connect(lambda p: self.snmp_execute_btn.setText(f"Walking {p}%"))
         self.snmp_worker.finished_result.connect(self._on_snmp_finished)
@@ -9035,6 +9291,10 @@ class SerialTerminalGUI(QMainWindow):
             self._snmp_oid_family_colors = {}
             self._snmp_oid_color_index = 0
             self._snmp_family_first_row = {}
+            self._snmp_family_counts = {}
+
+        # Track family member count
+        self._snmp_family_counts[family] = self._snmp_family_counts.get(family, 0) + 1
 
         is_new_family = family not in self._snmp_oid_family_colors
         if is_new_family:
@@ -9048,10 +9308,20 @@ class SerialTerminalGUI(QMainWindow):
 
         row = self.snmp_results_table.rowCount()
         self.snmp_results_table.insertRow(row)
-        for col, text in enumerate([oid, value, vtype]):
+
+        # Get family description for Family Tree column
+        family_desc = ""
+        if is_new_family:
+            family_desc = self._snmp_describe_oid(family)
+
+        # Add cells: Family Tree, OID, Value, Type
+        for col, text in enumerate([family_desc, oid, value, vtype]):
             cell = QTableWidgetItem(text)
             cell.setBackground(color)
             self.snmp_results_table.setItem(row, col, cell)
+            # Store family info in first column for later color update
+            if col == 0:
+                cell.setData(Qt.ItemDataRole.UserRole, family)
 
         if is_new_family:
             self._snmp_family_first_row[family] = row
@@ -9093,6 +9363,33 @@ class SerialTerminalGUI(QMainWindow):
         """Handle SNMP query completion"""
         self.snmp_execute_btn.setText("SNMP WALK")
         self.snmp_execute_btn.setEnabled(True)
+
+        # Update colors: families with only 1 member should be white
+        if success and hasattr(self, "_snmp_family_counts"):
+            white_color = QColor(255, 255, 255)
+            for row in range(self.snmp_results_table.rowCount()):
+                family_cell = self.snmp_results_table.item(row, 0)
+                if family_cell:
+                    family = family_cell.data(Qt.ItemDataRole.UserRole)
+                    if family and self._snmp_family_counts.get(family, 0) == 1:
+                        # Set white background for all columns in this row
+                        for col in range(self.snmp_results_table.columnCount()):
+                            cell = self.snmp_results_table.item(row, col)
+                            if cell:
+                                cell.setBackground(white_color)
+
+            # Update index list: make single-member families white too
+            for i in range(self.snmp_index_list.count()):
+                item = self.snmp_index_list.item(i)
+                family = item.data(Qt.ItemDataRole.UserRole)
+                if family and self._snmp_family_counts.get(family, 0) == 1:
+                    widget = self.snmp_index_list.itemWidget(item)
+                    if widget:
+                        widget.setStyleSheet(
+                            "QWidget { background-color: #ffffff; }"
+                            "QLabel { background: transparent; }"
+                        )
+
         self.snmp_results_table.setSortingEnabled(True)
         if success:
             count = self.snmp_results_table.rowCount()
@@ -9105,7 +9402,7 @@ class SerialTerminalGUI(QMainWindow):
         family = item.data(Qt.ItemDataRole.UserRole)
         first_row = getattr(self, "_snmp_family_first_row", {}).get(family)
         if first_row is not None:
-            target = self.snmp_results_table.item(first_row, 0)
+            target = self.snmp_results_table.item(first_row, 1)  # OID column is now at index 1
             if target:
                 self.snmp_results_table.scrollToItem(
                     target, QAbstractItemView.ScrollHint.PositionAtTop
@@ -9117,8 +9414,8 @@ class SerialTerminalGUI(QMainWindow):
         if not item:
             return
         row = item.row()
-        oid = self.snmp_results_table.item(row, 0).text()
-        value = self.snmp_results_table.item(row, 1).text()
+        oid = self.snmp_results_table.item(row, 1).text()  # OID column is now at index 1
+        value = self.snmp_results_table.item(row, 2).text()  # Value column is now at index 2
 
         menu = QMenu(self)
         menu.setStyleSheet("""
@@ -10307,7 +10604,7 @@ class SerialTerminalGUI(QMainWindow):
             self._start_scan()
         elif action == snmpwalk_action:
             self.snmp_host_input.setText(ip)
-            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self._snmp_type_btn_clicked("snmpwalk")
             self.switch_tab(4)
             self.execute_snmp_query()
         elif action == cvescan_action:
@@ -11729,7 +12026,7 @@ class SerialTerminalGUI(QMainWindow):
             self._scan_open_connection(ip, 'telnet')
         elif action == snmpwalk_action:
             self.snmp_host_input.setText(ip)
-            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self._snmp_type_btn_clicked("snmpwalk")
             self.switch_tab(4)
             self.execute_snmp_query()
         elif action == tracert_action:
@@ -11804,7 +12101,7 @@ class SerialTerminalGUI(QMainWindow):
             self._start_scan()
         elif action == snmpwalk_action:
             self.snmp_host_input.setText(ip)
-            self.snmp_query_type_combo.setCurrentText("snmpwalk")
+            self._snmp_type_btn_clicked("snmpwalk")
             self.switch_tab(4)
             self.execute_snmp_query()
         elif action == tracert_action:
@@ -14019,6 +14316,30 @@ class SerialTerminalGUI(QMainWindow):
         self.vuln_stop_btn.setEnabled(busy)
 
     # ── SNMP tab — host/community helpers ─────────────────────────────
+
+    def _snmp_version_btn_clicked(self, version):
+        """Handle version button click - ensure only one button is checked"""
+        # Uncheck all buttons
+        for btn in self.snmp_version_buttons.values():
+            btn.setChecked(False)
+        # Check the clicked button
+        self.snmp_version_buttons[version].setChecked(True)
+        # Store current version
+        self.snmp_current_version = version
+        # Show/hide SNMPv3 fields
+        is_v3 = (version == "v3")
+        for widget in self.snmp_v3_widgets.values():
+            widget.setVisible(is_v3)
+
+    def _snmp_type_btn_clicked(self, query_type):
+        """Handle type button click - ensure only one button is checked"""
+        # Uncheck all buttons
+        for btn in self.snmp_type_buttons.values():
+            btn.setChecked(False)
+        # Check the clicked button
+        self.snmp_type_buttons[query_type].setChecked(True)
+        # Store current type
+        self.snmp_current_type = query_type
 
     def _snmp_show_ip_menu(self):
         """Show a dropdown of all SSH profiles so the user can pick a host."""
