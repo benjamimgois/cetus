@@ -7577,13 +7577,78 @@ class SerialTerminalGUI(QMainWindow):
         # Auto-detect network on startup
         self._scan_auto_detect_network()
 
-        # Method selector
-        self.scan_method_combo = QComboBox()
-        self.scan_method_combo.addItems(["ICMP", "TCP", "UDP", "ARP"])
-        self.scan_method_combo.setFixedWidth(combo_width)
-        self.scan_method_combo.setToolTip("Scan method")
-        self.scan_method_combo.currentTextChanged.connect(self._scan_method_changed)
-        scan_layout.addRow("Method:", self.scan_method_combo)
+        # Method selector - toggle buttons
+        method_widget = QWidget()
+        method_layout = QHBoxLayout()
+        method_layout.setContentsMargins(0, 0, 0, 0)
+        method_layout.setSpacing(6)
+
+        method_btn_style = """
+            QPushButton {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px 12px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 9pt;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+            }
+            QPushButton:checked {
+                background-color: #00BCD4;
+                color: #ffffff;
+                border: 1px solid #00BCD4;
+                font-weight: bold;
+            }
+        """
+
+        self.scan_method_icmp_btn = QPushButton("ICMP")
+        self.scan_method_icmp_btn.setCheckable(True)
+        self.scan_method_icmp_btn.setChecked(True)
+        self.scan_method_icmp_btn.setFixedWidth(60)
+        self.scan_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_method_icmp_btn.setStyleSheet(method_btn_style)
+        self.scan_method_icmp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ICMP"))
+
+        self.scan_method_tcp_btn = QPushButton("TCP")
+        self.scan_method_tcp_btn.setCheckable(True)
+        self.scan_method_tcp_btn.setFixedWidth(60)
+        self.scan_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_method_tcp_btn.setStyleSheet(method_btn_style)
+        self.scan_method_tcp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("TCP"))
+
+        self.scan_method_udp_btn = QPushButton("UDP")
+        self.scan_method_udp_btn.setCheckable(True)
+        self.scan_method_udp_btn.setFixedWidth(60)
+        self.scan_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_method_udp_btn.setStyleSheet(method_btn_style)
+        self.scan_method_udp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("UDP"))
+
+        self.scan_method_arp_btn = QPushButton("ARP")
+        self.scan_method_arp_btn.setCheckable(True)
+        self.scan_method_arp_btn.setFixedWidth(60)
+        self.scan_method_arp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.scan_method_arp_btn.setStyleSheet(method_btn_style)
+        self.scan_method_arp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ARP"))
+
+        method_layout.addWidget(self.scan_method_icmp_btn)
+        method_layout.addWidget(self.scan_method_tcp_btn)
+        method_layout.addWidget(self.scan_method_udp_btn)
+        method_layout.addWidget(self.scan_method_arp_btn)
+        method_layout.addStretch()
+        method_widget.setLayout(method_layout)
+        scan_layout.addRow("Method:", method_widget)
+
+        # Store method buttons for easy access
+        self.scan_method_buttons = {
+            'ICMP': self.scan_method_icmp_btn,
+            'TCP': self.scan_method_tcp_btn,
+            'UDP': self.scan_method_udp_btn,
+            'ARP': self.scan_method_arp_btn
+        }
+        self.scan_current_method = "ICMP"
 
         # Ports input (hidden for ICMP) with quick presets button
         self.scan_ports_label = QLabel("Ports:")
@@ -7880,7 +7945,7 @@ class SerialTerminalGUI(QMainWindow):
         page.setLayout(main_layout)
 
         # Initialize field visibility based on default method
-        self._scan_method_changed(self.scan_method_combo.currentText())
+        self._scan_method_changed(self.scan_current_method)
 
         return page
 
@@ -9550,19 +9615,6 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_band_btn_5.clicked.connect(lambda:  _on_band_btn(self.wifi_band_btn_5))
         self.wifi_band_btn_both.clicked.connect(lambda: _on_band_btn(self.wifi_band_btn_both))
 
-        self.wifi_auto_refresh_cb = QCheckBox("Enabled")
-        self.wifi_auto_refresh_cb.setChecked(True)
-        self.wifi_auto_refresh_cb.setStyleSheet("""
-            QCheckBox { color: #333333; font-size: 9pt; spacing: 4px; }
-            QCheckBox::indicator {
-                width: 14px; height: 14px;
-                border: 1px solid #bdbdbd; border-radius: 3px;
-                background-color: #f5f5f5;
-            }
-            QCheckBox::indicator:checked { background-color: #E91E63; border-color: #E91E63; }
-            QCheckBox::indicator:hover   { border-color: #E91E63; }
-        """)
-
         _toggle_style_sm = """
             QPushButton {
                 background-color: #3a3a4a; border: 1px solid #555566;
@@ -9626,7 +9678,6 @@ class SerialTerminalGUI(QMainWindow):
         auto_cell_layout = QHBoxLayout(auto_cell)
         auto_cell_layout.setContentsMargins(0, 0, 0, 0)
         auto_cell_layout.setSpacing(4)
-        auto_cell_layout.addWidget(self.wifi_auto_refresh_cb)
         interval_lbl = QLabel("every")
         interval_lbl.setStyleSheet(_lbl_style)
         auto_cell_layout.addWidget(interval_lbl)
@@ -10599,7 +10650,7 @@ class SerialTerminalGUI(QMainWindow):
         elif action == ipscan_action:
             self.scan_network_input.setText(ip)
             self.scan_mask_combo.setCurrentText("32")
-            self.scan_method_combo.setCurrentText("TCP")
+            self._scan_method_btn_clicked("TCP")
             self.switch_tab(3)
             self._start_scan()
         elif action == snmpwalk_action:
@@ -11284,14 +11335,13 @@ class SerialTerminalGUI(QMainWindow):
         # Update channel chart
         self._wifi_update_chart()
 
-        # Schedule auto-refresh if enabled
-        if self.wifi_auto_refresh_cb.isChecked():
-            interval_s = int(next((b.text() for b in self._wifi_interval_btns if b.isChecked()), "2s").rstrip('s'))
-            if self._wifi_timer is None:
-                from PyQt6.QtCore import QTimer
-                self._wifi_timer = QTimer(self)
-                self._wifi_timer.timeout.connect(self._start_wifi_scan)
-            self._wifi_timer.start(interval_s * 1000)
+        # Schedule auto-refresh
+        interval_s = int(next((b.text() for b in self._wifi_interval_btns if b.isChecked()), "2s").rstrip('s'))
+        if self._wifi_timer is None:
+            from PyQt6.QtCore import QTimer
+            self._wifi_timer = QTimer(self)
+            self._wifi_timer.timeout.connect(self._start_wifi_scan)
+        self._wifi_timer.start(interval_s * 1000)
 
     def _on_wifi_scan_error(self, msg):
         """Handle scan error."""
@@ -11789,7 +11839,7 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "IP Scanner", "Invalid network format.\nEnter a valid IP address.")
             return
 
-        method = self.scan_method_combo.currentText()
+        method = self.scan_current_method
         ports = []
         if method in ('TCP', 'UDP'):
             ports = self._parse_ports(self.scan_ports_input.text())
@@ -12096,7 +12146,7 @@ class SerialTerminalGUI(QMainWindow):
         elif action == ipscan_action:
             self.scan_network_input.setText(ip)
             self.scan_mask_combo.setCurrentText("32")
-            self.scan_method_combo.setCurrentText("TCP")
+            self._scan_method_btn_clicked("TCP")
             self.switch_tab(3)
             self._start_scan()
         elif action == snmpwalk_action:
@@ -12235,40 +12285,60 @@ class SerialTerminalGUI(QMainWindow):
         ssh_layout.setContentsMargins(8, 5, 8, 6)
         ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        # Protocol selection (SSH/Telnet)
-        radio_style = """
-            QRadioButton { color: #333333; font-size: 9pt; }
-            QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-                border-radius: 8px;
-                border: 2px solid #aaaaaa;
-                background-color: #ffffff;
-            }
-            QRadioButton::indicator:checked {
-                border: 2px solid #4caf50;
-                background-color: #4caf50;
-            }
-        """
-        self.protocol_ssh_radio = QRadioButton("SSH")
-        self.protocol_ssh_radio.setChecked(True)
-        self.protocol_ssh_radio.setStyleSheet(radio_style)
-        self.protocol_telnet_radio = QRadioButton("Telnet")
-        self.protocol_telnet_radio.setStyleSheet(radio_style)
-
-        self.protocol_button_group = QButtonGroup()
-        self.protocol_button_group.addButton(self.protocol_ssh_radio, 0)
-        self.protocol_button_group.addButton(self.protocol_telnet_radio, 1)
-        self.protocol_button_group.buttonClicked.connect(self.toggle_protocol)
-
+        # Protocol selection (SSH/Telnet) - toggle buttons
         protocol_widget = QWidget()
         protocol_layout = QHBoxLayout()
         protocol_layout.setContentsMargins(0, 0, 0, 0)
-        protocol_layout.addWidget(self.protocol_ssh_radio)
-        protocol_layout.addWidget(self.protocol_telnet_radio)
+        protocol_layout.setSpacing(6)
+
+        protocol_btn_style = """
+            QPushButton {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px 12px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 9pt;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+            }
+            QPushButton:checked {
+                background-color: #4CAF50;
+                color: #ffffff;
+                border: 1px solid #4CAF50;
+                font-weight: bold;
+            }
+        """
+
+        self.protocol_ssh_btn = QPushButton("SSH")
+        self.protocol_ssh_btn.setCheckable(True)
+        self.protocol_ssh_btn.setChecked(True)
+        self.protocol_ssh_btn.setFixedWidth(70)
+        self.protocol_ssh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.protocol_ssh_btn.setStyleSheet(protocol_btn_style)
+        self.protocol_ssh_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("SSH"))
+
+        self.protocol_telnet_btn = QPushButton("Telnet")
+        self.protocol_telnet_btn.setCheckable(True)
+        self.protocol_telnet_btn.setFixedWidth(70)
+        self.protocol_telnet_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.protocol_telnet_btn.setStyleSheet(protocol_btn_style)
+        self.protocol_telnet_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("Telnet"))
+
+        protocol_layout.addWidget(self.protocol_ssh_btn)
+        protocol_layout.addWidget(self.protocol_telnet_btn)
         protocol_layout.addStretch()
         protocol_widget.setLayout(protocol_layout)
         ssh_layout.addRow("Protocol:", protocol_widget)
+
+        # Store protocol buttons for easy access
+        self.ssh_protocol_buttons = {
+            'SSH': self.protocol_ssh_btn,
+            'Telnet': self.protocol_telnet_btn
+        }
+        self.ssh_current_protocol = "SSH"
 
         # Host + Port inline
         host_port_widget = QWidget()
@@ -12277,6 +12347,7 @@ class SerialTerminalGUI(QMainWindow):
         host_port_layout.setSpacing(4)
 
         self.ssh_host = QLineEdit()
+        self.ssh_host.setFixedWidth(combo_width)
         self.ssh_host.setPlaceholderText("192.168.1.1 or hostname")
         self.ssh_host.setToolTip("SSH/Telnet server hostname or IP address")
         self.ssh_host.setStyleSheet(line_edit_style)
@@ -12294,7 +12365,6 @@ class SerialTerminalGUI(QMainWindow):
         host_port_layout.addWidget(self.ssh_host)
         host_port_layout.addWidget(port_sep)
         host_port_layout.addWidget(self.ssh_port)
-        host_port_layout.addStretch()
         host_port_widget.setLayout(host_port_layout)
         ssh_layout.addRow("Host:", host_port_widget)
 
@@ -13097,7 +13167,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def toggle_protocol(self, button):
         """Toggle between SSH and Telnet protocol"""
-        if button == self.protocol_ssh_radio:
+        if button == self.protocol_ssh_btn or self.ssh_current_protocol == "SSH":
             # SSH selected
             self.ssh_port.setText("22")
             self.ssh_connect_btn.setText("CONNECT SSH")
@@ -13286,19 +13356,9 @@ class SerialTerminalGUI(QMainWindow):
                 
                 print(f"DEBUG: Loading profile with protocol: {protocol} (port: {port})")
                 print(f"DEBUG: Full profile data: {profile}")
-                
-                if protocol == 'Telnet':
-                    self.protocol_telnet_radio.setChecked(True)
-                    print(f"DEBUG: Telnet radio checked: {self.protocol_telnet_radio.isChecked()}")
-                    print(f"DEBUG: SSH radio checked: {self.protocol_ssh_radio.isChecked()}")
-                    # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
-                    self.toggle_protocol(self.protocol_telnet_radio)
-                else:
-                    self.protocol_ssh_radio.setChecked(True)
-                    print(f"DEBUG: SSH radio checked: {self.protocol_ssh_radio.isChecked()}")
-                    print(f"DEBUG: Telnet radio checked: {self.protocol_telnet_radio.isChecked()}")
-                    # Manually trigger toggle_protocol since buttonClicked signal isn't emitted
-                    self.toggle_protocol(self.protocol_ssh_radio)
+
+                # Set protocol using button click
+                self._ssh_protocol_btn_clicked(protocol)
                 
                 # Read vendor from the icon button in the table
                 cell_widget = self.ssh_profiles_table.cellWidget(row, 4)
@@ -13346,7 +13406,7 @@ class SerialTerminalGUI(QMainWindow):
         name = dialog.textValue()
         if ok and name:
             auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
-            protocol = 'SSH' if self.protocol_ssh_radio.isChecked() else 'Telnet'
+            protocol = self.ssh_current_protocol
             self.config.save_ssh_profile(
                 name, host, self.ssh_port.text(),
                 self.ssh_username.text(), auth_method,
@@ -13512,7 +13572,7 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         # SSH connection requires paramiko
-        if self.protocol_ssh_radio.isChecked() and not SSH_AVAILABLE:
+        if self.ssh_current_protocol == "SSH" and not SSH_AVAILABLE:
             QMessageBox.critical(
                 self, "Error",
                 "paramiko library is not installed.\n\n"
@@ -13521,7 +13581,7 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         # Username is required for SSH, optional for Telnet
-        if self.protocol_ssh_radio.isChecked() and not username:
+        if self.ssh_current_protocol == "SSH" and not username:
             QMessageBox.warning(self, "Warning", "Enter username for SSH connection")
             return
 
@@ -13592,8 +13652,8 @@ class SerialTerminalGUI(QMainWindow):
         QApplication.processEvents()
 
         # Determine connection type
-        connection_type = 'telnet' if self.protocol_telnet_radio.isChecked() else 'ssh'
-        
+        connection_type = 'telnet' if self.ssh_current_protocol == "Telnet" else 'ssh'
+
         # Create and start connection worker thread
         self.connection_worker = ConnectionWorker(
             connection_type,
@@ -14340,6 +14400,30 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_type_buttons[query_type].setChecked(True)
         # Store current type
         self.snmp_current_type = query_type
+
+    def _ssh_protocol_btn_clicked(self, protocol):
+        """Handle SSH protocol button click - ensure only one button is checked"""
+        # Uncheck all buttons
+        for btn in self.ssh_protocol_buttons.values():
+            btn.setChecked(False)
+        # Check the clicked button
+        self.ssh_protocol_buttons[protocol].setChecked(True)
+        # Store current protocol
+        self.ssh_current_protocol = protocol
+        # Call toggle_protocol to update UI elements (port, auth method visibility, etc.)
+        self.toggle_protocol(self.ssh_protocol_buttons[protocol])
+
+    def _scan_method_btn_clicked(self, method):
+        """Handle scan method button click - ensure only one button is checked"""
+        # Uncheck all buttons
+        for btn in self.scan_method_buttons.values():
+            btn.setChecked(False)
+        # Check the clicked button
+        self.scan_method_buttons[method].setChecked(True)
+        # Store current method
+        self.scan_current_method = method
+        # Call the method changed handler to update UI (show/hide ports field, etc.)
+        self._scan_method_changed(method)
 
     def _snmp_show_ip_menu(self):
         """Show a dropdown of all SSH profiles so the user can pick a host."""
