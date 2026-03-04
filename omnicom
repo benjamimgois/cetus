@@ -3069,6 +3069,113 @@ class MtrWorker(QThread):
         self.mtr_finished.emit()
 
 
+class PingWorker(QThread):
+    """ICMP ping worker — sends N echo requests, emits per-result signal."""
+    ping_result   = pyqtSignal(int, bool, float, str)   # seq, success, rtt_ms, info
+    ping_finished = pyqtSignal(int, int, float)          # sent, received, avg_ms
+    ping_error    = pyqtSignal(str)
+
+    def __init__(self, target, count=10, interval=1, timeout=5):
+        super().__init__()
+        self.target    = target
+        self.count     = count
+        self.interval  = interval
+        self.timeout   = timeout
+        self._stop_flag = False
+
+    def stop(self): self._stop_flag = True
+
+    def run(self):
+        import re as _re, time as _t
+        sent = received = 0
+        total_rtt = 0.0
+        for seq in range(1, self.count + 1):
+            if self._stop_flag:
+                break
+            try:
+                import os as _os
+                _env = dict(_os.environ)
+                _env['LC_ALL'] = 'C'
+                cmd = ['ping', '-c', '1', '-W', str(self.timeout), self.target]
+                result = subprocess.run(cmd, capture_output=True, text=True,
+                                        timeout=self.timeout + 2, env=_env)
+                sent += 1
+                out = result.stdout + result.stderr
+                if result.returncode == 0:
+                    # Match "time=9.34 ms" or "time=9,34 ms" (locale-aware)
+                    m = _re.search(r'time[=<]([\d.,]+)\s*ms', out)
+                    rtt = float(m.group(1).replace(',', '.')) if m else 0.0
+                    ttl = _re.search(r'ttl=(\d+)', out, _re.IGNORECASE)
+                    info = f"ttl={ttl.group(1)}" if ttl else ""
+                    received += 1
+                    total_rtt += rtt
+                    self.ping_result.emit(seq, True, rtt, info)
+                else:
+                    self.ping_result.emit(seq, False, 0.0, "timeout")
+            except subprocess.TimeoutExpired:
+                sent += 1
+                self.ping_result.emit(seq, False, 0.0, "timeout")
+            except Exception as e:
+                self.ping_error.emit(str(e))
+                return
+            if seq < self.count and not self._stop_flag:
+                deadline = _t.monotonic() + self.interval
+                while _t.monotonic() < deadline and not self._stop_flag:
+                    _t.sleep(0.05)
+        avg = total_rtt / received if received else 0.0
+        self.ping_finished.emit(sent, received, avg)
+
+
+class PingTCPWorker(QThread):
+    """TCP ping worker — connects to host:port N times, measures RTT."""
+    ping_result   = pyqtSignal(int, bool, float, str)
+    ping_finished = pyqtSignal(int, int, float)
+    ping_error    = pyqtSignal(str)
+
+    def __init__(self, target, port, count=10, interval=1, timeout=5):
+        super().__init__()
+        self.target    = target
+        self.port      = port
+        self.count     = count
+        self.interval  = interval
+        self.timeout   = timeout
+        self._stop_flag = False
+
+    def stop(self): self._stop_flag = True
+
+    def run(self):
+        import socket as _sock, time as _t
+        sent = received = 0
+        total_rtt = 0.0
+        try:
+            resolved = _sock.gethostbyname(self.target)
+        except Exception as e:
+            self.ping_error.emit(f"Cannot resolve '{self.target}': {e}")
+            return
+        for seq in range(1, self.count + 1):
+            if self._stop_flag:
+                break
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(self.timeout)
+            import time as _t2
+            t0 = _t2.monotonic()
+            err = s.connect_ex((resolved, self.port))
+            rtt = (_t2.monotonic() - t0) * 1000
+            s.close()
+            sent += 1
+            if err == 0:
+                received += 1
+                total_rtt += rtt
+                self.ping_result.emit(seq, True, rtt, f"port {self.port} open")
+            else:
+                info = "timeout" if rtt >= self.timeout * 950 else f"refused (err {err})"
+                self.ping_result.emit(seq, False, rtt, info)
+            if seq < self.count and not self._stop_flag:
+                deadline = _t.monotonic() + self.interval
+                while _t.monotonic() < deadline and not self._stop_flag:
+                    _t.sleep(0.05)
+        avg = total_rtt / received if received else 0.0
+        self.ping_finished.emit(sent, received, avg)
 
 
 
@@ -5620,6 +5727,254 @@ class LatencyGraphWidget(QWidget):
         painter.end()
 
 
+class PingGraphWidget(QWidget):
+    """Neon line chart showing ping RTT (Y) vs packet number (X) on dark background."""
+
+    _THRESHOLDS = [(20, "#00E676", "#00FF88"),
+                   (50, "#FFEA00", "#FFD740"),
+                   (100, "#FF6D00", "#FF9100"),
+                   (float("inf"), "#FF1744", "#FF6E40")]
+
+    def __init__(self, results, parent=None):
+        super().__init__(parent)
+        # results: [(seq, success, rtt_ms), ...]
+        self.results = results
+        self.setMinimumSize(420, 280)
+        self.setStyleSheet("background: transparent;")
+        self.setMouseTracking(True)
+        self._hovered = None
+
+    def _color(self, lat):
+        for threshold, bar, glow in self._THRESHOLDS:
+            if lat < threshold:
+                return QColor(bar), QColor(glow)
+        return QColor(self._THRESHOLDS[-1][1]), QColor(self._THRESHOLDS[-1][2])
+
+    def _valid(self):
+        return [(seq, rtt) for seq, success, rtt in self.results if success]
+
+    def mouseMoveEvent(self, event):
+        L, T, B = 72, 32, 58
+        W = self.width() - L - 20
+        H = self.height() - T - B
+        valid = self._valid()
+        if not valid:
+            return
+        max_seq = max(seq for seq, success, _ in self.results)
+        max_rtt = max(rtt for _, rtt in valid) * 1.18
+        max_rtt = max(max_rtt, 10)
+        px = lambda s: L + (s / max(max_seq, 1)) * W
+        py = lambda r: T + H - (r / max_rtt) * H
+        pos = event.position()
+        closest, closest_dist = None, float("inf")
+        for i, (seq, rtt) in enumerate(valid):
+            dx = pos.x() - px(seq)
+            dy = pos.y() - py(rtt)
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist < closest_dist:
+                closest_dist, closest = dist, i
+        new_hovered = closest if closest_dist < 30 else None
+        if new_hovered != self._hovered:
+            self._hovered = new_hovered
+            self.update()
+
+    def leaveEvent(self, _):
+        if self._hovered is not None:
+            self._hovered = None
+            self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        W_total, H_total = self.width(), self.height()
+        L, R, T, B = 72, 20, 32, 58
+        W = W_total - L - R
+        H = H_total - T - B
+
+        # dark background
+        bg = QLinearGradient(0, 0, 0, H_total)
+        bg.setColorAt(0.0, QColor("#1A1F2E"))
+        bg.setColorAt(1.0, QColor("#0D1117"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(0, 0, W_total, H_total, 12, 12)
+        border_pen = QPen(QColor("#2A3040"))
+        border_pen.setWidth(1)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(0, 0, W_total - 1, H_total - 1, 12, 12)
+
+        valid = self._valid()
+        all_rtts = [rtt for _, rtt in valid]
+        sent = len(self.results)
+        recv = len(valid)
+        max_seq = max((seq for seq, _, _ in self.results), default=1)
+        max_rtt = max(all_rtts, default=100) * 1.18
+        max_rtt = max(max_rtt, 10)
+
+        def px(s): return L + (s / max(max_seq, 1)) * W
+        def py(r): return T + H - (r / max_rtt) * H
+
+        # grid + Y labels
+        for i in range(6):
+            frac = i / 5
+            y_g = T + H - frac * H
+            val = frac * max_rtt
+            grid_pen = QPen(QColor("#1E2A3A"))
+            grid_pen.setWidth(1)
+            painter.setPen(grid_pen)
+            painter.drawLine(L, int(y_g), L + W, int(y_g))
+            painter.setPen(QColor("#3A4460"))
+            painter.setFont(QFont("Monospace", 7))
+            painter.drawText(0, int(y_g) - 8, L - 8, 16,
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             f"{val:.0f}")
+
+        # axes
+        axis_pen = QPen(QColor("#2A3A50"))
+        axis_pen.setWidth(1)
+        painter.setPen(axis_pen)
+        painter.drawLine(L, T, L, T + H)
+        painter.drawLine(L, T + H, L + W, T + H)
+
+        # Y axis label
+        painter.save()
+        painter.setPen(QColor("#4A6080"))
+        painter.setFont(QFont("Sans Serif", 8))
+        painter.translate(12, T + H // 2)
+        painter.rotate(-90)
+        painter.drawText(-50, -8, 100, 16, Qt.AlignmentFlag.AlignCenter, "Latency (ms)")
+        painter.restore()
+
+        # X axis label + ticks
+        painter.setPen(QColor("#3A4460"))
+        painter.setFont(QFont("Sans Serif", 8))
+        painter.drawText(L, T + H + 20, W, 14, Qt.AlignmentFlag.AlignCenter, "Packet #")
+        painter.setPen(QColor("#4A6080"))
+        painter.setFont(QFont("Monospace", 7))
+        step = max(1, max_seq // 10)
+        for seq in range(step, max_seq + 1, step):
+            x_g = px(seq)
+            painter.drawText(int(x_g) - 15, T + H + 4, 30, 14,
+                             Qt.AlignmentFlag.AlignCenter, str(seq))
+
+        # timeout markers
+        for seq, success, _ in self.results:
+            if not success:
+                x_g = px(seq)
+                dash_pen = QPen(QColor("#3A4460"))
+                dash_pen.setStyle(Qt.PenStyle.DashLine)
+                dash_pen.setWidth(1)
+                painter.setPen(dash_pen)
+                painter.drawLine(int(x_g), T, int(x_g), T + H)
+                painter.setPen(QColor("#5A3055"))
+                painter.setFont(QFont("Sans Serif", 8))
+                painter.drawText(int(x_g) - 8, T + H - 14, 16, 14,
+                                 Qt.AlignmentFlag.AlignCenter, "✗")
+
+        # gradient fill + neon curve
+        if len(valid) >= 2:
+            points = [(px(seq), py(rtt), rtt) for seq, rtt in valid]
+            for i in range(1, len(points)):
+                x0, y0, lat0 = points[i - 1]
+                x1, y1, lat1 = points[i]
+                cx_m = (x0 + x1) / 2
+                seg_fill = QPainterPath()
+                seg_fill.moveTo(x0, T + H)
+                seg_fill.lineTo(x0, y0)
+                seg_fill.cubicTo(cx_m, y0, cx_m, y1, x1, y1)
+                seg_fill.lineTo(x1, T + H)
+                seg_fill.closeSubpath()
+                _, glow_c = self._color(lat1)
+                gradient = QLinearGradient(0, min(y0, y1), 0, T + H)
+                top_c = QColor(glow_c); top_c.setAlpha(60)
+                bot_c = QColor(glow_c); bot_c.setAlpha(0)
+                gradient.setColorAt(0.0, top_c)
+                gradient.setColorAt(1.0, bot_c)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.fillPath(seg_fill, gradient)
+
+            for pass_w, pass_alpha in [(5, 40), (3, 80), (2, 200)]:
+                for i in range(1, len(points)):
+                    x0, y0, _ = points[i - 1]
+                    x1, y1, lat1 = points[i]
+                    cx_m = (x0 + x1) / 2
+                    seg_curve = QPainterPath()
+                    seg_curve.moveTo(x0, y0)
+                    seg_curve.cubicTo(cx_m, y0, cx_m, y1, x1, y1)
+                    _, glow_c = self._color(lat1)
+                    _gc = QColor(glow_c); _gc.setAlpha(pass_alpha)
+                    pen = QPen(_gc)
+                    pen.setWidth(pass_w)
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(pen)
+                    painter.drawPath(seg_curve)
+
+        elif len(valid) == 1:
+            seq0, rtt0 = valid[0]
+            x_g, y_g = px(seq0), py(rtt0)
+            bar_c, glow_c = self._color(rtt0)
+            for pass_w, pass_alpha in [(4, 50), (2, 180)]:
+                _pc = QColor(glow_c); _pc.setAlpha(pass_alpha)
+                painter.setPen(QPen(_pc, pass_w))
+                painter.drawLine(L, int(y_g), L + W, int(y_g))
+
+        # data points + hover badge
+        for i, (seq, rtt) in enumerate(valid):
+            x_g, y_g = px(seq), py(rtt)
+            is_hovered = (self._hovered == i)
+            bar_c, glow_c = self._color(rtt)
+
+            glow_passes = [(22, 18), (16, 35), (11, 70), (7, 130)] if is_hovered else [(10, 20), (6, 50)]
+            for glow_r, glow_a in glow_passes:
+                g_c = QColor(glow_c); g_c.setAlpha(glow_a)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(g_c)
+                painter.drawEllipse(int(x_g) - glow_r, int(y_g) - glow_r, glow_r * 2, glow_r * 2)
+
+            r = 8 if is_hovered else 4
+            pt_grad = QRadialGradient(x_g - r // 3, y_g - r // 3, r * 2)
+            pt_grad.setColorAt(0.0, QColor(glow_c).lighter(150 if is_hovered else 120))
+            pt_grad.setColorAt(1.0, QColor(bar_c))
+            painter.setBrush(pt_grad)
+            painter.setPen(QPen(QColor("#FFFFFF"), 2 if is_hovered else 0))
+            painter.drawEllipse(int(x_g) - r, int(y_g) - r, r * 2, r * 2)
+
+            if is_hovered:
+                lat_str = f"#{seq}  {rtt:.2f} ms"
+                badge_font = QFont("Monospace", 9, QFont.Weight.Bold)
+                painter.setFont(badge_font)
+                bw = painter.fontMetrics().horizontalAdvance(lat_str) + 18
+                bh = 22
+                bx = max(L, min(int(x_g) - bw // 2, L + W - bw))
+                by = max(T, int(y_g) - 36)
+                badge_bg = QColor(bar_c); badge_bg.setAlpha(90)
+                painter.setBrush(badge_bg)
+                _bb_c = QColor(bar_c); _bb_c.setAlpha(220)
+                painter.setPen(QPen(_bb_c, 2))
+                painter.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
+                painter.setPen(QColor(glow_c))
+                painter.drawText(bx, by, bw, bh, Qt.AlignmentFlag.AlignCenter, lat_str)
+
+        # footer stats
+        if recv > 0 and all_rtts:
+            min_r = min(all_rtts)
+            avg_r = sum(all_rtts) / recv
+            max_r = max(all_rtts)
+            loss  = (sent - recv) / sent * 100
+            footer = (f"{recv}/{sent} recv  ·  loss {loss:.0f}%  ·  "
+                      f"min {min_r:.1f}  avg {avg_r:.1f}  max {max_r:.1f} ms")
+        else:
+            footer = f"0/{sent} recv  ·  100% loss"
+        painter.setPen(QColor("#4A6080"))
+        painter.setFont(QFont("Sans Serif", 8))
+        painter.drawText(L, T + H + 38, W, 14, Qt.AlignmentFlag.AlignRight, footer)
+
+        painter.end()
 
 
 class VendorReferenceDialog(QDialog):
@@ -9025,10 +9380,22 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_udp_btn.setStyleSheet(_tr_method_btn_style)
 
+        self.traceroute_method_pingicmp_btn = QPushButton("Ping ICMP")
+        self.traceroute_method_pingicmp_btn.setCheckable(True)
+        self.traceroute_method_pingicmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_method_pingicmp_btn.setStyleSheet(_tr_method_btn_style)
+
+        self.traceroute_method_pingtcp_btn = QPushButton("Ping TCP")
+        self.traceroute_method_pingtcp_btn.setCheckable(True)
+        self.traceroute_method_pingtcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_method_pingtcp_btn.setStyleSheet(_tr_method_btn_style)
+
         self._traceroute_method_btns = {
             'ICMP (MTR)': self.traceroute_method_icmp_btn,
             'TCP':        self.traceroute_method_tcp_btn,
             'UDP':        self.traceroute_method_udp_btn,
+            'Ping ICMP':  self.traceroute_method_pingicmp_btn,
+            'Ping TCP':   self.traceroute_method_pingtcp_btn,
         }
         self.traceroute_current_method = 'ICMP (MTR)'
 
@@ -9041,10 +9408,14 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_method_icmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('ICMP (MTR)'))
         self.traceroute_method_tcp_btn.clicked.connect(lambda: _tr_method_btn_clicked('TCP'))
         self.traceroute_method_udp_btn.clicked.connect(lambda: _tr_method_btn_clicked('UDP'))
+        self.traceroute_method_pingicmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('Ping ICMP'))
+        self.traceroute_method_pingtcp_btn.clicked.connect(lambda: _tr_method_btn_clicked('Ping TCP'))
 
         _tr_method_layout.addWidget(self.traceroute_method_icmp_btn)
         _tr_method_layout.addWidget(self.traceroute_method_tcp_btn)
         _tr_method_layout.addWidget(self.traceroute_method_udp_btn)
+        _tr_method_layout.addWidget(self.traceroute_method_pingicmp_btn)
+        _tr_method_layout.addWidget(self.traceroute_method_pingtcp_btn)
         _tr_method_layout.addStretch()
         config_layout.addRow("Method:", _tr_method_widget)
 
@@ -9172,16 +9543,16 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_interval_combo.setToolTip("Probe interval between cycles")
         self.mtr_interval_combo.setVisible(False)
 
-        _hops_label = QLabel("Max Hops:")
-        _hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
+        self._hops_label = QLabel("Max Hops:")
+        self._hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.traceroute_max_hops_combo = QComboBox()
         self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
         self.traceroute_max_hops_combo.setCurrentText("30")
         self.traceroute_max_hops_combo.setFixedWidth(80)
         self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
 
-        _timeout_label = QLabel("Timeout:")
-        _timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
+        self._timeout_label = QLabel("Timeout:")
+        self._timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.traceroute_timeout_combo = QComboBox()
         self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
         self.traceroute_timeout_combo.setCurrentText("5s")
@@ -9196,9 +9567,9 @@ class SerialTerminalGUI(QMainWindow):
         _pkt_row_layout.addWidget(self.mtr_packets_combo)
         _pkt_row_layout.addWidget(self.mtr_interval_label)
         _pkt_row_layout.addWidget(self.mtr_interval_combo)
-        _pkt_row_layout.addWidget(_hops_label)
+        _pkt_row_layout.addWidget(self._hops_label)
         _pkt_row_layout.addWidget(self.traceroute_max_hops_combo)
-        _pkt_row_layout.addWidget(_timeout_label)
+        _pkt_row_layout.addWidget(self._timeout_label)
         _pkt_row_layout.addWidget(self.traceroute_timeout_combo)
         _pkt_row_layout.addStretch()
         config_layout.addRow("", _pkt_row_widget)
@@ -10537,7 +10908,14 @@ class SerialTerminalGUI(QMainWindow):
         return page
 
     def _start_traceroute(self):
-        """Start or stop traceroute / MTR operation"""
+        """Start or stop traceroute / MTR / ping operation"""
+        # Check if ping is already running - toggle to stop
+        if hasattr(self, 'ping_worker') and self.ping_worker and self.ping_worker.isRunning():
+            self.ping_worker.stop()
+            self.traceroute_btn.setText("Stopping...")
+            self.traceroute_btn.setEnabled(False)
+            return
+
         # Check if MTR is already running - toggle to stop
         if hasattr(self, 'mtr_worker') and self.mtr_worker and self.mtr_worker.isRunning():
             self.mtr_worker.stop()
@@ -10552,8 +10930,14 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_btn.setEnabled(False)
             return
 
-        # Branch to MTR if 'ICMP (MTR)' or legacy 'MTR' is selected
         method = self.traceroute_current_method
+
+        # Branch to ping methods
+        if method in ('Ping ICMP', 'Ping TCP'):
+            self._start_ping()
+            return
+
+        # Branch to MTR if 'ICMP (MTR)' or legacy 'MTR' is selected
         if method in ('MTR', 'ICMP (MTR)'):
             self._start_mtr()
             return
@@ -10982,6 +11366,181 @@ class SerialTerminalGUI(QMainWindow):
         t.setColumnWidth(1, 40)
         t.setColumnWidth(4, 100)
 
+    def _switch_table_to_ping_mode(self):
+        """Switch the results table to 4-column ping mode"""
+        t = self.traceroute_results_table
+        t.setColumnCount(4)
+        t.setHorizontalHeaderLabels(["#", "Status", "RTT (ms)", "Info"])
+        hdr = t.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        t.setColumnWidth(0, 45)
+        t.setColumnWidth(1, 70)
+        t.setColumnWidth(2, 90)
+
+    def _apply_ping_btn_style(self):
+        """Reset action button to PING state (cyan)"""
+        self.traceroute_btn.setText("PING")
+        self.traceroute_btn.setEnabled(True)
+        self.traceroute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00BCD4;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover { background-color: #00ACC1; }
+            QPushButton:pressed { background-color: #0097A7; }
+        """)
+
+    def _start_ping(self):
+        """Start ICMP or TCP ping"""
+        target = self.traceroute_target_input.text().strip()
+        if not target:
+            QMessageBox.warning(self, "Ping", "Please enter a target host or IP address.")
+            return
+
+        method   = self.traceroute_current_method
+        count    = int(self.mtr_packets_combo.currentText())
+        interval = int(self.mtr_interval_combo.currentText().rstrip('s'))
+        timeout  = int(self.traceroute_timeout_combo.currentText().rstrip('s'))
+
+        port = None
+        if method == 'Ping TCP':
+            port_text = self.traceroute_port_input.text().strip()
+            try:
+                port = int(port_text) if port_text else 80
+                if port < 1 or port > 65535:
+                    raise ValueError
+            except ValueError:
+                QMessageBox.warning(self, "Ping", "Invalid port number.")
+                return
+
+        self.traceroute_results_table.setSortingEnabled(False)
+        self.traceroute_results_table.setRowCount(0)
+        self._switch_table_to_ping_mode()
+
+        if method == 'Ping TCP':
+            self.traceroute_results_group.setTitle(f"Results — TCP ping to {target}:{port}")
+            self.ping_worker = PingTCPWorker(target, port, count, interval, timeout)
+        else:
+            self.traceroute_results_group.setTitle(f"Results — ICMP ping to {target}")
+            self.ping_worker = PingWorker(target, count, interval, timeout)
+
+        self.ping_worker.ping_result.connect(self._on_ping_result)
+        self.ping_worker.ping_finished.connect(self._on_ping_finished)
+        self.ping_worker.ping_error.connect(self._on_ping_error)
+
+        self._ping_count = count
+        self._ping_results = []
+        self.traceroute_btn.setText(f"STOP  0/{count}")
+        self.traceroute_btn.setEnabled(True)
+        self.traceroute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover { background-color: #616161; }
+            QPushButton:pressed { background-color: #424242; }
+        """)
+        self.ping_worker.start()
+
+    def _on_ping_result(self, seq, success, rtt_ms, info):
+        """Add one ping reply row to the table"""
+        t = self.traceroute_results_table
+        row = t.rowCount()
+        t.insertRow(row)
+
+        seq_item = QTableWidgetItem(str(seq))
+        seq_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        t.setItem(row, 0, seq_item)
+
+        if success:
+            status_item = QTableWidgetItem("✓")
+            status_item.setForeground(QColor("#4CAF50"))
+        else:
+            status_item = QTableWidgetItem("✗")
+            status_item.setForeground(QColor("#F44336"))
+        status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        t.setItem(row, 1, status_item)
+
+        if success:
+            rtt_item = QTableWidgetItem(f"{rtt_ms:.2f}")
+            if rtt_ms < 20:
+                rtt_item.setForeground(QColor("#4CAF50"))
+            elif rtt_ms < 50:
+                rtt_item.setForeground(QColor("#FFC107"))
+            elif rtt_ms < 100:
+                rtt_item.setForeground(QColor("#FF9800"))
+            else:
+                rtt_item.setForeground(QColor("#F44336"))
+        else:
+            rtt_item = QTableWidgetItem("—")
+            rtt_item.setForeground(QColor("#9E9E9E"))
+        rtt_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        t.setItem(row, 2, rtt_item)
+
+        t.setItem(row, 3, QTableWidgetItem(info))
+
+        self._ping_results.append((seq, success, rtt_ms))
+        self.traceroute_btn.setText(f"STOP  {seq}/{self._ping_count}")
+        t.scrollToBottom()
+
+    def _on_ping_finished(self, sent, received, avg_ms):
+        """Handle ping completion"""
+        loss_pct = ((sent - received) / sent * 100) if sent > 0 else 0
+        method = self.traceroute_current_method
+        target = self.traceroute_target_input.text().strip()
+        if method == 'Ping TCP':
+            port = self.traceroute_port_input.text().strip() or '80'
+            self.traceroute_results_group.setTitle(
+                f"Results — TCP ping {target}:{port}  |  {received}/{sent} recv  "
+                f"loss {loss_pct:.0f}%  avg {avg_ms:.2f} ms")
+        else:
+            self.traceroute_results_group.setTitle(
+                f"Results — ICMP ping {target}  |  {received}/{sent} recv  "
+                f"loss {loss_pct:.0f}%  avg {avg_ms:.2f} ms")
+        self.traceroute_results_table.setSortingEnabled(True)
+        self._apply_ping_btn_style()
+        self._show_ping_graph_dialog()
+
+    def _show_ping_graph_dialog(self):
+        """Open a dialog showing ping RTT as a neon line chart"""
+        results = getattr(self, '_ping_results', [])
+        if not results:
+            return
+        method = self.traceroute_current_method
+        target = self.traceroute_target_input.text().strip()
+        port   = self.traceroute_port_input.text().strip() if method == 'Ping TCP' else None
+        title  = f"Ping Graph — {target}:{port}" if port else f"Ping Graph — {target}"
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(820, 480)
+        dialog.setMinimumSize(520, 320)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(0)
+        layout.addWidget(PingGraphWidget(results), 1)
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def _on_ping_error(self, error_msg):
+        """Handle ping error"""
+        QMessageBox.warning(self, "Ping", f"Ping error:\n\n{error_msg}")
+        self._apply_ping_btn_style()
+
     def _traceroute_export_csv(self):
         """Export traceroute results to CSV file"""
         if self.traceroute_results_table.rowCount() == 0:
@@ -11312,28 +11871,36 @@ class SerialTerminalGUI(QMainWindow):
     def _traceroute_method_changed(self, method):
         """Show/hide fields and switch table columns based on selected method"""
         is_mtr  = method in ('MTR', 'ICMP (MTR)')
-        is_port = method in ('TCP', 'UDP')
+        is_ping = method in ('Ping ICMP', 'Ping TCP')
+        is_port = method in ('TCP', 'UDP', 'Ping TCP')
 
-        # Port row (TCP/UDP only)
+        # Port row (TCP/UDP/Ping TCP only)
         self.traceroute_port_label.setVisible(is_port)
         self._tr_port_widget.setVisible(is_port)
 
-        # MTR-specific options
-        self.mtr_interval_label.setVisible(is_mtr)
-        self.mtr_interval_combo.setVisible(is_mtr)
-        self.mtr_packets_label.setVisible(is_mtr)
-        self._mtr_pkt_widget.setVisible(is_mtr)
+        # Packets + Interval (MTR and Ping)
+        show_pkt = is_mtr or is_ping
+        self.mtr_interval_label.setVisible(show_pkt)
+        self.mtr_interval_combo.setVisible(show_pkt)
+        self.mtr_packets_label.setVisible(show_pkt)
+        self._mtr_pkt_widget.setVisible(show_pkt)
+
+        # Max Hops not relevant for ping
+        self._hops_label.setVisible(not is_ping)
+        self.traceroute_max_hops_combo.setVisible(not is_ping)
 
         # Switch table columns and button label
         if is_mtr:
             self.traceroute_results_table.setRowCount(0)
             self._switch_table_to_mtr_mode()
             self.traceroute_btn.setText("TRACEROUTE")
+        elif is_ping:
+            self.traceroute_results_table.setRowCount(0)
+            self._switch_table_to_ping_mode()
+            self._apply_ping_btn_style()
         else:
             self.traceroute_results_table.setRowCount(0)
             self._switch_table_to_traceroute_mode()
-            self.traceroute_btn.setText("TRACEROUTE")
-            # Restore normal button style in case it was grey from MTR
             self._reset_traceroute_button()
 
         # Update default port based on method
@@ -11345,6 +11912,10 @@ class SerialTerminalGUI(QMainWindow):
             if not self.traceroute_port_input.text() or self.traceroute_port_input.text() == '80':
                 self.traceroute_port_input.setText('53')
             self.traceroute_port_input.setPlaceholderText("53 (DNS), 123 (NTP), 161 (SNMP)")
+        elif method == 'Ping TCP':
+            if not self.traceroute_port_input.text():
+                self.traceroute_port_input.setText('80')
+            self.traceroute_port_input.setPlaceholderText("80 (HTTP), 443 (HTTPS), 22 (SSH)")
 
     def _open_proxy_settings_dialog(self):
         """Open the proxy configuration dialog for traceroute"""
