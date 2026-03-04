@@ -260,7 +260,8 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem
+    QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
+    QProgressBar
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
@@ -4698,50 +4699,140 @@ class WiFiScanWorker(QThread):
         except Exception as e:
             self.scan_error.emit(str(e))
 
+    @staticmethod
+    def _vht_op_bandwidth(ch_width, seg2):
+        """Decode VHT Operation channel width field + segment-2 into MHz.
+        Per 802.11ac: width=1 + seg2 != 0 → 160 MHz (or 80+80, treat as 160)."""
+        if ch_width == 0:
+            return None          # 20 or 40 MHz — defer to HT flags
+        if ch_width == 1:
+            return 160 if seg2 else 80
+        if ch_width in (2, 3):
+            return 160
+        return None
+
     def _get_bandwidth_from_iw(self, interface):
-        """Try to get channel bandwidth info using iw scan."""
+        """Parse channel bandwidth and max rate from iw scan dump."""
         import subprocess, re
-        bandwidth_map = {}  # bssid -> bandwidth in MHz
+        bandwidth_map = {}   # bssid -> bandwidth in MHz
+        rate_map      = {}   # bssid -> rate string (max PHY rate)
+        wifi_gen_map  = {}   # bssid -> "WiFi 4/5/6/7"
+        # Auto-detect wireless interface when not specified
+        if not interface:
+            try:
+                r = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=3)
+                ifaces = re.findall(r'Interface\s+(\S+)', r.stdout)
+                # Prefer standard wlanX / wlpXsY interfaces over p2p/monitor
+                interface = next((i for i in ifaces
+                                  if re.match(r'wl', i) and 'p2p' not in i and 'mon' not in i),
+                                 ifaces[0] if ifaces else '')
+            except Exception:
+                pass
+        if not interface:
+            return bandwidth_map, rate_map, wifi_gen_map
         try:
-            if not interface:
-                return bandwidth_map
+            # 'scan dump' reads kernel cache — no new scan triggered, no root needed
             result = subprocess.run(
-                ['iw', 'dev', interface, 'scan'],
-                capture_output=True, text=True, timeout=10
+                ['iw', 'dev', interface, 'scan', 'dump'],
+                capture_output=True, text=True, timeout=5
             )
             if result.returncode != 0:
-                return bandwidth_map
+                return bandwidth_map, rate_map, wifi_gen_map
 
-            current_bssid = None
+            current_bssid  = None
+            in_vht_op      = False   # inside "VHT operation:" block
+            vht_ch_width   = None
+            vht_seg2       = 0
+            # WiFi generation priority per BSSID: 1=HT 2=VHT 3=HE 4=EHT
+            _gen_prio      = {}
+
             for line in result.stdout.splitlines():
-                # Look for BSS line
-                bss_match = re.search(r'BSS\s+([0-9a-fA-F:]+)', line)
-                if bss_match:
-                    current_bssid = bss_match.group(1).upper()
+                stripped = line.strip()
+
+                # ── New BSS entry ──────────────────────────────────────────
+                m = re.match(r'BSS\s+([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})', line)
+                if m:
+                    if current_bssid and vht_ch_width is not None:
+                        bw = WiFiScanWorker._vht_op_bandwidth(vht_ch_width, vht_seg2)
+                        if bw:
+                            bandwidth_map[current_bssid] = max(
+                                bandwidth_map.get(current_bssid, 0), bw)
+                    current_bssid = m.group(1).upper()
+                    in_vht_op = False
+                    vht_ch_width = None
+                    vht_seg2 = 0
                     continue
 
-                # Look for HT/VHT operation info
-                if current_bssid:
-                    # HT (802.11n) - typically 20 or 40 MHz
-                    if 'HT40+' in line or 'HT40-' in line or 'secondary channel offset: above' in line or 'secondary channel offset: below' in line:
-                        bandwidth_map[current_bssid] = 40
-                    elif 'HT20' in line or ('* primary channel:' in line and current_bssid not in bandwidth_map):
-                        bandwidth_map[current_bssid] = 20
+                if not current_bssid:
+                    continue
 
-                    # VHT (802.11ac) - 20/40/80/160 MHz
-                    if 'VHT Operation' in line or 'VHT Capabilities' in line:
-                        # Look ahead for channel width
-                        continue
-                    if 'channel width: 0 (20 or 40 MHz)' in line.lower():
-                        if bandwidth_map.get(current_bssid, 20) != 40:
-                            bandwidth_map[current_bssid] = 20
-                    elif 'channel width: 1 (80 MHz)' in line.lower() or 'vht operation: channel width: 1' in line.lower():
-                        bandwidth_map[current_bssid] = 80
-                    elif 'channel width: 2 (160 MHz)' in line.lower() or 'channel width: 3 (80+80 MHz)' in line.lower():
-                        bandwidth_map[current_bssid] = 160
+                # ── WiFi generation detection ──────────────────────────────
+                if re.match(r'\s*EHT capabilities:', line):
+                    _gen_prio[current_bssid] = max(_gen_prio.get(current_bssid, 0), 4)
+                elif re.match(r'\s*HE capabilities:', line):
+                    _gen_prio[current_bssid] = max(_gen_prio.get(current_bssid, 0), 3)
+                elif re.match(r'\s*VHT capabilities:', line):
+                    _gen_prio[current_bssid] = max(_gen_prio.get(current_bssid, 0), 2)
+                elif re.match(r'\s*HT capabilities:', line):
+                    _gen_prio[current_bssid] = max(_gen_prio.get(current_bssid, 0), 1)
+
+                # ── VHT operation block ────────────────────────────────────
+                if re.match(r'\s*VHT operation:', line):
+                    in_vht_op = True
+                    vht_ch_width = None
+                    vht_seg2 = 0
+                    continue
+                if in_vht_op:
+                    m = re.search(r'\*\s+channel width:\s*(\d+)', stripped)
+                    if m:
+                        vht_ch_width = int(m.group(1))
+                    m = re.search(r'\*\s+center freq segment [12]:\s*(\d+)', stripped)
+                    if m:
+                        vht_seg2 = int(m.group(1))
+                    if stripped and not stripped.startswith('*') and 'VHT operation' not in stripped:
+                        bw = WiFiScanWorker._vht_op_bandwidth(vht_ch_width, vht_seg2)
+                        if bw:
+                            bandwidth_map[current_bssid] = max(
+                                bandwidth_map.get(current_bssid, 0), bw)
+                        in_vht_op = False
+
+                # ── HT operation (802.11n) ─────────────────────────────────
+                if 'HT40+' in stripped or 'HT40-' in stripped:
+                    bandwidth_map[current_bssid] = max(
+                        bandwidth_map.get(current_bssid, 0), 40)
+                elif re.search(r'\bHT20\b', stripped):
+                    bandwidth_map.setdefault(current_bssid, 20)
+
+                # ── Explicit 160/80+80 (HE op re-uses VHT op IE) ──────────
+                if re.search(r'channel width:\s*2\b', stripped, re.I):
+                    bandwidth_map[current_bssid] = 160
+                elif re.search(r'channel width:\s*3\b', stripped, re.I):
+                    bandwidth_map[current_bssid] = 160
+
+                # ── Max PHY rate from VHT/HE capabilities ─────────────────
+                m = re.search(r'(?:VHT|HE)\s+(?:RX|TX)\s+highest supported:\s*([\d.]+)\s*Mbps',
+                              stripped, re.I)
+                if m:
+                    mbps = int(float(m.group(1)))
+                    prev = int(re.search(r'\d+', rate_map.get(current_bssid, '0')).group())
+                    if mbps > prev:
+                        rate_map[current_bssid] = f"{mbps} Mbit/s"
+
+            # Flush last BSSID
+            if current_bssid and vht_ch_width is not None:
+                bw = WiFiScanWorker._vht_op_bandwidth(vht_ch_width, vht_seg2)
+                if bw:
+                    bandwidth_map[current_bssid] = max(
+                        bandwidth_map.get(current_bssid, 0), bw)
+
+            # Build wifi_gen_map from priority scores
+            _prio_to_gen = {4: 'WiFi 7', 3: 'WiFi 6', 2: 'WiFi 5', 1: 'WiFi 4'}
+            for bssid, prio in _gen_prio.items():
+                wifi_gen_map[bssid] = _prio_to_gen.get(prio, '—')
+
         except Exception:
             pass
-        return bandwidth_map
+        return bandwidth_map, rate_map, wifi_gen_map
 
     def _scan(self):
         import subprocess, re
@@ -4756,8 +4847,8 @@ class WiFiScanWorker(QThread):
         except Exception:
             pass
 
-        # Try to get bandwidth info using iw
-        bandwidth_map = self._get_bandwidth_from_iw(self.interface)
+        # Try to get bandwidth, max PHY rate and WiFi generation from iw scan dump
+        bandwidth_map, rate_map, wifi_gen_map = self._get_bandwidth_from_iw(self.interface)
 
         # Query results
         cmd = [
@@ -4850,10 +4941,13 @@ class WiFiScanWorker(QThread):
                 'channel':    channel,
                 'freq_mhz':   freq_mhz,
                 'band':       band,
-                'rate':       rate_str,
+                'rate':       rate_map.get(bssid.upper(), rate_str),
+                'wifi_gen':   wifi_gen_map.get(bssid.upper(),
+                                  'WiFi 6E' if freq_mhz >= 5945 else '—'),
                 'signal_pct': signal_pct,
                 'dbm':        dbm,
                 'snr':        snr,
+                'noise_floor': noise_floor,
                 'bandwidth':  bandwidth,
                 'security':   security,
             })
@@ -10092,9 +10186,9 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(4)
 
         self.wifi_table = QTableWidget()
-        self.wifi_table.setColumnCount(12)
+        self.wifi_table.setColumnCount(13)
         self.wifi_table.setHorizontalHeaderLabels(
-            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "Band", "Rate", "Security", "Score"]
+            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "WiFi", "Band", "Rate", "Security", "Score"]
         )
         # Column 0: Visibility checkbox
         self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -10107,8 +10201,8 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setColumnWidth(2, 130)
         # Column 3: Vendor (stretch)
         self.wifi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        # Other columns
-        for col, w in [(4, 110), (5, 70), (6, 40), (7, 60), (8, 65), (9, 100), (10, 110), (11, 55)]:
+        # Other columns: Signal(4), SNR(5), Ch(6), BW(7), WiFi(8), Band(9), Rate(10), Security(11), Score(12)
+        for col, w in [(4, 110), (5, 110), (6, 40), (7, 60), (8, 62), (9, 55), (10, 100), (11, 110), (12, 55)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -11440,17 +11534,32 @@ class SerialTerminalGUI(QMainWindow):
             sig_item.setForeground(QColor('#c62828'))
         self.wifi_table.setItem(row, 4, sig_item)
 
-        # Col 5 — SNR (Signal-to-Noise Ratio)
+        # Col 5 — SNR progress bar (0–60 dB range)
         snr = net.get('snr', 0)
-        snr_item = QTableWidgetItem(f"{snr} dB" if snr > 0 else "N/A")
-        snr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        if snr >= 40:
-            snr_item.setForeground(QColor('#2e7d32'))
-        elif snr >= 25:
-            snr_item.setForeground(QColor('#f57f17'))
-        elif snr > 0:
-            snr_item.setForeground(QColor('#c62828'))
+        snr_item = QTableWidgetItem()
+        snr_item.setData(Qt.ItemDataRole.UserRole, snr)  # numeric sort
         self.wifi_table.setItem(row, 5, snr_item)
+        snr_bar = QProgressBar()
+        snr_bar.setRange(0, 60)
+        snr_bar.setValue(min(snr, 60))
+        snr_bar.setFormat(f"{snr} dB" if snr > 0 else "N/A")
+        snr_bar.setTextVisible(True)
+        snr_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if snr >= 40:
+            _bar_color = '#2e7d32'
+        elif snr >= 25:
+            _bar_color = '#f57f17'
+        else:
+            _bar_color = '#c62828'
+        snr_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid #cccccc; border-radius: 3px;
+                background: #f0f0f0; text-align: center;
+                font-size: 8pt; color: #222222;
+            }}
+            QProgressBar::chunk {{ background: {_bar_color}; border-radius: 2px; }}
+        """)
+        self.wifi_table.setCellWidget(row, 5, snr_bar)
 
         # Col 6 — Channel
         ch_item = QTableWidgetItem(str(net['channel']))
@@ -11469,13 +11578,22 @@ class SerialTerminalGUI(QMainWindow):
             bw_item.setForeground(QColor('#757575'))
         self.wifi_table.setItem(row, 7, bw_item)
 
-        # Col 8 — Band
-        self.wifi_table.setItem(row, 8, QTableWidgetItem(net['band']))
+        # Col 8 — WiFi generation
+        wifi_gen = net.get('wifi_gen', '—')
+        gen_item = QTableWidgetItem(wifi_gen)
+        gen_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        _gen_colors = {'WiFi 7': '#7B1FA2', 'WiFi 6E': '#0277BD',
+                       'WiFi 6': '#1565C0', 'WiFi 5': '#2E7D32', 'WiFi 4': '#757575'}
+        gen_item.setForeground(QColor(_gen_colors.get(wifi_gen, '#9e9e9e')))
+        self.wifi_table.setItem(row, 8, gen_item)
 
-        # Col 9 — Rate
-        self.wifi_table.setItem(row, 9, QTableWidgetItem(net['rate']))
+        # Col 9 — Band
+        self.wifi_table.setItem(row, 9, QTableWidgetItem(net['band']))
 
-        # Col 10 — Security
+        # Col 10 — Rate
+        self.wifi_table.setItem(row, 10, QTableWidgetItem(net['rate']))
+
+        # Col 11 — Security
         sec = net['security']
         sec_item = QTableWidgetItem(sec)
         if 'WPA3' in sec:
@@ -11484,22 +11602,22 @@ class SerialTerminalGUI(QMainWindow):
             sec_item.setForeground(QColor('#2e7d32'))
         elif sec == 'Open':
             sec_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 10, sec_item)
+        self.wifi_table.setItem(row, 11, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
 
-        # Col 11 — Channel congestion score (0–100, green → red)
+        # Col 12 — Channel congestion score (0–100, green → red)
         score = net.get('channel_score', 0)
         score_item = QTableWidgetItem(str(score))
         score_item.setData(Qt.ItemDataRole.UserRole, score)  # numeric sort
         score_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if score <= 30:
-            score_item.setForeground(QColor('#2e7d32'))  # green
+            score_item.setForeground(QColor('#2e7d32'))
         elif score <= 60:
-            score_item.setForeground(QColor('#f57f17'))  # amber
+            score_item.setForeground(QColor('#f57f17'))
         else:
-            score_item.setForeground(QColor('#c62828'))  # red
-        self.wifi_table.setItem(row, 11, score_item)
+            score_item.setForeground(QColor('#c62828'))
+        self.wifi_table.setItem(row, 12, score_item)
 
     # ── Chart visibility helpers ───────────────────────────────────────────────
 
