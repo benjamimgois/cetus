@@ -3643,6 +3643,7 @@ class WifiChannelChart(QWidget):
         self._best_ch_info       = None   # (channel, reason_str, ch_load_dict)
         self._best_ch_badge_rect = None   # QRectF of the badge for hit testing
         self._frozen_best_ch_info = None  # set after survey finishes; overrides live computation
+        self._avoid_dfs = True            # when True, DFS channels are excluded from best-ch selection
 
         # White noise generator — enabled by default
         self._noise_enabled = True
@@ -4050,40 +4051,69 @@ class WifiChannelChart(QWidget):
                     _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
                     _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
                                 120, 124, 128, 132, 136, 140]
-                    _empty_nondfs = [c for c in _non_dfs if c not in _ch_load]
-                    _empty_dfs    = [c for c in _dfs    if c not in _ch_load]
-                    if _empty_nondfs:
-                        _best_ch = min(_empty_nondfs,
-                                       key=lambda c: sum(_ch_load.get(n, 0)
-                                                         for n in _non_dfs
-                                                         if abs(n - c) <= 8))
-                        _nb_load = sum(_ch_load.get(n, 0) for n in _non_dfs
-                                       if abs(n - _best_ch) <= 8 and n != _best_ch)
-                        _best_reason = (
-                            f"No networks detected on ch {_best_ch}.\n"
-                            f"Non-DFS channel — no radar avoidance required.\n"
-                            f"Neighbour interference score: {int(_nb_load)}%."
-                        )
-                    elif _empty_dfs:
-                        _best_ch = min(_empty_dfs,
-                                       key=lambda c: sum(_ch_load.get(n, 0)
-                                                         for n in channels
-                                                         if abs(n - c) <= 8))
-                        _nb_load = sum(_ch_load.get(n, 0) for n in channels
-                                       if abs(n - _best_ch) <= 8 and n != _best_ch)
-                        _best_reason = (
-                            f"No networks detected on ch {_best_ch}.\n"
-                            f"DFS channel — radar avoidance may be required.\n"
-                            f"All non-DFS channels are occupied.\n"
-                            f"Neighbour interference score: {int(_nb_load)}%."
-                        )
+                    _avoid   = getattr(self, '_avoid_dfs', True)
+                    if _avoid:
+                        # Tier 1: empty non-DFS; Tier 2: empty DFS; Tier 3: lowest load non-DFS
+                        _empty_nondfs = [c for c in _non_dfs if c not in _ch_load]
+                        _empty_dfs    = [c for c in _dfs    if c not in _ch_load]
+                        if _empty_nondfs:
+                            _best_ch = min(_empty_nondfs,
+                                           key=lambda c: sum(_ch_load.get(n, 0)
+                                                             for n in _non_dfs
+                                                             if abs(n - c) <= 8))
+                            _nb_load = sum(_ch_load.get(n, 0) for n in _non_dfs
+                                           if abs(n - _best_ch) <= 8 and n != _best_ch)
+                            _best_reason = (
+                                f"No networks detected on ch {_best_ch}.\n"
+                                f"Non-DFS channel — no radar avoidance required.\n"
+                                f"Neighbour interference score: {int(_nb_load)}%."
+                            )
+                        elif _empty_dfs:
+                            _best_ch = min(_empty_dfs,
+                                           key=lambda c: sum(_ch_load.get(n, 0)
+                                                             for n in channels
+                                                             if abs(n - c) <= 8))
+                            _nb_load = sum(_ch_load.get(n, 0) for n in channels
+                                           if abs(n - _best_ch) <= 8 and n != _best_ch)
+                            _best_reason = (
+                                f"No networks detected on ch {_best_ch}.\n"
+                                f"DFS channel — radar avoidance may be required.\n"
+                                f"All non-DFS channels are occupied.\n"
+                                f"Neighbour interference score: {int(_nb_load)}%."
+                            )
+                        else:
+                            _best_ch = min(_non_dfs, key=lambda c: _ch_load.get(c, 0))
+                            _best_reason = (
+                                f"All channels are occupied.\n"
+                                f"Ch {_best_ch} has the lowest cumulative load "
+                                f"({int(_ch_load.get(_best_ch, 0))}%) among non-DFS channels."
+                            )
                     else:
-                        _best_ch = min(_non_dfs, key=lambda c: _ch_load.get(c, 0))
-                        _best_reason = (
-                            f"All channels are occupied.\n"
-                            f"Ch {_best_ch} has the lowest cumulative load "
-                            f"({int(_ch_load.get(_best_ch, 0))}%) among non-DFS channels."
-                        )
+                        # DFS allowed — treat all channels equally
+                        _all_5g   = _non_dfs + _dfs
+                        _empty_all = [c for c in _all_5g if c not in _ch_load]
+                        if _empty_all:
+                            _best_ch = min(_empty_all,
+                                           key=lambda c: sum(_ch_load.get(n, 0)
+                                                             for n in _all_5g
+                                                             if abs(n - c) <= 8))
+                            _nb_load = sum(_ch_load.get(n, 0) for n in _all_5g
+                                           if abs(n - _best_ch) <= 8 and n != _best_ch)
+                            _dfs_note = " (DFS)" if _best_ch in _dfs else ""
+                            _best_reason = (
+                                f"No networks detected on ch {_best_ch}{_dfs_note}.\n"
+                                f"DFS avoidance disabled — all channels considered.\n"
+                                f"Neighbour interference score: {int(_nb_load)}%."
+                            )
+                        else:
+                            _best_ch = min(_all_5g, key=lambda c: _ch_load.get(c, 0))
+                            _dfs_note = " (DFS)" if _best_ch in _dfs else ""
+                            _best_reason = (
+                                f"All channels occupied.\n"
+                                f"Ch {_best_ch}{_dfs_note} has the lowest cumulative load "
+                                f"({int(_ch_load.get(_best_ch, 0))}).\n"
+                                f"DFS avoidance disabled."
+                            )
                 # Store for tooltip (mouseMoveEvent reads these)
                 self._best_ch_info = (_best_ch, _best_reason, dict(_ch_load))
                 _best_freq = self._channel_to_freq(_best_ch)
@@ -10158,6 +10188,22 @@ class SerialTerminalGUI(QMainWindow):
             "Emit tones reflecting signal strength; distinct tone on signal loss")
         self._hist_audio_chk.setStyleSheet("color: #8b949e; font-size: 8pt;")
 
+        _chk_style = "color: #8b949e; font-size: 8pt;"
+        self._avoid_dfs_chk = QCheckBox("Avoid DFS Channels")
+        self._avoid_dfs_chk.setChecked(True)
+        self._avoid_dfs_chk.setToolTip(
+            "When checked, DFS channels (52–140) are excluded from best-channel selection.\n"
+            "Uncheck to allow DFS channels to be recommended.")
+        self._avoid_dfs_chk.setStyleSheet(_chk_style)
+
+        audio_dfs_cell = QWidget()
+        audio_dfs_layout = QHBoxLayout(audio_dfs_cell)
+        audio_dfs_layout.setContentsMargins(0, 0, 0, 0)
+        audio_dfs_layout.setSpacing(16)
+        audio_dfs_layout.addWidget(self._hist_audio_chk)
+        audio_dfs_layout.addWidget(self._avoid_dfs_chk)
+        audio_dfs_layout.addStretch()
+
         config_grid.addWidget(_lbl("Interface:"),    0, 0)
         config_grid.addWidget(iface_cell,            0, 1)
         config_grid.addWidget(_lbl("Band:"),         1, 0)
@@ -10166,8 +10212,8 @@ class SerialTerminalGUI(QMainWindow):
         config_grid.addWidget(graphs_cell,           2, 1)
         config_grid.addWidget(_lbl("Effects:"),      3, 0)
         config_grid.addWidget(effects_cell,          3, 1)
-        config_grid.addWidget(_lbl("Audio:"),        4, 0)
-        config_grid.addWidget(self._hist_audio_chk,  4, 1)
+        config_grid.addWidget(_lbl("Options:"),      4, 0)
+        config_grid.addWidget(audio_dfs_cell,        4, 1)
 
         config_layout = QHBoxLayout()
         config_layout.setContentsMargins(12, 8, 12, 10)
@@ -10376,6 +10422,8 @@ class SerialTerminalGUI(QMainWindow):
         self._hist_scale_minus.clicked.connect(lambda: _hist_scale_step(+30))
         self._hist_scale_plus.clicked.connect(lambda: _hist_scale_step(-30))
         self._hist_audio_chk.toggled.connect(self.wifi_signal_history.set_audio)
+        self._avoid_dfs_chk.toggled.connect(
+            lambda checked: setattr(self.wifi_channel_chart, '_avoid_dfs', checked))
         self.wifi_scanlines_btn.toggled.connect(self.wifi_signal_history.set_scanlines)
 
         charts_row = QWidget()
@@ -11912,40 +11960,67 @@ class SerialTerminalGUI(QMainWindow):
                 _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
                 _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
                             120, 124, 128, 132, 136, 140]
-                _empty_nondfs = [c for c in _non_dfs if c not in ch_load]
-                _empty_dfs    = [c for c in _dfs    if c not in ch_load]
-                if _empty_nondfs:
-                    _best_ch = min(_empty_nondfs,
-                                   key=lambda c: sum(ch_load.get(n, 0)
-                                                     for n in _non_dfs
-                                                     if abs(n - c) <= 8))
-                    _nb = sum(ch_load.get(n, 0) for n in _non_dfs
-                              if abs(n - _best_ch) <= 8 and n != _best_ch)
-                    _best_reason = (
-                        f"No networks on ch {_best_ch} during the entire survey.\n"
-                        f"Non-DFS — no radar avoidance required.\n"
-                        f"Neighbour load over survey: {int(_nb)}."
-                    )
-                elif _empty_dfs:
-                    _best_ch = min(_empty_dfs,
-                                   key=lambda c: sum(ch_load.get(n, 0)
-                                                     for n in list(ch_load)
-                                                     if abs(n - c) <= 8))
-                    _nb = sum(ch_load.get(n, 0) for n in list(ch_load)
-                              if abs(n - _best_ch) <= 8 and n != _best_ch)
-                    _best_reason = (
-                        f"No networks on ch {_best_ch} during the entire survey.\n"
-                        f"DFS channel — radar avoidance may be required.\n"
-                        f"All non-DFS channels were occupied.\n"
-                        f"Neighbour load over survey: {int(_nb)}."
-                    )
+                _avoid   = getattr(self.wifi_channel_chart, '_avoid_dfs', True)
+                if _avoid:
+                    _empty_nondfs = [c for c in _non_dfs if c not in ch_load]
+                    _empty_dfs    = [c for c in _dfs    if c not in ch_load]
+                    if _empty_nondfs:
+                        _best_ch = min(_empty_nondfs,
+                                       key=lambda c: sum(ch_load.get(n, 0)
+                                                         for n in _non_dfs
+                                                         if abs(n - c) <= 8))
+                        _nb = sum(ch_load.get(n, 0) for n in _non_dfs
+                                  if abs(n - _best_ch) <= 8 and n != _best_ch)
+                        _best_reason = (
+                            f"No networks on ch {_best_ch} during the entire survey.\n"
+                            f"Non-DFS — no radar avoidance required.\n"
+                            f"Neighbour load over survey: {int(_nb)}."
+                        )
+                    elif _empty_dfs:
+                        _best_ch = min(_empty_dfs,
+                                       key=lambda c: sum(ch_load.get(n, 0)
+                                                         for n in list(ch_load)
+                                                         if abs(n - c) <= 8))
+                        _nb = sum(ch_load.get(n, 0) for n in list(ch_load)
+                                  if abs(n - _best_ch) <= 8 and n != _best_ch)
+                        _best_reason = (
+                            f"No networks on ch {_best_ch} during the entire survey.\n"
+                            f"DFS channel — radar avoidance may be required.\n"
+                            f"All non-DFS channels were occupied.\n"
+                            f"Neighbour load over survey: {int(_nb)}."
+                        )
+                    else:
+                        _best_ch = min(_non_dfs, key=lambda c: ch_load.get(c, 0))
+                        _best_reason = (
+                            f"All channels active during survey.\n"
+                            f"Ch {_best_ch} had the lowest cumulative load "
+                            f"({int(ch_load.get(_best_ch, 0))}) among non-DFS channels."
+                        )
                 else:
-                    _best_ch = min(_non_dfs, key=lambda c: ch_load.get(c, 0))
-                    _best_reason = (
-                        f"All channels active during survey.\n"
-                        f"Ch {_best_ch} had the lowest cumulative load "
-                        f"({int(ch_load.get(_best_ch, 0))}) among non-DFS channels."
-                    )
+                    _all_5g    = _non_dfs + _dfs
+                    _empty_all = [c for c in _all_5g if c not in ch_load]
+                    if _empty_all:
+                        _best_ch = min(_empty_all,
+                                       key=lambda c: sum(ch_load.get(n, 0)
+                                                         for n in _all_5g
+                                                         if abs(n - c) <= 8))
+                        _nb = sum(ch_load.get(n, 0) for n in _all_5g
+                                  if abs(n - _best_ch) <= 8 and n != _best_ch)
+                        _dfs_note = " (DFS)" if _best_ch in _dfs else ""
+                        _best_reason = (
+                            f"No networks on ch {_best_ch}{_dfs_note} during the survey.\n"
+                            f"DFS avoidance disabled — all channels considered.\n"
+                            f"Neighbour load over survey: {int(_nb)}."
+                        )
+                    else:
+                        _best_ch = min(_all_5g, key=lambda c: ch_load.get(c, 0))
+                        _dfs_note = " (DFS)" if _best_ch in _dfs else ""
+                        _best_reason = (
+                            f"All channels active during survey.\n"
+                            f"Ch {_best_ch}{_dfs_note} had the lowest cumulative load "
+                            f"({int(ch_load.get(_best_ch, 0))}).\n"
+                            f"DFS avoidance disabled."
+                        )
 
         # Freeze result in chart
         if _best_ch is not None:
