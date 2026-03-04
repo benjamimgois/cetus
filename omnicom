@@ -1675,6 +1675,38 @@ class ScanWorker(QThread):
 
 _OUI_VENDORS = None   # built once, re-used on every subsequent call
 
+# Candidate system OUI database paths (tried in order)
+_OUI_DB_PATHS = [
+    '/usr/share/hwdata/oui.txt',
+    '/usr/share/ieee-data/oui.txt',
+    '/usr/share/arp-scan/ieee-oui.txt',
+    '/usr/share/wireshark/manuf',
+]
+
+def _load_system_oui_db():
+    """Parse the system OUI database into a {OUI6HEX: vendor} dict.
+    Returns an empty dict if no file is found or parsing fails."""
+    import re
+    result = {}
+    for path in _OUI_DB_PATHS:
+        try:
+            with open(path, 'r', errors='replace') as fh:
+                for line in fh:
+                    # hwdata/ieee format: "286FB9     (base 16)  Nokia..."
+                    m = re.match(r'^([0-9A-Fa-f]{6})\s+\(base 16\)\s+(.+)', line)
+                    if m:
+                        result[m.group(1).upper()] = m.group(2).strip()
+                        continue
+                    # wireshark/manuf format: "28:6F:B9  Nokia..."
+                    m = re.match(r'^([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\s+\S+\s+(.*)', line)
+                    if m:
+                        result[m.group(1).replace(':', '').upper()] = m.group(2).strip()
+            if result:
+                return result
+        except OSError:
+            continue
+    return result
+
 def _get_mac_vendor(mac):
     """Lookup MAC vendor from OUI (first 3 octets). Dict is built once and cached."""
     global _OUI_VENDORS
@@ -1683,16 +1715,19 @@ def _get_mac_vendor(mac):
 
     oui = mac.replace(':', '').upper()[:6]
 
+    # Randomised / locally-administered MAC — cannot resolve to a vendor
+    if len(mac) >= 2 and mac[1].upper() in ('2', '6', 'A', 'E'):
+        return 'Private/Local'
+
     # Fast path: dict already built
     if _OUI_VENDORS is not None:
-        if oui in _OUI_VENDORS:
-            return _OUI_VENDORS[oui]
-        if len(mac) >= 2 and mac[1].upper() in ('2', '6', 'A', 'E'):
-            return 'Private/Local'
-        return 'Unknown'
+        return _OUI_VENDORS.get(oui, 'Unknown')
 
-    # First call only: build the lookup table
-    vendors = {
+    # First call only: try system OUI database, fall back to built-in table
+    vendors = _load_system_oui_db()
+    if not vendors:
+        # Fallback minimal built-in table
+        vendors = {
         # IANA and Standards
         '00005E': 'IANA',
         '70B3D5': 'IEEE',
@@ -1988,16 +2023,11 @@ def _get_mac_vendor(mac):
         '08002B': 'DEC',
         '100000': 'Private',
         '74C63B': 'AzureWave',
-        'F43C3B': 'FN-LINK',  # Found in user's network
-    }
-    
-    _OUI_VENDORS = vendors   # cache for all future calls
+            'F43C3B': 'FN-LINK',
+        }
 
-    if oui in vendors:
-        return vendors[oui]
-    if len(mac) >= 2 and mac[1].upper() in ('2', '6', 'A', 'E'):
-        return 'Private/Local'
-    return 'Unknown'
+    _OUI_VENDORS = vendors
+    return vendors.get(oui, 'Unknown')
 
 
 class ConnectionWorker(QThread):
