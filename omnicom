@@ -261,7 +261,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar
+    QProgressBar, QSlider
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
@@ -8062,9 +8062,9 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #e8e8e8;
             }
             QPushButton:checked {
-                background-color: #00BCD4;
+                background-color: #ef5350;
                 color: #ffffff;
-                border: 1px solid #00BCD4;
+                border: 1px solid #ef5350;
                 font-weight: bold;
             }
         """
@@ -8547,8 +8547,8 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_version_v3_btn.setStyleSheet(version_btn_style)
         self.snmp_version_v3_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v3"))
 
-        version_layout.addWidget(self.snmp_version_v2c_btn)
         version_layout.addWidget(self.snmp_version_v1_btn)
+        version_layout.addWidget(self.snmp_version_v2c_btn)
         version_layout.addWidget(self.snmp_version_v3_btn)
         version_layout.addStretch()
         version_widget.setLayout(version_layout)
@@ -8991,14 +8991,62 @@ class SerialTerminalGUI(QMainWindow):
         config_layout.addRow("Target:", _target_widget)
 
 
-        # Method selector (ICMP/TCP/UDP) - below Target
-        self.traceroute_method_combo = QComboBox()
-        self.traceroute_method_combo.addItems(["ICMP (MTR)", "TCP", "UDP"])
-        self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
-        self.traceroute_method_combo.setFixedWidth(combo_width)
-        self.traceroute_method_combo.setToolTip("Traceroute method: ICMP via MTR (default), TCP (specific port), UDP (specific port)")
-        self.traceroute_method_combo.currentTextChanged.connect(self._traceroute_method_changed)
-        config_layout.addRow("Method:", self.traceroute_method_combo)
+        # Method selector (ICMP/TCP/UDP) — toggle buttons in tab cyan colour
+        _tr_method_btn_style = """
+            QPushButton {
+                border: 1px solid #d0d0d0; border-radius: 4px;
+                padding: 4px 12px; background-color: #f5f5f5;
+                color: #333333; font-size: 9pt; font-weight: normal;
+            }
+            QPushButton:hover { background-color: #e8e8e8; }
+            QPushButton:checked {
+                background-color: #00BCD4; color: #ffffff;
+                border: 1px solid #00BCD4; font-weight: bold;
+            }
+        """
+        _tr_method_widget = QWidget()
+        _tr_method_layout = QHBoxLayout(_tr_method_widget)
+        _tr_method_layout.setContentsMargins(0, 0, 0, 0)
+        _tr_method_layout.setSpacing(4)
+
+        self.traceroute_method_icmp_btn = QPushButton("ICMP (MTR)")
+        self.traceroute_method_icmp_btn.setCheckable(True)
+        self.traceroute_method_icmp_btn.setChecked(True)
+        self.traceroute_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_method_icmp_btn.setStyleSheet(_tr_method_btn_style)
+
+        self.traceroute_method_tcp_btn = QPushButton("TCP")
+        self.traceroute_method_tcp_btn.setCheckable(True)
+        self.traceroute_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_method_tcp_btn.setStyleSheet(_tr_method_btn_style)
+
+        self.traceroute_method_udp_btn = QPushButton("UDP")
+        self.traceroute_method_udp_btn.setCheckable(True)
+        self.traceroute_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_method_udp_btn.setStyleSheet(_tr_method_btn_style)
+
+        self._traceroute_method_btns = {
+            'ICMP (MTR)': self.traceroute_method_icmp_btn,
+            'TCP':        self.traceroute_method_tcp_btn,
+            'UDP':        self.traceroute_method_udp_btn,
+        }
+        self.traceroute_current_method = 'ICMP (MTR)'
+
+        def _tr_method_btn_clicked(m):
+            for _k, _b in self._traceroute_method_btns.items():
+                _b.setChecked(_k == m)
+            self.traceroute_current_method = m
+            self._traceroute_method_changed(m)
+
+        self.traceroute_method_icmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('ICMP (MTR)'))
+        self.traceroute_method_tcp_btn.clicked.connect(lambda: _tr_method_btn_clicked('TCP'))
+        self.traceroute_method_udp_btn.clicked.connect(lambda: _tr_method_btn_clicked('UDP'))
+
+        _tr_method_layout.addWidget(self.traceroute_method_icmp_btn)
+        _tr_method_layout.addWidget(self.traceroute_method_tcp_btn)
+        _tr_method_layout.addWidget(self.traceroute_method_udp_btn)
+        _tr_method_layout.addStretch()
+        config_layout.addRow("Method:", _tr_method_widget)
 
         # Port input (hidden by default, shown when TCP/UDP selected) with quick presets
         self.traceroute_port_label = QLabel("Port:")
@@ -9076,16 +9124,54 @@ class SerialTerminalGUI(QMainWindow):
         self._tr_port_widget = _tr_port_widget  # Store reference for visibility control
         config_layout.addRow(self.traceroute_port_label, _tr_port_widget)
 
-        # MTR Packets count (hidden by default, shown below Method)
+        # MTR Packets count — slider with value label (hidden until ICMP/MTR selected)
         self.mtr_packets_label = QLabel("Packets:")
-        self.mtr_packets_combo = QComboBox()
-        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
-        self.mtr_packets_combo.setCurrentText("10")
-        self.mtr_packets_combo.setFixedWidth(combo_width)
-        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
         self.mtr_packets_label.setVisible(False)
-        self.mtr_packets_combo.setVisible(False)
-        config_layout.addRow(self.mtr_packets_label, self.mtr_packets_combo)
+
+        _pkt_widget = QWidget()
+        _pkt_layout = QHBoxLayout(_pkt_widget)
+        _pkt_layout.setContentsMargins(0, 0, 0, 0)
+        _pkt_layout.setSpacing(8)
+
+        self.mtr_packets_slider = QSlider(Qt.Orientation.Horizontal)
+        self.mtr_packets_slider.setMinimum(5)
+        self.mtr_packets_slider.setMaximum(200)
+        self.mtr_packets_slider.setValue(10)
+        self.mtr_packets_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.mtr_packets_slider.setTickInterval(50)
+        self.mtr_packets_slider.setToolTip("Number of packets to send per hop (5–200)")
+        self.mtr_packets_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 4px; background: #d0d0d0; border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #00BCD4; border: none;
+                width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+            }
+            QSlider::sub-page:horizontal { background: #00BCD4; border-radius: 2px; }
+        """)
+
+        self._mtr_packets_val_lbl = QLabel("10")
+        self._mtr_packets_val_lbl.setFixedWidth(30)
+        self._mtr_packets_val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._mtr_packets_val_lbl.setStyleSheet("color: #555; font-size: 9pt;")
+
+        self.mtr_packets_slider.valueChanged.connect(
+            lambda v: self._mtr_packets_val_lbl.setText(str(v)))
+
+        _pkt_layout.addWidget(self.mtr_packets_slider)
+        _pkt_layout.addWidget(self._mtr_packets_val_lbl)
+
+        # Keep a combo-compatible interface so existing callers still work
+        class _SliderProxy:
+            def __init__(self, slider): self._s = slider
+            def currentText(self): return str(self._s.value())
+            def setVisible(self, v): pass  # visibility handled via _pkt_widget
+        self.mtr_packets_combo = _SliderProxy(self.mtr_packets_slider)
+
+        _pkt_widget.setVisible(False)
+        self._mtr_pkt_widget = _pkt_widget   # for visibility toggling
+        config_layout.addRow(self.mtr_packets_label, _pkt_widget)
 
         # Proxy — internal state (not visible widgets in the main form)
         self._proxy_enabled = False
@@ -9348,7 +9434,7 @@ class SerialTerminalGUI(QMainWindow):
         page.setLayout(main_layout)
 
         # Initialize field visibility based on default method
-        self._traceroute_method_changed(self.traceroute_method_combo.currentText())
+        self._traceroute_method_changed(self.traceroute_current_method)
 
         return page
 
@@ -10509,7 +10595,7 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         # Branch to MTR if 'ICMP (MTR)' or legacy 'MTR' is selected
-        method = self.traceroute_method_combo.currentText()
+        method = self.traceroute_current_method
         if method in ('MTR', 'ICMP (MTR)'):
             self._start_mtr()
             return
@@ -10524,7 +10610,7 @@ class SerialTerminalGUI(QMainWindow):
         max_hops = int(self.traceroute_max_hops_combo.currentText())
         timeout = int(self.traceroute_timeout_combo.currentText().rstrip('s'))
         dns_lookup = self.traceroute_dns_checkbox.isChecked()
-        method = self.traceroute_method_combo.currentText()
+        method = self.traceroute_current_method
 
         # Get and validate port for TCP/UDP
         port = None
@@ -11278,7 +11364,7 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_interval_label.setVisible(is_mtr)
         self.mtr_interval_combo.setVisible(is_mtr)
         self.mtr_packets_label.setVisible(is_mtr)
-        self.mtr_packets_combo.setVisible(is_mtr)
+        self._mtr_pkt_widget.setVisible(is_mtr)
 
         # Switch table columns and button label
         if is_mtr:
@@ -12770,7 +12856,10 @@ class SerialTerminalGUI(QMainWindow):
             self.execute_snmp_query()
         elif action == tracert_action:
             self.traceroute_target_input.setText(ip)
-            self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
+            for _k, _b in self._traceroute_method_btns.items():
+                _b.setChecked(_k == 'ICMP (MTR)')
+            self.traceroute_current_method = 'ICMP (MTR)'
+            self._traceroute_method_changed('ICMP (MTR)')
             self.switch_tab(5)
             self._start_traceroute()
         elif action == cvescan_action:
@@ -12845,7 +12934,10 @@ class SerialTerminalGUI(QMainWindow):
             self.execute_snmp_query()
         elif action == tracert_action:
             self.traceroute_target_input.setText(ip)
-            self.traceroute_method_combo.setCurrentText("ICMP (MTR)")
+            for _k, _b in self._traceroute_method_btns.items():
+                _b.setChecked(_k == 'ICMP (MTR)')
+            self.traceroute_current_method = 'ICMP (MTR)'
+            self._traceroute_method_changed('ICMP (MTR)')
             self.switch_tab(5)
             self._start_traceroute()
         elif action == cvescan_action:
