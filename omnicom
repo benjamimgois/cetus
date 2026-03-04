@@ -260,7 +260,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame, QSlider, QToolButton, QListWidget, QListWidgetItem
+    QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
@@ -9921,26 +9921,7 @@ class SerialTerminalGUI(QMainWindow):
         effects_layout.addWidget(self.wifi_scanlines_btn)
         effects_layout.addStretch()
 
-        self._hist_window_slider = QSlider(Qt.Orientation.Horizontal)
-        self._hist_window_slider.setMinimum(30)
-        self._hist_window_slider.setMaximum(600)
-        self._hist_window_slider.setSingleStep(30)
-        self._hist_window_slider.setPageStep(60)
-        self._hist_window_slider.setValue(120)
-        self._hist_window_slider.setTickPosition(QSlider.TickPosition.NoTicks)
-        self._hist_window_slider.setToolTip("Time window of the power graph")
-
-        self._hist_window_lbl = QLabel("120s")
-        self._hist_window_lbl.setFixedWidth(36)
-        self._hist_window_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._hist_window_lbl.setStyleSheet("color: #8b949e; font-size: 8pt;")
-
-        hist_window_cell = QWidget()
-        hist_window_layout = QHBoxLayout(hist_window_cell)
-        hist_window_layout.setContentsMargins(0, 0, 0, 0)
-        hist_window_layout.setSpacing(6)
-        hist_window_layout.addWidget(self._hist_window_slider)
-        hist_window_layout.addWidget(self._hist_window_lbl)
+        self._hist_window_s = 120  # current power-scale window value (seconds)
 
         self._hist_audio_chk = QCheckBox("Audio feedback")
         self._hist_audio_chk.setChecked(True)
@@ -9956,10 +9937,8 @@ class SerialTerminalGUI(QMainWindow):
         config_grid.addWidget(graphs_cell,           2, 1)
         config_grid.addWidget(_lbl("Effects:"),      3, 0)
         config_grid.addWidget(effects_cell,          3, 1)
-        config_grid.addWidget(_lbl("Power Scale:"),  4, 0)
-        config_grid.addWidget(hist_window_cell,      4, 1)
-        config_grid.addWidget(_lbl("Audio:"),        5, 0)
-        config_grid.addWidget(self._hist_audio_chk,  5, 1)
+        config_grid.addWidget(_lbl("Audio:"),        4, 0)
+        config_grid.addWidget(self._hist_audio_chk,  4, 1)
 
         config_layout = QHBoxLayout()
         config_layout.setContentsMargins(12, 8, 12, 10)
@@ -10111,6 +10090,43 @@ class SerialTerminalGUI(QMainWindow):
         self._close_history_btn.clicked.connect(
             lambda: self._wifi_set_chart_visible('history', False))
         self._close_history_btn.raise_()
+
+        # Power-scale overlay: − label +
+        _scale_btn_style = """
+            QPushButton {
+                background-color: rgba(233, 30, 99, 210);
+                color: white; border: none; border-radius: 5px;
+                font-size: 14pt; font-weight: bold;
+            }
+            QPushButton:hover   { background-color: rgba(233, 30, 99, 255); }
+            QPushButton:pressed { background-color: rgba(160, 15, 65,  255); }
+        """
+        _scale_lbl_style = (
+            "color: white; font-size: 9pt; font-weight: bold; "
+            "background-color: rgba(15, 15, 25, 210); border-radius: 4px; "
+            "border: 1px solid rgba(233,30,99,160); padding: 0px 4px;"
+        )
+
+        self._hist_scale_minus = QPushButton("−", self.wifi_signal_history)
+        self._hist_scale_minus.setFixedSize(26, 26)
+        self._hist_scale_minus.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hist_scale_minus.setStyleSheet(_scale_btn_style)
+        self._hist_scale_minus.setToolTip("Increase time window (zoom out)")
+
+        self._hist_scale_lbl = QLabel(f"{self._hist_window_s}s", self.wifi_signal_history)
+        self._hist_scale_lbl.setFixedSize(40, 26)
+        self._hist_scale_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hist_scale_lbl.setStyleSheet(_scale_lbl_style)
+
+        self._hist_scale_plus = QPushButton("+", self.wifi_signal_history)
+        self._hist_scale_plus.setFixedSize(26, 26)
+        self._hist_scale_plus.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hist_scale_plus.setStyleSheet(_scale_btn_style)
+        self._hist_scale_plus.setToolTip("Decrease time window (zoom in)")
+
+        for _w in (self._hist_scale_minus, self._hist_scale_lbl, self._hist_scale_plus):
+            _w.raise_()
+
         self.wifi_signal_history.installEventFilter(self)
         self.wifi_signal_history.hide()
 
@@ -10123,12 +10139,13 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_heatmap_btn.toggled.connect(
             lambda checked: self._wifi_set_chart_visible('heatmap', checked))
 
-        # Wire history window slider
-        def _on_window_slider(val):
-            snapped = max(30, round(val / 30) * 30)
-            self._hist_window_lbl.setText(f'{snapped}s')
-            self.wifi_signal_history.set_window_s(snapped)
-        self._hist_window_slider.valueChanged.connect(_on_window_slider)
+        # Wire power-scale overlay buttons
+        def _hist_scale_step(delta):
+            self._hist_window_s = max(30, min(600, self._hist_window_s + delta))
+            self._hist_scale_lbl.setText(f'{self._hist_window_s}s')
+            self.wifi_signal_history.set_window_s(self._hist_window_s)
+        self._hist_scale_minus.clicked.connect(lambda: _hist_scale_step(+30))
+        self._hist_scale_plus.clicked.connect(lambda: _hist_scale_step(-30))
         self._hist_audio_chk.toggled.connect(self.wifi_signal_history.set_audio)
         self.wifi_scanlines_btn.toggled.connect(self.wifi_signal_history.set_scanlines)
 
@@ -11353,6 +11370,17 @@ class SerialTerminalGUI(QMainWindow):
                 btn = getattr(self, '_close_history_btn', None)
                 if btn:
                     btn.move(obj.width() - 24, 4)
+                # Reposition power-scale overlay: − [120s] + at bottom-right
+                _sm = getattr(self, '_hist_scale_minus', None)
+                _sl = getattr(self, '_hist_scale_lbl',  None)
+                _sp = getattr(self, '_hist_scale_plus',  None)
+                if _sm and _sl and _sp:
+                    _bw = obj.width()
+                    _bh = obj.height()
+                    # margin=8, btn=26, label=40, gap=4  → total=104px
+                    _sp.move(_bw - 8  - 26,            _bh - 8 - 26)
+                    _sl.move(_bw - 8  - 26 - 4 - 40,   _bh - 8 - 26)
+                    _sm.move(_bw - 8  - 26 - 4 - 40 - 4 - 26, _bh - 8 - 26)
         # ── CVE Scanner device image click ────────────────────────────
         if (event.type() == QEvent.Type.MouseButtonPress
                 and obj is getattr(self, 'vuln_device_img', None)):
