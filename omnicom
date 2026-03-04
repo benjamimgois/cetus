@@ -4341,15 +4341,16 @@ class WifiHeatmapWidget(QWidget):
     def _build_cmap(cls):
         if cls._CMAP:
             return
-        stops = [  # (index 0-255, r, g, b)
-            (0,    0,   0,  20),   # deep space black
-            (40,   0,   0, 200),   # blue
-            (90,   0, 210, 240),   # cyan
-            (135,  0, 230,  60),   # green
-            (175, 240, 240,   0),  # yellow
-            (215, 255, 100,   0),  # orange
-            (240, 255,  30,  30),  # red
-            (255, 255, 210, 180),  # warm white (avoid pure white)
+        stops = [  # (index 0-255, r, g, b)  — spectrum-analyser palette
+            (0,    0,   0,  18),   # near-black navy (absolute silence)
+            (25,   0,  15, 110),   # dark blue       (deep noise floor)
+            (55,   0,  70, 220),   # blue            (noise floor)
+            (90,   0, 180, 235),   # blue-cyan
+            (125,  0, 215,  90),   # cyan-green
+            (160, 140, 220,   0),  # yellow-green
+            (195, 255, 130,   0),  # orange
+            (228, 255,  20,   0),  # red-orange
+            (255, 255, 220, 160),  # hot white-pink  (peak)
         ]
 
         def _lerp(a, b, t):
@@ -4378,8 +4379,10 @@ class WifiHeatmapWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        import random as _rnd
         self.__class__._build_cmap()
-        self._buf = [[0] * self.COLS for _ in range(self.ROWS)]
+        self._buf = [[_rnd.randint(18, 38) for _ in range(self.COLS)]
+                     for _ in range(self.ROWS)]
         self._band_key = '2.4GHz'
         self.setFixedHeight(110)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -4427,14 +4430,18 @@ class WifiHeatmapWidget(QWidget):
         """Update the active band; clear buffer only when the band actually changes."""
         if band_key == self._band_key:
             return
+        import random as _rnd
         self._band_key = band_key
-        self._buf = [[0] * self.COLS for _ in range(self.ROWS)]
+        self._buf = [[_rnd.randint(18, 38) for _ in range(self.COLS)]
+                     for _ in range(self.ROWS)]
         self.update()
 
     def push_networks(self, networks, band_key):
         """Ingest one scan snapshot and scroll the waterfall down by one row."""
+        import random as _rnd
         self._band_key = band_key
-        new_row = [0] * self.COLS
+        # Initialise each column at noise-floor level; signals are painted on top
+        new_row = [_rnd.randint(18, 38) for _ in range(self.COLS)]
 
         for net in networks:
             if not self._band_ok(net.get('band', '2.4GHz')):
@@ -9747,6 +9754,7 @@ class SerialTerminalGUI(QMainWindow):
             l = QLabel(text)
             l.setStyleSheet(_lbl_style)
             l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            l.setFixedWidth(90)
             return l
 
         # ── Widgets ──────────────────────────────────────────────────────────
@@ -9801,7 +9809,7 @@ class SerialTerminalGUI(QMainWindow):
             _btn.setCursor(Qt.CursorShape.PointingHandCursor)
             _btn.setToolTip(_tip)
             _btn.setStyleSheet(_toggle_style)
-        self.wifi_band_btn_24.setChecked(True)   # default: 2.4 GHz
+        self.wifi_band_btn_5.setChecked(True)    # default: 5 GHz
 
         def _on_band_btn(btn):
             """Exclusive selection: uncheck the other two, update chart and table."""
@@ -9814,32 +9822,12 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_band_btn_5.clicked.connect(lambda:  _on_band_btn(self.wifi_band_btn_5))
         self.wifi_band_btn_both.clicked.connect(lambda: _on_band_btn(self.wifi_band_btn_both))
 
-        _toggle_style_sm = """
-            QPushButton {
-                background-color: #3a3a4a; border: 1px solid #555566;
-                border-radius: 4px; color: #8b949e; font-size: 8pt;
-                padding: 2px 6px; min-width: 32px;
-            }
-            QPushButton:checked {
-                background-color: #E91E63; border-color: #E91E63; color: white;
-            }
-            QPushButton:hover { border-color: #999aaa; }
-        """
-        self._wifi_interval_btns = []
-        for _iv in ("1s", "2s", "5s", "10s", "15s", "30s"):
-            _b = QPushButton(_iv)
-            _b.setCheckable(True)
-            _b.setFixedHeight(24)
-            _b.setCursor(Qt.CursorShape.PointingHandCursor)
-            _b.setStyleSheet(_toggle_style_sm)
-            self._wifi_interval_btns.append(_b)
-        self._wifi_interval_btns[1].setChecked(True)  # default: 2s
-
-        def _on_interval_btn(btn):
-            for b in self._wifi_interval_btns:
-                b.setChecked(b is btn)
-        for _b in self._wifi_interval_btns:
-            _b.clicked.connect(lambda checked, b=_b: _on_interval_btn(b))
+        self.wifi_refresh_combo = QComboBox()
+        self.wifi_refresh_combo.addItems(["2s", "5s", "10s", "15s", "30s"])
+        self.wifi_refresh_combo.setCurrentText("2s")
+        self.wifi_refresh_combo.setFixedWidth(62)
+        self.wifi_refresh_combo.setToolTip("Auto-refresh interval")
+        self.wifi_refresh_combo.setStyleSheet(combo_style)
 
         self.wifi_toggle_channel_btn = QPushButton("Spectrum")
         self.wifi_toggle_channel_btn.setCheckable(True)
@@ -9871,18 +9859,8 @@ class SerialTerminalGUI(QMainWindow):
         iface_cell_layout.setSpacing(4)
         iface_cell_layout.addWidget(self.wifi_iface_combo)
         iface_cell_layout.addWidget(refresh_iface_btn)
+        iface_cell_layout.addWidget(self.wifi_refresh_combo)
         iface_cell_layout.addStretch()
-
-        auto_cell = QWidget()
-        auto_cell_layout = QHBoxLayout(auto_cell)
-        auto_cell_layout.setContentsMargins(0, 0, 0, 0)
-        auto_cell_layout.setSpacing(4)
-        interval_lbl = QLabel("every")
-        interval_lbl.setStyleSheet(_lbl_style)
-        auto_cell_layout.addWidget(interval_lbl)
-        for _b in self._wifi_interval_btns:
-            auto_cell_layout.addWidget(_b)
-        auto_cell_layout.addStretch()
 
         band_cell = QWidget()
         band_cell_layout = QHBoxLayout(band_cell)
@@ -9972,18 +9950,16 @@ class SerialTerminalGUI(QMainWindow):
 
         config_grid.addWidget(_lbl("Interface:"),    0, 0)
         config_grid.addWidget(iface_cell,            0, 1)
-        config_grid.addWidget(_lbl("Auto-refresh:"), 1, 0)
-        config_grid.addWidget(auto_cell,             1, 1)
-        config_grid.addWidget(_lbl("Band:"),         2, 0)
-        config_grid.addWidget(band_cell,             2, 1)
-        config_grid.addWidget(_lbl("Show:"),         3, 0)
-        config_grid.addWidget(graphs_cell,           3, 1)
-        config_grid.addWidget(_lbl("Effects:"),      4, 0)
-        config_grid.addWidget(effects_cell,          4, 1)
-        config_grid.addWidget(_lbl("Window:"),       5, 0)
-        config_grid.addWidget(hist_window_cell,      5, 1)
-        config_grid.addWidget(_lbl("Audio:"),        6, 0)
-        config_grid.addWidget(self._hist_audio_chk,  6, 1)
+        config_grid.addWidget(_lbl("Band:"),         1, 0)
+        config_grid.addWidget(band_cell,             1, 1)
+        config_grid.addWidget(_lbl("Show:"),         2, 0)
+        config_grid.addWidget(graphs_cell,           2, 1)
+        config_grid.addWidget(_lbl("Effects:"),      3, 0)
+        config_grid.addWidget(effects_cell,          3, 1)
+        config_grid.addWidget(_lbl("Power Scale:"),  4, 0)
+        config_grid.addWidget(hist_window_cell,      4, 1)
+        config_grid.addWidget(_lbl("Audio:"),        5, 0)
+        config_grid.addWidget(self._hist_audio_chk,  5, 1)
 
         config_layout = QHBoxLayout()
         config_layout.setContentsMargins(12, 8, 12, 10)
@@ -11555,7 +11531,7 @@ class SerialTerminalGUI(QMainWindow):
             self.wifi_heatmap.push_networks(self._wifi_networks, self._wifi_active_band_key())
 
         # Schedule auto-refresh
-        interval_s = int(next((b.text() for b in self._wifi_interval_btns if b.isChecked()), "2s").rstrip('s'))
+        interval_s = int(self.wifi_refresh_combo.currentText().rstrip('s'))
         if self._wifi_timer is None:
             from PyQt6.QtCore import QTimer
             self._wifi_timer = QTimer(self)
@@ -12590,6 +12566,7 @@ class SerialTerminalGUI(QMainWindow):
         host_port_layout.addWidget(self.ssh_host)
         host_port_layout.addWidget(port_sep)
         host_port_layout.addWidget(self.ssh_port)
+        host_port_layout.addStretch()
         host_port_widget.setLayout(host_port_layout)
         ssh_layout.addRow("Host:", host_port_widget)
 
