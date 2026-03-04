@@ -5719,7 +5719,8 @@ class LatencyGraphWidget(QWidget):
         painter.setFont(QFont("Sans Serif", 8))
         reached = len(valid)
         total_hops = len(self.hops)
-        footer = (f"Total: {total_lat:.1f} ms  ·  "
+        last_lat = valid[-1][3] if valid else 0.0
+        footer = (f"Avg to destination: {last_lat:.1f} ms  ·  "
                   f"{reached}/{total_hops} hops reached")
         painter.drawText(L, T + H + 38, W, 14,
                          Qt.AlignmentFlag.AlignRight, footer)
@@ -5951,7 +5952,7 @@ class PingGraphWidget(QWidget):
                 bw = painter.fontMetrics().horizontalAdvance(lat_str) + 18
                 bh = 22
                 bx = max(L, min(int(x_g) - bw // 2, L + W - bw))
-                by = max(T, int(y_g) - 36)
+                by = max(T, int(y_g) - 38)
                 badge_bg = QColor(bar_c); badge_bg.setAlpha(90)
                 painter.setBrush(badge_bg)
                 _bb_c = QColor(bar_c); _bb_c.setAlpha(220)
@@ -5959,6 +5960,16 @@ class PingGraphWidget(QWidget):
                 painter.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
                 painter.setPen(QColor(glow_c))
                 painter.drawText(bx, by, bw, bh, Qt.AlignmentFlag.AlignCenter, lat_str)
+            else:
+                # Small always-visible RTT label above point
+                lat_str = f"{rtt:.1f}"
+                painter.setFont(QFont("Monospace", 7))
+                lw = painter.fontMetrics().horizontalAdvance(lat_str) + 4
+                lx = max(L, min(int(x_g) - lw // 2, L + W - lw))
+                ly = max(T, int(y_g) - 18)
+                _tc = QColor(glow_c); _tc.setAlpha(200)
+                painter.setPen(_tc)
+                painter.drawText(lx, ly, lw, 13, Qt.AlignmentFlag.AlignCenter, lat_str)
 
         # footer stats
         if recv > 0 and all_rtts:
@@ -11301,6 +11312,22 @@ class SerialTerminalGUI(QMainWindow):
         """Handle MTR completion (fixed cycles reached or stopped)"""
         cycles = getattr(self, '_mtr_cycle', 0)
         target = getattr(self, '_mtr_target', '')
+
+        # Hide duplicate last hop: MTR probes one TTL beyond the destination,
+        # causing the target IP to appear twice in consecutive rows.
+        t = self.traceroute_results_table
+        rc = t.rowCount()
+        if rc >= 2:
+            ip_last = t.item(rc - 1, 2)
+            ip_prev = t.item(rc - 2, 2)
+            if (ip_last and ip_prev
+                    and ip_last.text() == ip_prev.text()
+                    and ip_last.text() not in ('', '*')):
+                t.setRowHidden(rc - 1, True)
+                if self.traceroute_viz_widget.hops:
+                    self.traceroute_viz_widget.hops.pop()
+                    self.traceroute_viz_widget.update()
+
         self.traceroute_results_group.setTitle(
             f"MTR — {cycles} cycle{'s' if cycles != 1 else ''} to {target}"
         )
