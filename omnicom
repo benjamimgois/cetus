@@ -261,7 +261,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSlider
+    QProgressBar
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
@@ -9048,6 +9048,32 @@ class SerialTerminalGUI(QMainWindow):
         _tr_method_layout.addStretch()
         config_layout.addRow("Method:", _tr_method_widget)
 
+        # Proxy — internal state
+        self._proxy_enabled = False
+        self._proxy_type = "SOCKS5"
+        self._proxy_host = ""
+        self._proxy_port = ""
+
+        self.traceroute_proxy_btn = QPushButton("Configure...")
+        self.traceroute_proxy_btn.setFixedWidth(110)
+        self.traceroute_proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.traceroute_proxy_btn.setToolTip("Configure proxy settings for traceroute")
+        self.traceroute_proxy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #333333;
+                border: 1px solid #bdbdbd;
+                border-radius: 4px;
+                padding: 3px 10px;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                background-color: #bdbdbd;
+            }
+        """)
+        self.traceroute_proxy_btn.clicked.connect(self._open_proxy_settings_dialog)
+        config_layout.addRow("Proxy:", self.traceroute_proxy_btn)
+
         # Port input (hidden by default, shown when TCP/UDP selected) with quick presets
         self.traceroute_port_label = QLabel("Port:")
         self.traceroute_port_input = QLineEdit()
@@ -9056,7 +9082,6 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_port_input.setText("80")
         self.traceroute_port_input.setStyleSheet(traceroute_line_edit_style)
 
-        # Common ports quick preset button for traceroute
         _tr_common_ports = [
             ("HTTP (80)", "80"),
             ("HTTPS (443)", "443"),
@@ -9121,129 +9146,62 @@ class SerialTerminalGUI(QMainWindow):
 
         self.traceroute_port_label.setVisible(False)
         _tr_port_widget.setVisible(False)
-        self._tr_port_widget = _tr_port_widget  # Store reference for visibility control
+        self._tr_port_widget = _tr_port_widget
         config_layout.addRow(self.traceroute_port_label, _tr_port_widget)
 
-        # MTR Packets count — slider with value label (hidden until ICMP/MTR selected)
+        # Packets | Interval (MTR) | Max Hops | Timeout — single inline row
         self.mtr_packets_label = QLabel("Packets:")
+        self.mtr_packets_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.mtr_packets_label.setVisible(False)
 
-        _pkt_widget = QWidget()
-        _pkt_layout = QHBoxLayout(_pkt_widget)
-        _pkt_layout.setContentsMargins(0, 0, 0, 0)
-        _pkt_layout.setSpacing(8)
+        self.mtr_packets_combo = QComboBox()
+        self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
+        self.mtr_packets_combo.setCurrentText("10")
+        self.mtr_packets_combo.setFixedWidth(80)
+        self.mtr_packets_combo.setToolTip("Number of packets to send per hop")
+        self.mtr_packets_combo.setVisible(False)
+        self._mtr_pkt_widget = self.mtr_packets_combo
 
-        self.mtr_packets_slider = QSlider(Qt.Orientation.Horizontal)
-        self.mtr_packets_slider.setMinimum(5)
-        self.mtr_packets_slider.setMaximum(200)
-        self.mtr_packets_slider.setValue(10)
-        self.mtr_packets_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.mtr_packets_slider.setTickInterval(50)
-        self.mtr_packets_slider.setToolTip("Number of packets to send per hop (5–200)")
-        self.mtr_packets_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 4px; background: #d0d0d0; border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
-                background: #00BCD4; border: none;
-                width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
-            }
-            QSlider::sub-page:horizontal { background: #00BCD4; border-radius: 2px; }
-        """)
-
-        self._mtr_packets_val_lbl = QLabel("10")
-        self._mtr_packets_val_lbl.setFixedWidth(30)
-        self._mtr_packets_val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._mtr_packets_val_lbl.setStyleSheet("color: #555; font-size: 9pt;")
-
-        self.mtr_packets_slider.valueChanged.connect(
-            lambda v: self._mtr_packets_val_lbl.setText(str(v)))
-
-        _pkt_layout.addWidget(self.mtr_packets_slider)
-        _pkt_layout.addWidget(self._mtr_packets_val_lbl)
-
-        # Keep a combo-compatible interface so existing callers still work
-        class _SliderProxy:
-            def __init__(self, slider): self._s = slider
-            def currentText(self): return str(self._s.value())
-            def setVisible(self, v): pass  # visibility handled via _pkt_widget
-        self.mtr_packets_combo = _SliderProxy(self.mtr_packets_slider)
-
-        _pkt_widget.setVisible(False)
-        self._mtr_pkt_widget = _pkt_widget   # for visibility toggling
-        config_layout.addRow(self.mtr_packets_label, _pkt_widget)
-
-        # Proxy — internal state (not visible widgets in the main form)
-        self._proxy_enabled = False
-        self._proxy_type = "SOCKS5"
-        self._proxy_host = ""
-        self._proxy_port = ""
-
-        # Proxy button
-        self.traceroute_proxy_btn = QPushButton("Configure...")
-        self.traceroute_proxy_btn.setFixedWidth(110)
-        self.traceroute_proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_proxy_btn.setToolTip("Configure proxy settings for traceroute")
-        self.traceroute_proxy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e0e0e0;
-                color: #333333;
-                border: 1px solid #bdbdbd;
-                border-radius: 4px;
-                padding: 3px 10px;
-                font-size: 9pt;
-            }
-            QPushButton:hover {
-                background-color: #bdbdbd;
-            }
-        """)
-        self.traceroute_proxy_btn.clicked.connect(self._open_proxy_settings_dialog)
-        config_layout.addRow("Proxy:", self.traceroute_proxy_btn)
-
-        # Max Hops + Interval + Timeout inline
-        options_inline_widget = QWidget()
-        options_inline_layout = QHBoxLayout()
-        options_inline_layout.setContentsMargins(0, 0, 0, 0)
-        options_inline_layout.setSpacing(6)
-
-        # MTR Interval (hidden by default, shown inline to the left of Max Hops)
         self.mtr_interval_label = QLabel("Interval:")
         self.mtr_interval_label.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.mtr_interval_label.setVisible(False)
         self.mtr_interval_combo = QComboBox()
         self.mtr_interval_combo.addItems(["1s", "2s", "5s"])
         self.mtr_interval_combo.setCurrentText("1s")
         self.mtr_interval_combo.setFixedWidth(75)
         self.mtr_interval_combo.setToolTip("Probe interval between cycles")
-        self.mtr_interval_label.setVisible(False)
         self.mtr_interval_combo.setVisible(False)
 
-        hops_label = QLabel("Max Hops:")
-        hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
-
+        _hops_label = QLabel("Max Hops:")
+        _hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.traceroute_max_hops_combo = QComboBox()
         self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
         self.traceroute_max_hops_combo.setCurrentText("30")
         self.traceroute_max_hops_combo.setFixedWidth(80)
         self.traceroute_max_hops_combo.setToolTip("Maximum number of hops")
 
-        timeout_label = QLabel("Timeout:")
-        timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
-
+        _timeout_label = QLabel("Timeout:")
+        _timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.traceroute_timeout_combo = QComboBox()
         self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
         self.traceroute_timeout_combo.setCurrentText("5s")
         self.traceroute_timeout_combo.setFixedWidth(85)
         self.traceroute_timeout_combo.setToolTip("Timeout per hop")
 
-        options_inline_layout.addWidget(self.mtr_interval_label)
-        options_inline_layout.addWidget(self.mtr_interval_combo)
-        options_inline_layout.addWidget(hops_label)
-        options_inline_layout.addWidget(self.traceroute_max_hops_combo)
-        options_inline_layout.addWidget(timeout_label)
-        options_inline_layout.addWidget(self.traceroute_timeout_combo)
-        options_inline_layout.addStretch()
-        options_inline_widget.setLayout(options_inline_layout)
-        config_layout.addRow("", options_inline_widget)
+        _pkt_row_widget = QWidget()
+        _pkt_row_layout = QHBoxLayout(_pkt_row_widget)
+        _pkt_row_layout.setContentsMargins(0, 0, 0, 0)
+        _pkt_row_layout.setSpacing(6)
+        _pkt_row_layout.addWidget(self.mtr_packets_label)
+        _pkt_row_layout.addWidget(self.mtr_packets_combo)
+        _pkt_row_layout.addWidget(self.mtr_interval_label)
+        _pkt_row_layout.addWidget(self.mtr_interval_combo)
+        _pkt_row_layout.addWidget(_hops_label)
+        _pkt_row_layout.addWidget(self.traceroute_max_hops_combo)
+        _pkt_row_layout.addWidget(_timeout_label)
+        _pkt_row_layout.addWidget(self.traceroute_timeout_combo)
+        _pkt_row_layout.addStretch()
+        config_layout.addRow("", _pkt_row_widget)
 
         config_group.setLayout(config_layout)
         config_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
