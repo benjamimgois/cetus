@@ -262,8 +262,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QSlider, QToolButton, QListWidget, QListWidgetItem
 )
-from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient
+from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
 
 try:
     from PyQt6.QtSvg import QSvgRenderer
@@ -4329,6 +4329,205 @@ class WifiChannelChart(QWidget):
         """Show a hidden SSID in the chart"""
         self._hidden_ssids.discard(ssid)
         self.update()
+
+
+class WifiHeatmapWidget(QWidget):
+    """Scrolling waterfall heatmap — frequency (X) vs time (Y), colour = signal intensity."""
+
+    # 256-entry RGB colormap built once at class level
+    _CMAP: list = []
+
+    @classmethod
+    def _build_cmap(cls):
+        if cls._CMAP:
+            return
+        stops = [  # (index 0-255, r, g, b)
+            (0,    0,   0,  20),   # deep space black
+            (40,   0,   0, 200),   # blue
+            (90,   0, 210, 240),   # cyan
+            (135,  0, 230,  60),   # green
+            (175, 240, 240,   0),  # yellow
+            (215, 255, 100,   0),  # orange
+            (240, 255,  30,  30),  # red
+            (255, 255, 210, 180),  # warm white (avoid pure white)
+        ]
+
+        def _lerp(a, b, t):
+            return int(a + (b - a) * t)
+
+        for i in range(256):
+            lo = hi = stops[0]
+            for j in range(len(stops) - 1):
+                if stops[j][0] <= i <= stops[j + 1][0]:
+                    lo, hi = stops[j], stops[j + 1]
+                    break
+            span = hi[0] - lo[0]
+            t = (i - lo[0]) / span if span > 0 else 0.0
+            cls._CMAP.append((_lerp(lo[1], hi[1], t),
+                               _lerp(lo[2], hi[2], t),
+                               _lerp(lo[3], hi[3], t)))
+
+    # Pixel dimensions of the internal buffer
+    COLS = 300
+    ROWS = 90
+
+    # Column layout for "Both" mode  (must sum to COLS)
+    _B24  = 90    # 2.4 GHz slice
+    _BGAP = 20    # visual gap
+    _B5   = 190   # 5 GHz slice
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.__class__._build_cmap()
+        self._buf = [[0] * self.COLS for _ in range(self.ROWS)]
+        self._band_key = '2.4GHz'
+        self.setFixedHeight(110)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setToolTip("Waterfall heatmap — frequência (X) × tempo (Y) — cores mais quentes = sinal mais forte")
+
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _ch_to_mhz(channel, band):
+        """Return centre frequency in MHz for a (channel, band) pair."""
+        try:
+            ch = int(channel)
+        except (TypeError, ValueError):
+            return None
+        if '2.4' in str(band):
+            return 2484 if ch == 14 else 2407 + 5 * ch
+        return 5000 + 5 * ch  # 5 GHz
+
+    def _mhz_to_col(self, freq):
+        """Map a frequency (MHz) to a pixel column 0‥COLS-1.
+        Frequency ranges match WifiChannelChart exactly for axis alignment."""
+        bk = self._band_key
+        if bk == '2.4GHz':
+            # Chart uses 2400–2500 MHz
+            return max(0, min(self.COLS - 1,
+                              int((freq - 2400) / 100 * self.COLS)))
+        if bk == '5GHz':
+            # Chart uses 5150–5850 MHz
+            return max(0, min(self.COLS - 1,
+                              int((freq - 5150) / 700 * self.COLS)))
+        # Both: chart uses continuous 2400–5900 MHz range
+        return max(0, min(self.COLS - 1,
+                          int((freq - 2400) / 3500 * self.COLS)))
+
+    def _band_ok(self, net_band):
+        bk = self._band_key
+        nb = str(net_band)
+        if bk == 'Both':
+            return True
+        return (bk == '2.4GHz' and '2.4' in nb) or (bk == '5GHz' and '5' in nb and '2.4' not in nb)
+
+    # ── Public API ────────────────────────────────────────────────────
+
+    def set_band(self, band_key):
+        """Update the active band; clear buffer only when the band actually changes."""
+        if band_key == self._band_key:
+            return
+        self._band_key = band_key
+        self._buf = [[0] * self.COLS for _ in range(self.ROWS)]
+        self.update()
+
+    def push_networks(self, networks, band_key):
+        """Ingest one scan snapshot and scroll the waterfall down by one row."""
+        self._band_key = band_key
+        new_row = [0] * self.COLS
+
+        for net in networks:
+            if not self._band_ok(net.get('band', '2.4GHz')):
+                continue
+            center = self._ch_to_mhz(net.get('channel'), net.get('band', '2.4GHz'))
+            if center is None:
+                continue
+            try:
+                bw_half = int(str(net.get('bandwidth', '20')).replace('MHz', '')) / 2
+            except (ValueError, TypeError):
+                bw_half = 10
+            intensity = min(255, int(net.get('signal_pct', 0) * 2.55))
+            c0 = self._mhz_to_col(center - bw_half)
+            c1 = self._mhz_to_col(center + bw_half)
+            for c in range(max(0, c0), min(self.COLS, c1 + 1)):
+                new_row[c] = max(new_row[c], intensity)
+
+        # Scroll: drop oldest (last) row, prepend newest at index 0 (top)
+        self._buf.pop()
+        self._buf.insert(0, new_row)
+        self.update()
+
+    # ── Painting ──────────────────────────────────────────────────────
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        W, H = self.width(), self.height()
+        ML = 44   # left margin — matches WifiChannelChart pad_l for aligned frequency axis
+        MR = 16   # right margin — matches WifiChannelChart pad_r
+        MB = 16   # bottom margin for frequency labels
+        cw = max(1, W - ML - MR)
+        ch = max(1, H - MB - 2)
+
+        # Fill entire widget with dark background (same as chart container #0D1117)
+        painter.fillRect(self.rect(), QColor(13, 17, 23))
+
+        # ── Build QImage from buffer ───────────────────────────────────
+        stride = self.COLS * 3
+        raw = bytearray(self.ROWS * stride)
+        cmap = self._CMAP
+        buf  = self._buf
+        for r in range(self.ROWS):
+            base = r * stride
+            row  = buf[r]
+            for c in range(self.COLS):
+                rv, gv, bv = cmap[row[c]]
+                off = base + c * 3
+                raw[off]     = rv
+                raw[off + 1] = gv
+                raw[off + 2] = bv
+
+        img = QImage(bytes(raw), self.COLS, self.ROWS, stride, QImage.Format.Format_RGB888)
+        painter.drawImage(QRect(ML, 2, cw, ch), img)
+
+        # ── Dashed frequency grid + labels ────────────────────────────
+        bk = self._band_key
+        if bk == '2.4GHz':
+            ticks = [(2412,'1'),(2422,'2'),(2432,'5'),(2437,'6'),
+                     (2452,'9'),(2462,'11'),(2472,'13')]
+        elif bk == '5GHz':
+            ticks = [(5180,'36'),(5220,'44'),(5260,'52'),(5300,'60'),
+                     (5500,'100'),(5580,'116'),(5660,'132'),(5745,'149'),(5825,'165')]
+        else:
+            ticks = [(2412,'1'),(2437,'6'),(2462,'11'),
+                     (5180,'36'),(5500,'100'),(5745,'149')]
+
+        painter.setFont(QFont('Monospace', 6))
+        for freq, lbl in ticks:
+            col = self._mhz_to_col(freq)
+            x   = ML + int(col * cw / self.COLS)
+            painter.setPen(QPen(QColor('#334466'), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(x, 2, x, 2 + ch)
+            painter.setPen(QColor('#6688aa'))
+            painter.drawText(x - 10, 2 + ch + 1, 24, 13,
+                             Qt.AlignmentFlag.AlignHCenter, f'ch{lbl}')
+
+        # ── "Both" band labels ─────────────────────────────────────────
+        if bk == 'Both':
+            # 2500 MHz marks the boundary between 2.4 GHz and 5 GHz regions
+            split_col = self._mhz_to_col(2500)
+            split_x = ML + int(split_col * cw / self.COLS)
+            painter.setPen(QPen(QColor('#334466'), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(split_x, 2, split_x, 2 + ch)
+            painter.setFont(QFont('Sans Serif', 6, QFont.Weight.Bold))
+            painter.setPen(QColor('#556688'))
+            painter.drawText(ML + 3, 4, 50, 11, Qt.AlignmentFlag.AlignLeft, '2.4 GHz')
+            painter.drawText(split_x + 3, 4, 50, 11, Qt.AlignmentFlag.AlignLeft, '5 GHz')
+
+        # ── Border ─────────────────────────────────────────────────────
+        painter.setPen(QPen(QColor('#2A3040'), 1))
+        painter.drawRect(QRect(ML, 2, cw, ch))
+
+        painter.end()
 
 
 class WiFiScanWorker(QThread):
@@ -9694,12 +9893,21 @@ class SerialTerminalGUI(QMainWindow):
         band_cell_layout.addWidget(self.wifi_band_btn_both)
         band_cell_layout.addStretch()
 
+        self.wifi_toggle_heatmap_btn = QPushButton("Heatmap")
+        self.wifi_toggle_heatmap_btn.setCheckable(True)
+        self.wifi_toggle_heatmap_btn.setChecked(True)
+        self.wifi_toggle_heatmap_btn.setFixedHeight(24)
+        self.wifi_toggle_heatmap_btn.setStyleSheet(_toggle_style)
+        self.wifi_toggle_heatmap_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wifi_toggle_heatmap_btn.setToolTip("Show/hide waterfall heatmap")
+
         graphs_cell = QWidget()
         graphs_cell_layout = QHBoxLayout(graphs_cell)
         graphs_cell_layout.setContentsMargins(0, 0, 0, 0)
         graphs_cell_layout.setSpacing(4)
         graphs_cell_layout.addWidget(self.wifi_toggle_channel_btn)
         graphs_cell_layout.addWidget(self.wifi_toggle_history_btn)
+        graphs_cell_layout.addWidget(self.wifi_toggle_heatmap_btn)
         graphs_cell_layout.addStretch()
 
         self.wifi_noise_btn = QPushButton("White Noise")
@@ -9867,6 +10075,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_scanlines_btn.toggled.connect(self.wifi_channel_chart.set_scanlines)
 
         chart_layout.addWidget(self.wifi_channel_chart)
+
+        self.wifi_heatmap = WifiHeatmapWidget()
+        chart_layout.addWidget(self.wifi_heatmap)
+
         chart_group.setLayout(chart_layout)
         chart_group.setStyleSheet("""
             QWidget#channelUsagePanel {
@@ -9932,6 +10144,8 @@ class SerialTerminalGUI(QMainWindow):
             lambda checked: self._wifi_set_chart_visible('channel', checked))
         self.wifi_toggle_history_btn.toggled.connect(
             lambda checked: self._wifi_set_chart_visible('history', checked))
+        self.wifi_toggle_heatmap_btn.toggled.connect(
+            lambda checked: self._wifi_set_chart_visible('heatmap', checked))
 
         # Wire history window slider
         def _on_window_slider(val):
@@ -11175,6 +11389,9 @@ class SerialTerminalGUI(QMainWindow):
         if which == 'channel':
             widget = getattr(self, 'wifi_chart_group', None)
             btn    = getattr(self, 'wifi_toggle_channel_btn', None)
+        elif which == 'heatmap':
+            widget = getattr(self, 'wifi_heatmap', None)
+            btn    = getattr(self, 'wifi_toggle_heatmap_btn', None)
         else:
             widget = getattr(self, 'wifi_signal_history', None)
             btn    = getattr(self, 'wifi_toggle_history_btn', None)
@@ -11332,8 +11549,10 @@ class SerialTerminalGUI(QMainWindow):
                 "color: #2e7d32; font-size: 8pt; padding: 2px 4px;"
             )
 
-        # Update channel chart
+        # Update channel chart and push new row to waterfall heatmap
         self._wifi_update_chart()
+        if hasattr(self, 'wifi_heatmap'):
+            self.wifi_heatmap.push_networks(self._wifi_networks, self._wifi_active_band_key())
 
         # Schedule auto-refresh
         interval_s = int(next((b.text() for b in self._wifi_interval_btns if b.isChecked()), "2s").rstrip('s'))
@@ -11356,17 +11575,23 @@ class SerialTerminalGUI(QMainWindow):
             "color: #c62828; font-size: 8pt; padding: 2px 4px;"
         )
 
+    def _wifi_active_band_key(self):
+        """Return the currently selected band key string."""
+        if self.wifi_band_btn_5.isChecked():
+            return '5GHz'
+        if self.wifi_band_btn_both.isChecked():
+            return 'Both'
+        return '2.4GHz'
+
     def _wifi_update_chart(self):
         """Refresh the channel chart with current scan data."""
         if not hasattr(self, '_wifi_networks'):
             return
-        if self.wifi_band_btn_5.isChecked():
-            band_key = '5GHz'
-        elif self.wifi_band_btn_both.isChecked():
-            band_key = 'Both'
-        else:
-            band_key = '2.4GHz'
+        band_key = self._wifi_active_band_key()
         self.wifi_channel_chart.set_networks(self._wifi_networks, band_key)
+        # Sync heatmap band (clears buffer only if band actually changed)
+        if hasattr(self, 'wifi_heatmap'):
+            self.wifi_heatmap.set_band(band_key)
 
     def _wifi_update_table(self):
         """Rebuild the results table from _wifi_networks filtered by the active band button."""
