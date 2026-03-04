@@ -3611,6 +3611,7 @@ class WifiChannelChart(QWidget):
         # Best-channel tooltip state (populated during paintEvent)
         self._best_ch_info       = None   # (channel, reason_str, ch_load_dict)
         self._best_ch_badge_rect = None   # QRectF of the badge for hit testing
+        self._frozen_best_ch_info = None  # set after survey finishes; overrides live computation
 
         # White noise generator — enabled by default
         self._noise_enabled = True
@@ -3941,6 +3942,31 @@ class WifiChannelChart(QWidget):
                              Qt.AlignmentFlag.AlignRight, f'Noise Floor ({noise_floor} dBm)')
             painter.setFont(font_mono)
 
+        # ── DFS Channel Shading (5GHz only) ──────────────────────────────
+        # Two contiguous DFS ranges: ch52-64 (5250–5330 MHz) and ch100-140 (5490–5710 MHz)
+        if self.band in ('5GHz',) and not show_both_bands:
+            _dfs_ranges = [(5250, 5330), (5490, 5710)]
+            for _df_lo, _df_hi in _dfs_ranges:
+                _dx1 = self._freq_to_x(_df_lo, freq_min, freq_max, chart_w, pad_l)
+                _dx2 = self._freq_to_x(_df_hi, freq_min, freq_max, chart_w, pad_l)
+                # Translucent amber fill
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(255, 160, 0, 22))
+                painter.drawRect(int(_dx1), pad_t, int(_dx2 - _dx1), chart_h)
+                # Top border line
+                _dfs_pen = QPen(QColor(255, 160, 0, 80))
+                _dfs_pen.setWidth(1)
+                _dfs_pen.setStyle(Qt.PenStyle.DotLine)
+                painter.setPen(_dfs_pen)
+                painter.drawLine(int(_dx1), pad_t, int(_dx1), pad_t + chart_h)
+                painter.drawLine(int(_dx2), pad_t, int(_dx2), pad_t + chart_h)
+                # "DFS" label at top-centre of the region
+                painter.setPen(QColor(255, 160, 0, 140))
+                painter.setFont(QFont('Sans Serif', 7, QFont.Weight.Bold))
+                painter.drawText(int(_dx1), pad_t + 2, int(_dx2 - _dx1), 12,
+                                 Qt.AlignmentFlag.AlignCenter, 'DFS')
+            painter.setFont(font_mono)
+
         # ── Gaussian Curves for each network (grouped by BSSID) ──────────
 
         # Sort weakest first so strongest signals render on top
@@ -3963,67 +3989,74 @@ class WifiChannelChart(QWidget):
                 _c = _n.get('channel')
                 if _c is not None:
                     _ch_load[_c] = _ch_load.get(_c, 0) + _n.get('signal_pct', 0)
-            # Find candidate channels for this band (non-overlapping preferred)
-            _best_reason = ''
-            if self.band == '2.4GHz':
-                _preferred = [1, 6, 11, 13]
-                _candidates = [c for c in _preferred if c not in _ch_load]
-                if _candidates:
-                    _best_ch = min(_candidates, key=lambda c: abs(c - 7))
-                    _best_reason = (
-                        f"Non-overlapping channel with no detected networks.\n"
-                        f"Preferred non-overlapping channels: 1, 6, 11, 13.\n"
-                        f"Ch {_best_ch} is the quietest among them."
-                    )
-                else:
-                    _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
-                    _best_reason = (
-                        f"All non-overlapping channels are occupied.\n"
-                        f"Ch {_best_ch} has the lowest cumulative interference "
-                        f"({int(_ch_load.get(_best_ch, 0))}%)."
-                    )
+            # If a frozen survey result exists, use it instead of live computation
+            if self._frozen_best_ch_info:
+                _best_ch, _best_reason, _frozen_load = self._frozen_best_ch_info
+                self._best_ch_info = (_best_ch, _best_reason, _frozen_load)
+                _best_freq = self._channel_to_freq(_best_ch)
+                _best_ch_x = self._freq_to_x(_best_freq, freq_min, freq_max, chart_w, pad_l)
             else:
-                _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
-                _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
-                            120, 124, 128, 132, 136, 140]
-                _empty_nondfs = [c for c in _non_dfs if c not in _ch_load]
-                _empty_dfs    = [c for c in _dfs    if c not in _ch_load]
-                if _empty_nondfs:
-                    _best_ch = min(_empty_nondfs,
-                                   key=lambda c: sum(_ch_load.get(n, 0)
-                                                     for n in _non_dfs
-                                                     if abs(n - c) <= 8))
-                    _nb_load = sum(_ch_load.get(n, 0) for n in _non_dfs
-                                   if abs(n - _best_ch) <= 8 and n != _best_ch)
-                    _best_reason = (
-                        f"No networks detected on ch {_best_ch}.\n"
-                        f"Non-DFS channel — no radar avoidance required.\n"
-                        f"Neighbour interference score: {int(_nb_load)}%."
-                    )
-                elif _empty_dfs:
-                    _best_ch = min(_empty_dfs,
-                                   key=lambda c: sum(_ch_load.get(n, 0)
-                                                     for n in channels
-                                                     if abs(n - c) <= 8))
-                    _nb_load = sum(_ch_load.get(n, 0) for n in channels
-                                   if abs(n - _best_ch) <= 8 and n != _best_ch)
-                    _best_reason = (
-                        f"No networks detected on ch {_best_ch}.\n"
-                        f"DFS channel — radar avoidance may be required.\n"
-                        f"All non-DFS channels are occupied.\n"
-                        f"Neighbour interference score: {int(_nb_load)}%."
-                    )
+                # Find candidate channels for this band (non-overlapping preferred)
+                _best_reason = ''
+                if self.band == '2.4GHz':
+                    _preferred = [1, 6, 11, 13]
+                    _candidates = [c for c in _preferred if c not in _ch_load]
+                    if _candidates:
+                        _best_ch = min(_candidates, key=lambda c: abs(c - 7))
+                        _best_reason = (
+                            f"Non-overlapping channel with no detected networks.\n"
+                            f"Preferred non-overlapping channels: 1, 6, 11, 13.\n"
+                            f"Ch {_best_ch} is the quietest among them."
+                        )
+                    else:
+                        _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
+                        _best_reason = (
+                            f"All non-overlapping channels are occupied.\n"
+                            f"Ch {_best_ch} has the lowest cumulative interference "
+                            f"({int(_ch_load.get(_best_ch, 0))}%)."
+                        )
                 else:
-                    _best_ch = min(_non_dfs, key=lambda c: _ch_load.get(c, 0))
-                    _best_reason = (
-                        f"All channels are occupied.\n"
-                        f"Ch {_best_ch} has the lowest cumulative load "
-                        f"({int(_ch_load.get(_best_ch, 0))}%) among non-DFS channels."
-                    )
-            # Store for tooltip (mouseMoveEvent reads these)
-            self._best_ch_info = (_best_ch, _best_reason, dict(_ch_load))
-            _best_freq = self._channel_to_freq(_best_ch)
-            _best_ch_x = self._freq_to_x(_best_freq, freq_min, freq_max, chart_w, pad_l)
+                    _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
+                    _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
+                                120, 124, 128, 132, 136, 140]
+                    _empty_nondfs = [c for c in _non_dfs if c not in _ch_load]
+                    _empty_dfs    = [c for c in _dfs    if c not in _ch_load]
+                    if _empty_nondfs:
+                        _best_ch = min(_empty_nondfs,
+                                       key=lambda c: sum(_ch_load.get(n, 0)
+                                                         for n in _non_dfs
+                                                         if abs(n - c) <= 8))
+                        _nb_load = sum(_ch_load.get(n, 0) for n in _non_dfs
+                                       if abs(n - _best_ch) <= 8 and n != _best_ch)
+                        _best_reason = (
+                            f"No networks detected on ch {_best_ch}.\n"
+                            f"Non-DFS channel — no radar avoidance required.\n"
+                            f"Neighbour interference score: {int(_nb_load)}%."
+                        )
+                    elif _empty_dfs:
+                        _best_ch = min(_empty_dfs,
+                                       key=lambda c: sum(_ch_load.get(n, 0)
+                                                         for n in channels
+                                                         if abs(n - c) <= 8))
+                        _nb_load = sum(_ch_load.get(n, 0) for n in channels
+                                       if abs(n - _best_ch) <= 8 and n != _best_ch)
+                        _best_reason = (
+                            f"No networks detected on ch {_best_ch}.\n"
+                            f"DFS channel — radar avoidance may be required.\n"
+                            f"All non-DFS channels are occupied.\n"
+                            f"Neighbour interference score: {int(_nb_load)}%."
+                        )
+                    else:
+                        _best_ch = min(_non_dfs, key=lambda c: _ch_load.get(c, 0))
+                        _best_reason = (
+                            f"All channels are occupied.\n"
+                            f"Ch {_best_ch} has the lowest cumulative load "
+                            f"({int(_ch_load.get(_best_ch, 0))}%) among non-DFS channels."
+                        )
+                # Store for tooltip (mouseMoveEvent reads these)
+                self._best_ch_info = (_best_ch, _best_reason, dict(_ch_load))
+                _best_freq = self._channel_to_freq(_best_ch)
+                _best_ch_x = self._freq_to_x(_best_freq, freq_min, freq_max, chart_w, pad_l)
 
         # ── Draw Best Channel background highlight ────────────────────────
         if _best_ch_x is not None:
@@ -4283,7 +4316,8 @@ class WifiChannelChart(QWidget):
 
         # ── Best Channel badge (drawn on top of everything) ───────────────
         if _best_ch_x is not None:
-            _badge_text = f'★ Best Ch: {_best_ch}'
+            _badge_text = (f'★ Survey: Ch {_best_ch}' if self._frozen_best_ch_info
+                           else f'★ Best Ch: {_best_ch}')
             painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
             _bfm = painter.fontMetrics()
             _bw = _bfm.horizontalAdvance(_badge_text) + 10
@@ -10276,6 +10310,10 @@ class SerialTerminalGUI(QMainWindow):
 
         # Auto-refresh timer
         self._wifi_timer = None
+        # Survey state
+        self._wifi_survey_start    = None   # monotonic timestamp when survey started
+        self._wifi_survey_ch_load  = {}     # accumulated channel loads across all scans
+        self._wifi_elapsed_timer   = None   # QTimer that updates the button text every second
 
         # Populate interfaces on creation
         self._wifi_refresh_interfaces()
@@ -11280,37 +11318,43 @@ class SerialTerminalGUI(QMainWindow):
             except Exception:
                 pass
 
-    def _start_wifi_scan(self):
-        """Start or stop a WiFi scan."""
-        # Stop auto-refresh timer if running
+    def _start_wifi_scan(self, _auto=False):
+        """Start a WiFi scan. If called by the user (not auto-refresh) while a survey
+        is active, finish the survey instead."""
+        import time as _time
+
+        # User-initiated click during an active survey → finish it
+        if not _auto and self._wifi_survey_start is not None:
+            self._wifi_finish_survey()
+            return
+
+        # Stop any lingering auto-refresh timer
         if self._wifi_timer and self._wifi_timer.isActive():
             self._wifi_timer.stop()
-
-        # If a scan is already running, stop it
-        if hasattr(self, '_wifi_worker') and self._wifi_worker and self._wifi_worker.isRunning():
-            self._wifi_worker.stop()
-            self.wifi_scan_btn.setText("SCAN")
-            self.wifi_scan_btn.setStyleSheet("""
-                QPushButton { background-color: #E91E63; color: #ffffff; border: none;
-                              border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
-                QPushButton:hover { background-color: #C2185B; }
-            """)
-            return
 
         iface = self.wifi_iface_combo.currentText()
         if iface == "(auto)":
             iface = ''
 
-        self.wifi_scan_btn.setText("Scanning...")
-        self.wifi_scan_btn.setStyleSheet("""
-            QPushButton { background-color: #757575; color: #ffffff; border: none;
-                          border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
-            QPushButton:hover { background-color: #616161; }
-        """)
+        # First scan of a new survey — initialise state
+        if self._wifi_survey_start is None:
+            self._wifi_survey_start   = _time.monotonic()
+            self._wifi_survey_ch_load = {}
+            self.wifi_channel_chart._frozen_best_ch_info = None
+
+            # Start elapsed-time ticker on the button (updates every second)
+            if self._wifi_elapsed_timer is None:
+                from PyQt6.QtCore import QTimer
+                self._wifi_elapsed_timer = QTimer(self)
+                self._wifi_elapsed_timer.setInterval(1000)
+                self._wifi_elapsed_timer.timeout.connect(self._wifi_update_elapsed_btn)
+            self._wifi_elapsed_timer.start()
+            self._wifi_update_elapsed_btn()  # immediate first update
+
         self.wifi_status_label.setText("Scanning for networks...")
         self.wifi_status_label.setStyleSheet("color: #1565c0; font-size: 8pt; padding: 2px 4px;")
         self.wifi_export_btn.setEnabled(False)
-        self._wifi_new_networks = []  # buffer; table is NOT cleared yet
+        self._wifi_new_networks = []
 
         self._wifi_worker = WiFiScanWorker(iface)
         self._wifi_worker.network_found.connect(self._on_wifi_network_found)
@@ -11596,14 +11640,24 @@ class SerialTerminalGUI(QMainWindow):
             h = self._wifi_signal_history.get(sel_bssid, {})
             self.wifi_signal_history.set_network(sel_bssid, h.get('ssid', ''), h.get('points', []))
 
+        # Accumulate per-channel loads across the whole survey period
+        for _n in self._wifi_new_networks:
+            _c = _n.get('channel')
+            if _c is not None:
+                self._wifi_survey_ch_load[_c] = (
+                    self._wifi_survey_ch_load.get(_c, 0) + _n.get('signal_pct', 0)
+                )
+
         self._wifi_networks = list(self._wifi_new_networks)
         self._wifi_update_table()
-        self.wifi_scan_btn.setText("SCAN")
-        self.wifi_scan_btn.setStyleSheet("""
-            QPushButton { background-color: #E91E63; color: #ffffff; border: none;
-                          border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
-            QPushButton:hover { background-color: #C2185B; }
-        """)
+        # Button stays as "Finish Survey  X:XX" during an active survey
+        if self._wifi_survey_start is None:
+            self.wifi_scan_btn.setText("SCAN")
+            self.wifi_scan_btn.setStyleSheet("""
+                QPushButton { background-color: #E91E63; color: #ffffff; border: none;
+                              border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
+                QPushButton:hover { background-color: #C2185B; }
+            """)
         self.wifi_export_btn.setEnabled(total > 0)
 
         visible = self.wifi_table.rowCount()
@@ -11634,11 +11688,14 @@ class SerialTerminalGUI(QMainWindow):
         if self._wifi_timer is None:
             from PyQt6.QtCore import QTimer
             self._wifi_timer = QTimer(self)
-            self._wifi_timer.timeout.connect(self._start_wifi_scan)
+            self._wifi_timer.timeout.connect(lambda: self._start_wifi_scan(_auto=True))
         self._wifi_timer.start(interval_s * 1000)
 
     def _on_wifi_scan_error(self, msg):
         """Handle scan error."""
+        self._wifi_survey_start = None  # abort survey on error
+        if self._wifi_elapsed_timer:
+            self._wifi_elapsed_timer.stop()
         self.wifi_scan_btn.setText("SCAN")
         self.wifi_scan_btn.setStyleSheet("""
             QPushButton { background-color: #E91E63; color: #ffffff; border: none;
@@ -11649,6 +11706,115 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_status_label.setStyleSheet(
             "color: #c62828; font-size: 8pt; padding: 2px 4px;"
         )
+
+    _SCAN_BTN_STYLE = """
+        QPushButton { background-color: #E91E63; color: #ffffff; border: none;
+                      border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
+        QPushButton:hover { background-color: #C2185B; }
+    """
+
+    def _wifi_update_elapsed_btn(self):
+        """Update the SCAN button text to show elapsed survey time."""
+        import time as _time
+        if self._wifi_survey_start is None:
+            return
+        elapsed = int(_time.monotonic() - self._wifi_survey_start)
+        m, s = divmod(elapsed, 60)
+        self.wifi_scan_btn.setText(f"Finish Survey  {m}:{s:02d}")
+        self.wifi_scan_btn.setStyleSheet("""
+            QPushButton { background-color: #F57C00; color: #ffffff; border: none;
+                          border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
+            QPushButton:hover { background-color: #E65100; }
+        """)
+
+    def _wifi_finish_survey(self):
+        """Stop the survey and freeze the best channel computed from accumulated data."""
+        # Stop timers and worker
+        if self._wifi_elapsed_timer:
+            self._wifi_elapsed_timer.stop()
+        if self._wifi_timer and self._wifi_timer.isActive():
+            self._wifi_timer.stop()
+        if hasattr(self, '_wifi_worker') and self._wifi_worker and self._wifi_worker.isRunning():
+            self._wifi_worker.stop()
+
+        # Compute best channel from accumulated survey data
+        ch_load = dict(self._wifi_survey_ch_load)
+        band = self._wifi_active_band_key()
+        _best_ch = None
+        _best_reason = ''
+        if ch_load:
+            if band == '2.4GHz':
+                _preferred  = [1, 6, 11, 13]
+                _candidates = [c for c in _preferred if c not in ch_load]
+                if _candidates:
+                    _best_ch = min(_candidates, key=lambda c: abs(c - 7))
+                    _best_reason = (
+                        f"Non-overlapping channel with no networks detected\n"
+                        f"over the entire survey period.\n"
+                        f"Preferred: 1, 6, 11, 13. Ch {_best_ch} is quietest."
+                    )
+                else:
+                    _best_ch = min(ch_load, key=lambda c: ch_load.get(c, 0))
+                    _best_reason = (
+                        f"All non-overlapping channels were active.\n"
+                        f"Ch {_best_ch} had the lowest cumulative load "
+                        f"({int(ch_load.get(_best_ch, 0))}) over the survey."
+                    )
+            else:
+                _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
+                _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
+                            120, 124, 128, 132, 136, 140]
+                _empty_nondfs = [c for c in _non_dfs if c not in ch_load]
+                _empty_dfs    = [c for c in _dfs    if c not in ch_load]
+                if _empty_nondfs:
+                    _best_ch = min(_empty_nondfs,
+                                   key=lambda c: sum(ch_load.get(n, 0)
+                                                     for n in _non_dfs
+                                                     if abs(n - c) <= 8))
+                    _nb = sum(ch_load.get(n, 0) for n in _non_dfs
+                              if abs(n - _best_ch) <= 8 and n != _best_ch)
+                    _best_reason = (
+                        f"No networks on ch {_best_ch} during the entire survey.\n"
+                        f"Non-DFS — no radar avoidance required.\n"
+                        f"Neighbour load over survey: {int(_nb)}."
+                    )
+                elif _empty_dfs:
+                    _best_ch = min(_empty_dfs,
+                                   key=lambda c: sum(ch_load.get(n, 0)
+                                                     for n in list(ch_load)
+                                                     if abs(n - c) <= 8))
+                    _nb = sum(ch_load.get(n, 0) for n in list(ch_load)
+                              if abs(n - _best_ch) <= 8 and n != _best_ch)
+                    _best_reason = (
+                        f"No networks on ch {_best_ch} during the entire survey.\n"
+                        f"DFS channel — radar avoidance may be required.\n"
+                        f"All non-DFS channels were occupied.\n"
+                        f"Neighbour load over survey: {int(_nb)}."
+                    )
+                else:
+                    _best_ch = min(_non_dfs, key=lambda c: ch_load.get(c, 0))
+                    _best_reason = (
+                        f"All channels active during survey.\n"
+                        f"Ch {_best_ch} had the lowest cumulative load "
+                        f"({int(ch_load.get(_best_ch, 0))}) among non-DFS channels."
+                    )
+
+        # Freeze result in chart
+        if _best_ch is not None:
+            self.wifi_channel_chart._frozen_best_ch_info = (_best_ch, _best_reason, ch_load)
+            self.wifi_channel_chart.update()
+            self.wifi_status_label.setText(
+                f"Survey complete — recommended channel: {_best_ch}"
+            )
+            self.wifi_status_label.setStyleSheet(
+                "color: #e65100; font-style: italic; font-size: 8pt; padding: 2px 4px;"
+            )
+
+        # Reset survey state and button
+        self._wifi_survey_start   = None
+        self._wifi_survey_ch_load = {}
+        self.wifi_scan_btn.setText("SCAN")
+        self.wifi_scan_btn.setStyleSheet(self._SCAN_BTN_STYLE)
 
     def _wifi_active_band_key(self):
         """Return the currently selected band key string."""
