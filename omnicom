@@ -3608,6 +3608,10 @@ class WifiChannelChart(QWidget):
         self._ssid_curves = {}  # ssid_bssid → curve info for hit detection
         self._hidden_ssids = set()  # Set of hidden SSIDs
 
+        # Best-channel tooltip state (populated during paintEvent)
+        self._best_ch_info       = None   # (channel, reason_str, ch_load_dict)
+        self._best_ch_badge_rect = None   # QRectF of the badge for hit testing
+
         # White noise generator — enabled by default
         self._noise_enabled = True
         self._noise_cache   = None  # invalidated when band changes or noise toggled
@@ -3960,17 +3964,64 @@ class WifiChannelChart(QWidget):
                 if _c is not None:
                     _ch_load[_c] = _ch_load.get(_c, 0) + _n.get('signal_pct', 0)
             # Find candidate channels for this band (non-overlapping preferred)
+            _best_reason = ''
             if self.band == '2.4GHz':
-                # Prefer non-overlapping: 1, 6, 11 (EU also 13)
                 _preferred = [1, 6, 11, 13]
                 _candidates = [c for c in _preferred if c not in _ch_load]
                 if _candidates:
-                    # Pick the candidate with center-most freq (6 or 11)
                     _best_ch = min(_candidates, key=lambda c: abs(c - 7))
+                    _best_reason = (
+                        f"Non-overlapping channel with no detected networks.\n"
+                        f"Preferred non-overlapping channels: 1, 6, 11, 13.\n"
+                        f"Ch {_best_ch} is the quietest among them."
+                    )
                 else:
                     _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
+                    _best_reason = (
+                        f"All non-overlapping channels are occupied.\n"
+                        f"Ch {_best_ch} has the lowest cumulative interference "
+                        f"({int(_ch_load.get(_best_ch, 0))}%)."
+                    )
             else:
-                _best_ch = min(channels, key=lambda c: _ch_load.get(c, 0))
+                _non_dfs = [36, 40, 44, 48, 149, 153, 157, 161, 165]
+                _dfs     = [52, 56, 60, 64, 100, 104, 108, 112, 116,
+                            120, 124, 128, 132, 136, 140]
+                _empty_nondfs = [c for c in _non_dfs if c not in _ch_load]
+                _empty_dfs    = [c for c in _dfs    if c not in _ch_load]
+                if _empty_nondfs:
+                    _best_ch = min(_empty_nondfs,
+                                   key=lambda c: sum(_ch_load.get(n, 0)
+                                                     for n in _non_dfs
+                                                     if abs(n - c) <= 8))
+                    _nb_load = sum(_ch_load.get(n, 0) for n in _non_dfs
+                                   if abs(n - _best_ch) <= 8 and n != _best_ch)
+                    _best_reason = (
+                        f"No networks detected on ch {_best_ch}.\n"
+                        f"Non-DFS channel — no radar avoidance required.\n"
+                        f"Neighbour interference score: {int(_nb_load)}%."
+                    )
+                elif _empty_dfs:
+                    _best_ch = min(_empty_dfs,
+                                   key=lambda c: sum(_ch_load.get(n, 0)
+                                                     for n in channels
+                                                     if abs(n - c) <= 8))
+                    _nb_load = sum(_ch_load.get(n, 0) for n in channels
+                                   if abs(n - _best_ch) <= 8 and n != _best_ch)
+                    _best_reason = (
+                        f"No networks detected on ch {_best_ch}.\n"
+                        f"DFS channel — radar avoidance may be required.\n"
+                        f"All non-DFS channels are occupied.\n"
+                        f"Neighbour interference score: {int(_nb_load)}%."
+                    )
+                else:
+                    _best_ch = min(_non_dfs, key=lambda c: _ch_load.get(c, 0))
+                    _best_reason = (
+                        f"All channels are occupied.\n"
+                        f"Ch {_best_ch} has the lowest cumulative load "
+                        f"({int(_ch_load.get(_best_ch, 0))}%) among non-DFS channels."
+                    )
+            # Store for tooltip (mouseMoveEvent reads these)
+            self._best_ch_info = (_best_ch, _best_reason, dict(_ch_load))
             _best_freq = self._channel_to_freq(_best_ch)
             _best_ch_x = self._freq_to_x(_best_freq, freq_min, freq_max, chart_w, pad_l)
 
@@ -4239,15 +4290,19 @@ class WifiChannelChart(QWidget):
             _bh = _bfm.height() + 4
             _bx = int(_best_ch_x - _bw / 2)
             _by = pad_t + 2
+            # Store badge rect for hover hit-testing
+            self._best_ch_badge_rect = QRectF(_bx, _by, _bw, _bh)
             # Badge background
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(0, 180, 90, 200))
-            painter.drawRoundedRect(QRectF(_bx, _by, _bw, _bh), 4, 4)
+            painter.drawRoundedRect(self._best_ch_badge_rect, 4, 4)
             # Badge text
             painter.setPen(QColor(255, 255, 255, 230))
             painter.setFont(QFont('Sans Serif', 8, QFont.Weight.Bold))
             painter.drawText(int(_bx), int(_by), int(_bw), int(_bh),
                              Qt.AlignmentFlag.AlignCenter, _badge_text)
+        else:
+            self._best_ch_badge_rect = None
 
         # ── CRT Scanlines overlay (drawn last, on top of everything) ────────
         if self._scanlines_enabled:
@@ -4270,15 +4325,33 @@ class WifiChannelChart(QWidget):
         from PyQt6.QtCore import QPointF
         mouse_pos = event.position()
         mx, my = mouse_pos.x(), mouse_pos.y()
+        mp = QPointF(mx, my)
 
-        # Check if mouse is over any curve
+        # ── Best-channel badge hover ───────────────────────────────────────
+        _badge = getattr(self, '_best_ch_badge_rect', None)
+        if _badge and _badge.contains(mp):
+            info = getattr(self, '_best_ch_info', None)
+            if info:
+                _ch, _reason, _load = info
+                _top = sorted(_load.items(), key=lambda x: -x[1])[:5]
+                _top_str = '  '.join(f'ch{c}: {int(v)}%' for c, v in _top)
+                tip = (
+                    f"Best Channel: {_ch}\n"
+                    f"─────────────────────────\n"
+                    f"{_reason}\n"
+                    f"─────────────────────────\n"
+                    f"Top loaded channels:\n  {_top_str}"
+                )
+                self.setToolTip(tip)
+            return
+
+        # ── Network curve hover ───────────────────────────────────────────
         old_hovered = self._hovered_ssid
         self._hovered_ssid = None
 
-        for curve_key, curve_info in self._ssid_curves.items():
+        for curve_info in self._ssid_curves.values():
             path = curve_info['path']
-            # Check if mouse is inside the curve path
-            if path.contains(QPointF(mx, my)):
+            if path.contains(mp):
                 ssid   = curve_info['ssid']
                 bssid  = curve_info['bssid']
                 ch     = curve_info.get('channel', '?')
@@ -4295,11 +4368,9 @@ class WifiChannelChart(QWidget):
                 self.setToolTip(tooltip_text)
                 break
 
-        # Clear tooltip if not hovering any curve
         if self._hovered_ssid is None:
             self.setToolTip("")
 
-        # Redraw if hover state changed
         if old_hovered != self._hovered_ssid:
             self.update()
 
