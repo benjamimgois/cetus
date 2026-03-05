@@ -5,9 +5,10 @@
 set -e
 
 VERSION="1.5"
+RELEASE="3"
 PKGNAME="omnicom"
 ARCH="all"
-BUILD_DIR="build-deb/${PKGNAME}_${VERSION}-1_${ARCH}"
+BUILD_DIR="build-deb/${PKGNAME}_${VERSION}-${RELEASE}_${ARCH}"
 
 echo "=== Omnicom Manual Debian Package Builder ==="
 echo "Version: ${VERSION}"
@@ -72,12 +73,12 @@ cp README.md "${BUILD_DIR}/usr/share/doc/omnicom/"
 echo "Generating control file..."
 cat > "${BUILD_DIR}/DEBIAN/control" <<EOF
 Package: ${PKGNAME}
-Version: ${VERSION}-1
+Version: ${VERSION}-${RELEASE}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: Benjamim Gois <benjamimgois@example.com>
-Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, mtr | mtr-tiny
+Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, mtr | mtr-tiny, snmp, iw, network-manager, traceroute, whois
 Description: Modern graphical interface for serial communication
  Omnicom is a modern and elegant graphical interface for serial
  communication via picocom, with support for SSH and Telnet connections.
@@ -101,4 +102,4 @@ dpkg-deb --build "${BUILD_DIR}"
 
 echo ""
 echo "=== Package build complete! ==="
-echo "Output: build-deb/${PKGNAME}_${VERSION}-1_${ARCH}.deb"
+echo "Output: build-deb/${PKGNAME}_${VERSION}-${RELEASE}_${ARCH}.deb"

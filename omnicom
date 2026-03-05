@@ -2071,12 +2071,16 @@ class ConnectionWorker(QThread):
                 if self.key_path:
                     ssh_client.connect(
                         self.host, int(self.port), self.username,
-                        key_filename=self.key_path, timeout=10
+                        key_filename=self.key_path,
+                        timeout=10, banner_timeout=15, auth_timeout=15,
+                        allow_agent=False, look_for_keys=False
                     )
                 else:
                     ssh_client.connect(
                         self.host, int(self.port), self.username,
-                        password=self.password, timeout=10
+                        password=self.password,
+                        timeout=10, banner_timeout=15, auth_timeout=15,
+                        allow_agent=False, look_for_keys=False
                     )
                 
                 # Open interactive shell
@@ -3752,6 +3756,10 @@ class WifiChannelChart(QWidget):
         self._frozen_best_ch_info = None  # set after survey finishes; overrides live computation
         self._avoid_dfs = True            # when True, DFS channels are excluded from best-ch selection
 
+        # Measured noise floors (updated after each scan via iw survey dump)
+        self._noise_floor_24 = -95   # 2.4 GHz default dBm
+        self._noise_floor_5  = -92   # 5 GHz default dBm
+
         # White noise generator — enabled by default
         self._noise_enabled = True
         self._noise_cache   = None  # invalidated when band changes or noise toggled
@@ -3868,6 +3876,14 @@ class WifiChannelChart(QWidget):
 
     # ── White noise ───────────────────────────────────────────────────────────
 
+    def set_noise_floors(self, noise_24, noise_5):
+        """Update measured noise floors and redraw. None values keep current defaults."""
+        if noise_24 is not None:
+            self._noise_floor_24 = noise_24
+        if noise_5 is not None:
+            self._noise_floor_5 = noise_5
+        self.update()
+
     def set_noise(self, enabled: bool):
         """Enable or disable the animated white-noise overlay."""
         self._noise_enabled = enabled
@@ -3951,13 +3967,13 @@ class WifiChannelChart(QWidget):
         # Frequency ranges for selected band
         if self.band == '2.4GHz':
             freq_min, freq_max = 2400, 2500  # MHz
-            noise_floor = -95  # 2.4GHz noise floor
+            noise_floor = self._noise_floor_24
             # Channels for reference
             channels = list(range(1, 14))
             show_both_bands = False
         elif self.band == '5GHz':
             freq_min, freq_max = 5150, 5850  # MHz
-            noise_floor = -92  # 5GHz noise floor
+            noise_floor = self._noise_floor_5
             # Channels for reference
             channels = [36, 40, 44, 48, 52, 56, 60, 64,
                         100, 104, 108, 112, 116, 120, 124, 128,
@@ -3965,7 +3981,7 @@ class WifiChannelChart(QWidget):
             show_both_bands = False
         else:  # Both bands
             freq_min, freq_max = 2400, 5900  # MHz - full range
-            noise_floor = -95  # Use 2.4GHz noise floor (more conservative)
+            noise_floor = self._noise_floor_24  # reference for single-floor fallback
             channels = []  # Will be handled differently
             show_both_bands = True
 
@@ -4044,8 +4060,8 @@ class WifiChannelChart(QWidget):
         # ── Noise Floor ──────────────────────────────────────────────────
         if show_both_bands:
             # Draw two noise floors for both bands
-            # 2.4GHz noise floor (-95 dBm) in left region
-            noise_24_y = self._dbm_to_y(-95, chart_h, pad_t, dbm_min, dbm_max)
+            # 2.4GHz noise floor in left region
+            noise_24_y = self._dbm_to_y(self._noise_floor_24, chart_h, pad_t, dbm_min, dbm_max)
             freq_24_end = self._freq_to_x(2500, freq_min, freq_max, chart_w, pad_l)
             noise_pen = QPen(QColor('#FF6B6B'))
             noise_pen.setWidth(2)
@@ -4053,8 +4069,8 @@ class WifiChannelChart(QWidget):
             painter.setPen(noise_pen)
             painter.drawLine(pad_l, noise_24_y, freq_24_end, noise_24_y)
 
-            # 5GHz noise floor (-92 dBm) in right region
-            noise_5_y = self._dbm_to_y(-92, chart_h, pad_t, dbm_min, dbm_max)
+            # 5GHz noise floor in right region
+            noise_5_y = self._dbm_to_y(self._noise_floor_5, chart_h, pad_t, dbm_min, dbm_max)
             freq_5_start = self._freq_to_x(5150, freq_min, freq_max, chart_w, pad_l)
             painter.drawLine(freq_5_start, noise_5_y, W - pad_r, noise_5_y)
 
@@ -4062,9 +4078,9 @@ class WifiChannelChart(QWidget):
             painter.setPen(QColor('#FF6B6B'))
             painter.setFont(QFont('Sans Serif', 7))
             painter.drawText(pad_l + 5, noise_24_y - 12, 80, 10,
-                            Qt.AlignmentFlag.AlignLeft, '2.4G Floor (-95)')
+                            Qt.AlignmentFlag.AlignLeft, f'2.4G Floor ({self._noise_floor_24})')
             painter.drawText(W - pad_r - 80, noise_5_y - 12, 75, 10,
-                            Qt.AlignmentFlag.AlignRight, '5G Floor (-92)')
+                            Qt.AlignmentFlag.AlignRight, f'5G Floor ({self._noise_floor_5})')
             painter.setFont(font_mono)
         else:
             # Single noise floor
@@ -4813,9 +4829,10 @@ class WifiHeatmapWidget(QWidget):
 class WiFiScanWorker(QThread):
     """Worker thread that scans for WiFi networks using nmcli."""
 
-    network_found  = pyqtSignal(dict)   # one network per emission
-    scan_finished  = pyqtSignal(int)    # total count
-    scan_error     = pyqtSignal(str)
+    network_found      = pyqtSignal(dict)        # one network per emission
+    scan_finished      = pyqtSignal(int)         # total count
+    scan_error         = pyqtSignal(str)
+    noise_floors_ready = pyqtSignal(object, object)  # (noise_24_or_None, noise_5_or_None)
 
     def __init__(self, interface=''):
         super().__init__()
@@ -4835,6 +4852,43 @@ class WiFiScanWorker(QThread):
             self.scan_finished.emit(len(networks))
         except Exception as e:
             self.scan_error.emit(str(e))
+
+    @staticmethod
+    def _resolve_interface(interface):
+        """Return the given interface or auto-detect the first wireless interface."""
+        import subprocess, re
+        if interface:
+            return interface
+        try:
+            r = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=3)
+            ifaces = re.findall(r'Interface\s+(\S+)', r.stdout)
+            return next((i for i in ifaces
+                         if re.match(r'wl', i) and 'p2p' not in i and 'mon' not in i),
+                        ifaces[0] if ifaces else '')
+        except Exception:
+            return ''
+
+    @staticmethod
+    def _get_driver_name(interface):
+        """Return the kernel driver name for the given interface, or empty string."""
+        import os
+        if not interface:
+            return ''
+        try:
+            driver_link = f'/sys/class/net/{interface}/device/driver'
+            return os.path.basename(os.readlink(driver_link))
+        except Exception:
+            pass
+        try:
+            import subprocess
+            r = subprocess.run(['ethtool', '-i', interface],
+                               capture_output=True, text=True, timeout=3)
+            for line in r.stdout.splitlines():
+                if line.startswith('driver:'):
+                    return line.split(':', 1)[1].strip()
+        except Exception:
+            pass
+        return ''
 
     @staticmethod
     def _vht_op_bandwidth(ch_width, seg2):
@@ -4971,12 +5025,51 @@ class WiFiScanWorker(QThread):
             pass
         return bandwidth_map, rate_map, wifi_gen_map
 
+    def _get_noise_floors_from_survey(self, interface):
+        """Measure per-band and per-frequency noise floor using 'iw dev <iface> survey dump'.
+        Returns (noise_24, noise_5, noise_by_freq) where noise_by_freq maps freq_mhz→dBm.
+        Band averages and per-freq values are None/empty if unavailable."""
+        import subprocess, re
+        if not interface:
+            return None, None, {}
+        try:
+            result = subprocess.run(
+                ['iw', 'dev', interface, 'survey', 'dump'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                return None, None, {}
+            noise_24, noise_5 = [], []
+            noise_by_freq = {}
+            current_freq = None
+            for line in result.stdout.splitlines():
+                m = re.search(r'frequency:\s+(\d+)\s+MHz', line)
+                if m:
+                    current_freq = int(m.group(1))
+                    continue
+                m = re.search(r'noise:\s+(-\d+)\s+dBm', line)
+                if m and current_freq is not None:
+                    dbm = int(m.group(1))
+                    noise_by_freq[current_freq] = dbm
+                    if 2400 <= current_freq <= 2500:
+                        noise_24.append(dbm)
+                    elif 5150 <= current_freq <= 5850:
+                        noise_5.append(dbm)
+            avg_24 = round(sum(noise_24) / len(noise_24)) if noise_24 else None
+            avg_5  = round(sum(noise_5)  / len(noise_5))  if noise_5  else None
+            return avg_24, avg_5, noise_by_freq
+        except Exception:
+            return None, None, {}
+
     def _scan(self):
         import subprocess, re
 
+        # Resolve the actual interface once (auto-detect if not specified)
+        iface = self._resolve_interface(self.interface)
+
         # Force a fresh scan first (best-effort, may fail without privileges)
         try:
-            iface_arg = ['iface', self.interface] if self.interface else []
+            iface_arg = ['iface', iface] if iface else []
             subprocess.run(
                 ['nmcli', 'device', 'wifi', 'rescan'] + iface_arg,
                 capture_output=True, timeout=6
@@ -4985,7 +5078,14 @@ class WiFiScanWorker(QThread):
             pass
 
         # Try to get bandwidth, max PHY rate and WiFi generation from iw scan dump
-        bandwidth_map, rate_map, wifi_gen_map = self._get_bandwidth_from_iw(self.interface)
+        bandwidth_map, rate_map, wifi_gen_map = self._get_bandwidth_from_iw(iface)
+
+        # Measure real-time noise floor per band and per frequency via iw survey dump
+        noise_24, noise_5, noise_by_freq = self._get_noise_floors_from_survey(iface)
+        self.noise_floors_ready.emit(noise_24, noise_5)
+
+        # Driver name for fallback tooltip
+        driver_name = self._get_driver_name(iface)
 
         # Query results
         cmd = [
@@ -4993,8 +5093,8 @@ class WiFiScanWorker(QThread):
             '-f', 'IN-USE,BSSID,SSID,MODE,CHAN,FREQ,RATE,SIGNAL,SECURITY',
             'device', 'wifi', 'list'
         ]
-        if self.interface:
-            cmd += ['ifname', self.interface]
+        if iface:
+            cmd += ['ifname', iface]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         if result.returncode != 0:
@@ -5042,9 +5142,10 @@ class WiFiScanWorker(QThread):
                 freq_mhz = int(m.group(1))
             band = '5GHz' if freq_mhz >= 5000 else '2.4GHz'
 
-            # Calculate SNR (Signal-to-Noise Ratio)
-            # Typical noise floor is around -95 dBm for 2.4GHz and -92 dBm for 5GHz
-            noise_floor = -92 if band == '5GHz' else -95
+            # Use measured noise floor for this channel if available, else fall back to defaults
+            measured_noise = noise_by_freq.get(freq_mhz)
+            noise_measured = measured_noise is not None
+            noise_floor = measured_noise if noise_measured else (-92 if band == '5GHz' else -95)
             snr = dbm - noise_floor if dbm > noise_floor else 0
 
             # Determine bandwidth
@@ -5084,7 +5185,9 @@ class WiFiScanWorker(QThread):
                 'signal_pct': signal_pct,
                 'dbm':        dbm,
                 'snr':        snr,
-                'noise_floor': noise_floor,
+                'noise_floor':    noise_floor,
+                'noise_measured': noise_measured,
+                'noise_driver':   driver_name,
                 'bandwidth':  bandwidth,
                 'security':   security,
             })
@@ -7270,10 +7373,18 @@ Router#_\r
             if key_path:
                 # Key-based authentication
                 key = paramiko.RSAKey.from_private_key_file(key_path)
-                self.ssh_client.connect(host, port=int(port), username=username, pkey=key)
+                self.ssh_client.connect(
+                    host, port=int(port), username=username, pkey=key,
+                    timeout=10, banner_timeout=15, auth_timeout=15,
+                    allow_agent=False, look_for_keys=False
+                )
             else:
                 # Password authentication
-                self.ssh_client.connect(host, port=int(port), username=username, password=password)
+                self.ssh_client.connect(
+                    host, port=int(port), username=username, password=password,
+                    timeout=10, banner_timeout=15, auth_timeout=15,
+                    allow_agent=False, look_for_keys=False
+                )
 
             # Request a pseudo-terminal with actual widget dimensions
             cols = self.terminal.screen.columns
@@ -8527,7 +8638,7 @@ class SerialTerminalGUI(QMainWindow):
         ]
 
         _ports_quick_btn = QPushButton()
-        _ports_quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _ports_quick_btn.setIcon(QIcon(self.get_arrow_icon_path()))
         _ports_quick_btn.setIconSize(QSize(16, 16))
         _ports_quick_btn.setFixedWidth(28)
         _ports_quick_btn.setFixedHeight(self.scan_ports_input.sizeHint().height() or 24)
@@ -9267,7 +9378,7 @@ class SerialTerminalGUI(QMainWindow):
         ]
 
         _quick_btn = QPushButton()
-        _quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _quick_btn.setIcon(QIcon(self.get_arrow_icon_path()))
         _quick_btn.setIconSize(QSize(16, 16))
         _quick_btn.setFixedWidth(28)
         _quick_btn.setFixedHeight(self.traceroute_target_input.sizeHint().height() or 24)
@@ -9482,7 +9593,7 @@ class SerialTerminalGUI(QMainWindow):
         ]
 
         _tr_ports_quick_btn = QPushButton()
-        _tr_ports_quick_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), 'assets', 'icons', 'arrow_down.svg')))
+        _tr_ports_quick_btn.setIcon(QIcon(self.get_arrow_icon_path()))
         _tr_ports_quick_btn.setIconSize(QSize(16, 16))
         _tr_ports_quick_btn.setFixedWidth(28)
         _tr_ports_quick_btn.setFixedHeight(self.traceroute_port_input.sizeHint().height() or 24)
@@ -9875,8 +9986,16 @@ class SerialTerminalGUI(QMainWindow):
             @staticmethod
             def _format_value(val):
                 """Convert SNMP value to a readable string.
+                IpAddress is formatted as dotted decimal.
                 OctetStrings with non-printable bytes are shown as colon-separated hex."""
                 type_name = type(val).__name__
+                if type_name == 'IpAddress':
+                    try:
+                        raw = val.asOctets()
+                        if len(raw) == 4:
+                            return '.'.join(str(b) for b in raw)
+                    except Exception:
+                        pass
                 if type_name in ('OctetString', 'Bits', 'Opaque'):
                     try:
                         raw = val.asOctets()
@@ -10658,9 +10777,9 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(4)
 
         self.wifi_table = QTableWidget()
-        self.wifi_table.setColumnCount(13)
+        self.wifi_table.setColumnCount(14)
         self.wifi_table.setHorizontalHeaderLabels(
-            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Ch", "BW", "WiFi", "Band", "Rate", "Security", "Score"]
+            ["👁", "SSID", "BSSID", "Vendor", "Signal", "SNR", "Noise", "Ch", "BW", "WiFi", "Band", "Rate", "Security", "Score"]
         )
         # Column 0: Visibility checkbox
         self.wifi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -10673,8 +10792,8 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_table.setColumnWidth(2, 130)
         # Column 3: Vendor (stretch)
         self.wifi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        # Other columns: Signal(4), SNR(5), Ch(6), BW(7), WiFi(8), Band(9), Rate(10), Security(11), Score(12)
-        for col, w in [(4, 110), (5, 110), (6, 40), (7, 60), (8, 62), (9, 55), (10, 100), (11, 110), (12, 55)]:
+        # Other columns: Signal(4), SNR(5), Noise(6), Ch(7), BW(8), WiFi(9), Band(10), Rate(11), Security(12), Score(13)
+        for col, w in [(4, 110), (5, 110), (6, 75), (7, 40), (8, 60), (9, 62), (10, 55), (11, 100), (12, 110), (13, 55)]:
             self.wifi_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.wifi_table.setColumnWidth(col, w)
         self.wifi_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -12174,6 +12293,7 @@ class SerialTerminalGUI(QMainWindow):
         self._wifi_worker.network_found.connect(self._on_wifi_network_found)
         self._wifi_worker.scan_finished.connect(self._on_wifi_scan_finished)
         self._wifi_worker.scan_error.connect(self._on_wifi_scan_error)
+        self._wifi_worker.noise_floors_ready.connect(self.wifi_channel_chart.set_noise_floors)
         self._wifi_worker.start()
 
     def _on_wifi_network_found(self, net):
@@ -12251,12 +12371,26 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.wifi_table.setCellWidget(row, 5, snr_bar)
 
-        # Col 6 — Channel
+        # Col 6 — Noise floor (dBm, measured per channel or default)
+        noise_floor = net.get('noise_floor', 0)
+        noise_text = f"{noise_floor} dBm" if noise_floor else "N/A"
+        noise_item = QTableWidgetItem(noise_text)
+        noise_item.setData(Qt.ItemDataRole.UserRole, noise_floor)  # numeric sort
+        noise_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        noise_item.setForeground(QColor('#78909c'))
+        if net.get('noise_measured'):
+            noise_item.setToolTip("Measured in real-time via iw survey dump")
+        else:
+            driver = net.get('noise_driver') or 'unknown'
+            noise_item.setToolTip(f"Fallback default\nDriver: {driver} does not report noise via iw survey dump")
+        self.wifi_table.setItem(row, 6, noise_item)
+
+        # Col 7 — Channel
         ch_item = QTableWidgetItem(str(net['channel']))
         ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.wifi_table.setItem(row, 6, ch_item)
+        self.wifi_table.setItem(row, 7, ch_item)
 
-        # Col 7 — Bandwidth
+        # Col 8 — Bandwidth
         bandwidth = net.get('bandwidth', 20)
         bw_item = QTableWidgetItem(f"{bandwidth} MHz")
         bw_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -12266,24 +12400,24 @@ class SerialTerminalGUI(QMainWindow):
             bw_item.setForeground(QColor('#2e7d32'))
         else:
             bw_item.setForeground(QColor('#757575'))
-        self.wifi_table.setItem(row, 7, bw_item)
+        self.wifi_table.setItem(row, 8, bw_item)
 
-        # Col 8 — WiFi generation
+        # Col 9 — WiFi generation
         wifi_gen = net.get('wifi_gen', '—')
         gen_item = QTableWidgetItem(wifi_gen)
         gen_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         _gen_colors = {'WiFi 7': '#7B1FA2', 'WiFi 6E': '#0277BD',
                        'WiFi 6': '#1565C0', 'WiFi 5': '#2E7D32', 'WiFi 4': '#757575'}
         gen_item.setForeground(QColor(_gen_colors.get(wifi_gen, '#9e9e9e')))
-        self.wifi_table.setItem(row, 8, gen_item)
+        self.wifi_table.setItem(row, 9, gen_item)
 
-        # Col 9 — Band
-        self.wifi_table.setItem(row, 9, QTableWidgetItem(net['band']))
+        # Col 10 — Band
+        self.wifi_table.setItem(row, 10, QTableWidgetItem(net['band']))
 
-        # Col 10 — Rate
-        self.wifi_table.setItem(row, 10, QTableWidgetItem(net['rate']))
+        # Col 11 — Rate
+        self.wifi_table.setItem(row, 11, QTableWidgetItem(net['rate']))
 
-        # Col 11 — Security
+        # Col 12 — Security
         sec = net['security']
         sec_item = QTableWidgetItem(sec)
         if 'WPA3' in sec:
@@ -12292,11 +12426,11 @@ class SerialTerminalGUI(QMainWindow):
             sec_item.setForeground(QColor('#2e7d32'))
         elif sec == 'Open':
             sec_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 11, sec_item)
+        self.wifi_table.setItem(row, 12, sec_item)
 
         self.wifi_table.setRowHeight(row, 24)
 
-        # Col 12 — Channel congestion score (0–100, green → red)
+        # Col 13 — Channel congestion score (0–100, green → red)
         score = net.get('channel_score', 0)
         score_item = QTableWidgetItem(str(score))
         score_item.setData(Qt.ItemDataRole.UserRole, score)  # numeric sort
@@ -12307,7 +12441,7 @@ class SerialTerminalGUI(QMainWindow):
             score_item.setForeground(QColor('#f57f17'))
         else:
             score_item.setForeground(QColor('#c62828'))
-        self.wifi_table.setItem(row, 12, score_item)
+        self.wifi_table.setItem(row, 13, score_item)
 
     # ── Chart visibility helpers ───────────────────────────────────────────────
 
@@ -12925,7 +13059,7 @@ class SerialTerminalGUI(QMainWindow):
             with open(path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=['ssid', 'bssid', 'vendor', 'signal_pct', 'dbm', 'snr',
+                    fieldnames=['ssid', 'bssid', 'vendor', 'signal_pct', 'dbm', 'snr', 'noise_floor',
                                 'channel', 'bandwidth', 'band', 'rate', 'security', 'in_use'],
                     extrasaction='ignore'
                 )
