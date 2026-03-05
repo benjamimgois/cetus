@@ -8,9 +8,10 @@ if [ "$1" = "configure" ]; then
     echo "Omnicom: installing Python dependencies via pip..."
 
     # PyQt6 is not in Ubuntu 22.04 apt repos — install via pip
+    # PyQt6 includes PyQt6-Qt6 which provides QtSvg support (required for icons)
     # pysnmp is required for SNMP device discovery in Vulnerability Scanner
-    pip3 install --quiet --break-system-packages PyQt6 pysnmp 2>/dev/null \
-        || pip3 install --quiet PyQt6 pysnmp 2>/dev/null \
+    pip3 install --quiet --break-system-packages PyQt6 pysnmp pyte 2>/dev/null \
+        || pip3 install --quiet PyQt6 pysnmp pyte 2>/dev/null \
         || true
 
     echo "Omnicom: Python dependencies installed."

@@ -1,3 +1,20 @@
+omnicom (1.5-3) jammy; urgency=low
+
+  * Add WiFi waterfall heatmap (WifiHeatmapWidget)
+  * Add WiFi survey functionality with best channel recommendation and elapsed time display
+  * Enhance WifiChannelChart with best-channel tooltip and hover functionality
+  * Replace histogram window slider with power-scale overlay buttons
+  * Update WiFi heatmap color palette and enhance auto-refresh interval selection
+  * Add system OUI database loading for MAC vendor lookup
+  * Enhance WiFi scan with bandwidth, rate, and generation detection
+  * Add option to avoid DFS channels in WiFi channel selection
+  * Refactor traceroute method selection to use toggle buttons and add slider for packet count
+  * Add proxy configuration button and refactor MTR settings layout
+  * Add ICMP and TCP ping functionality with results visualization
+  * Update latency display and improve MTR results visualization
+
+ -- Benjamim Gois <benjamimgois@example.com>  Thu, 05 Mar 2026 12:00:00 -0300
+
 omnicom (1.5-2) jammy; urgency=low
 
   * Vulnerability Scanner: fix NVD keyword search — use major.minor version
