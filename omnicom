@@ -17136,6 +17136,10 @@ class SerialTerminalGUI(QMainWindow):
             btn.setChecked(m == mode)
         is_server = (mode == 'Server')
         self.iperf_host_input.setEnabled(not is_server)
+        if is_server:
+            self.iperf_run_btn.setText("START SERVER")
+        else:
+            self.iperf_run_btn.setText("RUN IPERF3")
 
     def _iperf_discover(self):
         """Scan local /24 subnet for an iperf3 server and auto-fill host field."""
@@ -17230,7 +17234,8 @@ class SerialTerminalGUI(QMainWindow):
         self._iperf_worker.start()
 
     def _iperf_reset_btn(self):
-        self.iperf_run_btn.setText("RUN IPERF3")
+        is_server = next((m for m, b in self._iperf_mode_btns.items() if b.isChecked()), 'Client') == 'Server'
+        self.iperf_run_btn.setText("START SERVER" if is_server else "RUN IPERF3")
         self.iperf_run_btn.setStyleSheet("""
             QPushButton {
                 background-color: #00897B;
