@@ -9280,6 +9280,35 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_index_list.itemClicked.connect(self._snmp_index_item_clicked)
         index_panel_layout.addWidget(self.snmp_index_list)
 
+        # Search bar
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(4)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_label = QLabel("Search:")
+        search_label.setStyleSheet("color: #333333; font-size: 9pt;")
+        search_label.setFixedWidth(48)
+        self.snmp_search_input = QLineEdit()
+        self.snmp_search_input.setPlaceholderText("Filter by OID or value...")
+        self.snmp_search_input.setClearButtonEnabled(True)
+        self.snmp_search_input.setFixedHeight(26)
+        self.snmp_search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #333333;
+                font-size: 9pt;
+            }
+            QLineEdit:focus {
+                border-color: #FF9800;
+            }
+        """)
+        self.snmp_search_input.textChanged.connect(self._snmp_filter_results)
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.snmp_search_input)
+        results_layout.addLayout(search_layout)
+
         table_index_layout = QHBoxLayout()
         table_index_layout.setSpacing(6)
         table_index_layout.setContentsMargins(0, 0, 0, 0)
@@ -9932,6 +9961,9 @@ class SerialTerminalGUI(QMainWindow):
 
         # Update UI
         self.snmp_results_group.setTitle(f"Results (executing {query_type}...)")
+        self.snmp_search_input.blockSignals(True)
+        self.snmp_search_input.clear()
+        self.snmp_search_input.blockSignals(False)
         self.snmp_results_table.setRowCount(0)
         self._snmp_oid_family_colors = {}
         self._snmp_oid_color_index = 0
@@ -10471,6 +10503,21 @@ class SerialTerminalGUI(QMainWindow):
             self.snmp_results_group.setTitle(f"Results — {count} entries")
         else:
             self.snmp_results_group.setTitle(f"Results — {message}")
+
+    def _snmp_filter_results(self, text):
+        """Show/hide rows in the SNMP results table based on OID or value match."""
+        text = text.strip().lower()
+        for row in range(self.snmp_results_table.rowCount()):
+            if not text:
+                self.snmp_results_table.setRowHidden(row, False)
+                continue
+            match = False
+            for col in (1, 2):  # OID and Value columns
+                item = self.snmp_results_table.item(row, col)
+                if item and text in item.text().lower():
+                    match = True
+                    break
+            self.snmp_results_table.setRowHidden(row, not match)
 
     def _snmp_index_item_clicked(self, item):
         """Scroll the results table to the first row of the clicked OID family."""
