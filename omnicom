@@ -3412,163 +3412,257 @@ class IperfGraphWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
         W, H = self.width(), self.height()
-        L, R, T, B = 58, 54, 18, 36
+        L, R, T, B = 62, 58, 22, 38
 
         plot_w = W - L - R
         plot_h = H - T - B
 
-        # ── Background ────────────────────────────────────────────────────
+        TEAL      = QColor('#00897B')
+        TEAL_LT   = QColor('#4DB6AC')
+        TRANSFER  = QColor('#546E7A')
+
+        # ── Background with subtle vignette ──────────────────────────────
         bg = QLinearGradient(0, 0, 0, H)
-        bg.setColorAt(0.0, QColor("#1A1F2E"))
-        bg.setColorAt(1.0, QColor("#0D1117"))
+        bg.setColorAt(0.0, QColor("#141B2D"))
+        bg.setColorAt(0.6, QColor("#0D1117"))
+        bg.setColorAt(1.0, QColor("#080D14"))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(bg)
-        painter.drawRoundedRect(0, 0, W, H, 10, 10)
-        border_pen = QPen(QColor("#2A3040"))
-        border_pen.setWidth(1)
-        painter.setPen(border_pen)
+        painter.drawRoundedRect(0, 0, W, H, 12, 12)
+
+        # border glow
+        border_c = QColor(TEAL); border_c.setAlpha(60)
+        painter.setPen(QPen(border_c, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(0, 0, W - 1, H - 1, 10, 10)
+        painter.drawRoundedRect(0, 0, W - 1, H - 1, 12, 12)
 
         # ── Empty state ───────────────────────────────────────────────────
         if not self._intervals:
-            painter.setPen(QColor("#3A4460"))
+            painter.setPen(QColor("#2A3A4A"))
             painter.setFont(QFont("Sans Serif", 9))
             painter.drawText(0, 0, W, H, Qt.AlignmentFlag.AlignCenter,
                              "Run a test to see the graph")
             return
 
         # ── Data ranges ───────────────────────────────────────────────────
-        max_t      = max(t for t, _, _ in self._intervals)
-        max_bps    = max(b for _, b, _ in self._intervals)
-        max_bps    = max(max_bps * 1.2, 1.0)
-        max_xfer   = max(x for _, _, x in self._intervals)
-        max_xfer   = max(max_xfer * 1.2, 1.0)
+        max_t    = max(t for t, _, _ in self._intervals)
+        max_bps  = max(b for _, b, _ in self._intervals)
+        max_bps  = max(max_bps * 1.25, 1.0)
+        max_xfer = max(x for _, _, x in self._intervals)
+        max_xfer = max(max_xfer * 1.25, 1.0)
+        peak_bps = max(b for _, b, _ in self._intervals)
 
-        def px(t):   return L + (t / max(max_t, 1)) * plot_w
-        def py(b):   return T + plot_h - (b / max_bps) * plot_h
-        def py2(x):  return T + plot_h - (x / max_xfer) * plot_h
+        def px(t): return L + (t / max(max_t, 1)) * plot_w
+        def py(b): return T + plot_h - (b / max_bps) * plot_h
+        def py2(x): return T + plot_h - (x / max_xfer) * plot_h
 
-        # ── Grid & left Y axis (bitrate) ──────────────────────────────────
+        def fmt_bps(v):
+            if v >= 1000: return f"{v/1000:.2f} Gbps"
+            return f"{v:.1f} Mbps"
+        def fmt_mb(v):
+            if v >= 1024: return f"{v/1024:.2f} GB"
+            return f"{v:.1f} MB"
+
+        # ── Horizontal grid lines (dotted) ────────────────────────────────
         painter.setFont(QFont("Monospace", 7))
         for i in range(5):
             frac = i / 4
             y_g  = T + plot_h - frac * plot_h
             val  = frac * max_bps
-            grid_pen = QPen(QColor("#1E2A3A"))
-            grid_pen.setWidth(1)
-            painter.setPen(grid_pen)
+            # grid
+            dot_pen = QPen(QColor("#1A2A3A"))
+            dot_pen.setWidth(1)
+            dot_pen.setStyle(Qt.PenStyle.DotLine)
+            painter.setPen(dot_pen)
             painter.drawLine(L, int(y_g), L + plot_w, int(y_g))
-            painter.setPen(QColor("#5D7A99"))
+            # left label
+            lbl_c = QColor(TEAL_LT); lbl_c.setAlpha(160)
+            painter.setPen(lbl_c)
             unit = "Gbps" if val >= 1000 else "Mbps"
             disp = f"{val/1000:.1f}" if val >= 1000 else f"{val:.0f}"
-            painter.drawText(0, int(y_g) - 8, L - 4, 16,
+            painter.drawText(0, int(y_g) - 8, L - 5, 16,
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              f"{disp}{unit}")
-
-        # ── Right Y axis (transfer) ───────────────────────────────────────
-        for i in range(5):
-            frac = i / 4
-            val  = frac * max_xfer
-            y_g  = T + plot_h - frac * plot_h
-            painter.setPen(QColor("#607080"))
-            unit = "GB" if val >= 1024 else "MB"
-            disp = f"{val/1024:.1f}" if val >= 1024 else f"{val:.0f}"
-            painter.drawText(L + plot_w + 4, int(y_g) - 8, R - 4, 16,
+            # right label (transfer)
+            val2 = frac * max_xfer
+            painter.setPen(QColor("#546E7A"))
+            u2 = "GB" if val2 >= 1024 else "MB"
+            d2 = f"{val2/1024:.1f}" if val2 >= 1024 else f"{val2:.0f}"
+            painter.drawText(L + plot_w + 5, int(y_g) - 8, R - 5, 16,
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                             f"{disp}{unit}")
+                             f"{d2}{u2}")
+
+        # ── Peak bitrate horizontal marker ────────────────────────────────
+        y_peak = py(peak_bps)
+        peak_pen = QPen(QColor(TEAL_LT))
+        peak_pen.setWidth(1)
+        peak_pen.setStyle(Qt.PenStyle.DashDotLine)
+        peak_pen.setColor(QColor(76, 182, 172, 80))
+        painter.setPen(peak_pen)
+        painter.drawLine(L, int(y_peak), L + plot_w, int(y_peak))
 
         # ── Axes ──────────────────────────────────────────────────────────
-        axis_pen = QPen(QColor("#2A3A50"))
-        axis_pen.setWidth(1)
-        painter.setPen(axis_pen)
+        axis_c = QColor(TEAL); axis_c.setAlpha(90)
+        painter.setPen(QPen(axis_c, 1))
         painter.drawLine(L, T, L, T + plot_h)
         painter.drawLine(L, T + plot_h, L + plot_w, T + plot_h)
+        axis_r = QColor(TRANSFER); axis_r.setAlpha(70)
+        painter.setPen(QPen(axis_r, 1))
         painter.drawLine(L + plot_w, T, L + plot_w, T + plot_h)
 
-        # ── X axis labels ─────────────────────────────────────────────────
-        painter.setPen(QColor("#3A4460"))
-        painter.setFont(QFont("Sans Serif", 8))
-        painter.drawText(L, T + plot_h + 22, plot_w, 12, Qt.AlignmentFlag.AlignCenter, "Time (s)")
-        painter.setPen(QColor("#4A6080"))
+        # ── X axis ticks & "Time (s)" label ──────────────────────────────
+        painter.setPen(QColor("#3A5060"))
+        painter.setFont(QFont("Sans Serif", 7))
+        painter.drawText(L, T + plot_h + 24, plot_w, 12,
+                         Qt.AlignmentFlag.AlignCenter, "Time (s)")
         painter.setFont(QFont("Monospace", 7))
         n_ticks = min(len(self._intervals), 10)
         step = max(1, int(max_t / max(n_ticks, 1)))
         for t_tick in range(step, int(max_t) + 1, step):
             x_g = px(t_tick)
-            painter.drawText(int(x_g) - 15, T + plot_h + 4, 30, 14,
+            tick_c = QColor(TEAL); tick_c.setAlpha(100)
+            painter.setPen(tick_c)
+            painter.drawLine(int(x_g), T + plot_h, int(x_g), T + plot_h + 4)
+            painter.setPen(QColor("#4A7070"))
+            painter.drawText(int(x_g) - 15, T + plot_h + 5, 30, 14,
                              Qt.AlignmentFlag.AlignCenter, str(t_tick))
 
-        # ── Y axis labels (rotated) ───────────────────────────────────────
+        # ── Rotated axis labels ───────────────────────────────────────────
         painter.save()
-        painter.setPen(QColor("#00897B"))
-        painter.setFont(QFont("Sans Serif", 8))
+        lbl_teal = QColor(TEAL_LT); lbl_teal.setAlpha(200)
+        painter.setPen(lbl_teal)
+        painter.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
         painter.translate(10, T + plot_h // 2)
         painter.rotate(-90)
         painter.drawText(-40, -8, 80, 16, Qt.AlignmentFlag.AlignCenter, "Bitrate")
         painter.restore()
 
         painter.save()
-        painter.setPen(QColor("#78909C"))
+        painter.setPen(QColor("#546E7A"))
         painter.setFont(QFont("Sans Serif", 8))
         painter.translate(W - 10, T + plot_h // 2)
         painter.rotate(90)
         painter.drawText(-40, -8, 80, 16, Qt.AlignmentFlag.AlignCenter, "Transfer")
         painter.restore()
 
-        # ── Bitrate: filled area + line ───────────────────────────────────
+        # ── Transfer: smooth filled area (behind bitrate) ─────────────────
+        if len(self._intervals) >= 2:
+            pts_x = [(px(t), py2(x)) for t, _, x in self._intervals]
+            xp = QPainterPath()
+            xp.moveTo(pts_x[0][0], T + plot_h)
+            xp.lineTo(pts_x[0][0], pts_x[0][1])
+            for i in range(1, len(pts_x)):
+                xp.lineTo(pts_x[i][0], pts_x[i][1])
+            xp.lineTo(pts_x[-1][0], T + plot_h)
+            xp.closeSubpath()
+            xfr_grad = QLinearGradient(0, T, 0, T + plot_h)
+            xfr_top = QColor(TRANSFER); xfr_top.setAlpha(35)
+            xfr_bot = QColor(TRANSFER); xfr_bot.setAlpha(0)
+            xfr_grad.setColorAt(0.0, xfr_top)
+            xfr_grad.setColorAt(1.0, xfr_bot)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.fillPath(xp, xfr_grad)
+            # line
+            xfr_line = QPainterPath()
+            xfr_line.moveTo(pts_x[0][0], pts_x[0][1])
+            for i in range(1, len(pts_x)):
+                xfr_line.lineTo(pts_x[i][0], pts_x[i][1])
+            xfr_lc = QColor(TRANSFER); xfr_lc.setAlpha(140)
+            painter.setPen(QPen(xfr_lc, 1, Qt.PenStyle.DashLine))
+            painter.drawPath(xfr_line)
+
+        # ── Bitrate: rich filled area + multi-pass neon glow ─────────────
         if len(self._intervals) >= 2:
             pts_b = [(px(t), py(b)) for t, b, _ in self._intervals]
 
-            # filled area
-            fill_path = QPainterPath()
-            fill_path.moveTo(pts_b[0][0], T + plot_h)
-            fill_path.lineTo(pts_b[0][0], pts_b[0][1])
-            for i in range(1, len(pts_b)):
-                cx = (pts_b[i-1][0] + pts_b[i][0]) / 2
-                fill_path.cubicTo(cx, pts_b[i-1][1], cx, pts_b[i][1], pts_b[i][0], pts_b[i][1])
-            fill_path.lineTo(pts_b[-1][0], T + plot_h)
-            fill_path.closeSubpath()
-            grad = QLinearGradient(0, T, 0, T + plot_h)
-            top_c = QColor(self._COLOR_BITRATE); top_c.setAlpha(80)
-            bot_c = QColor(self._COLOR_BITRATE); bot_c.setAlpha(0)
-            grad.setColorAt(0.0, top_c)
-            grad.setColorAt(1.0, bot_c)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.fillPath(fill_path, grad)
+            # Build smooth path
+            def _smooth_path(pts, close_bottom=False):
+                p = QPainterPath()
+                if close_bottom:
+                    p.moveTo(pts[0][0], T + plot_h)
+                    p.lineTo(pts[0][0], pts[0][1])
+                else:
+                    p.moveTo(pts[0][0], pts[0][1])
+                for i in range(1, len(pts)):
+                    cx = (pts[i-1][0] + pts[i][0]) / 2
+                    p.cubicTo(cx, pts[i-1][1], cx, pts[i][1], pts[i][0], pts[i][1])
+                if close_bottom:
+                    p.lineTo(pts[-1][0], T + plot_h)
+                    p.closeSubpath()
+                return p
 
-            # glow line
-            for pw, pa in [(4, 30), (2, 100), (1, 220)]:
-                line_path = QPainterPath()
-                line_path.moveTo(pts_b[0][0], pts_b[0][1])
-                for i in range(1, len(pts_b)):
-                    cx = (pts_b[i-1][0] + pts_b[i][0]) / 2
-                    line_path.cubicTo(cx, pts_b[i-1][1], cx, pts_b[i][1], pts_b[i][0], pts_b[i][1])
-                _c = QColor(self._COLOR_BITRATE); _c.setAlpha(pa)
+            # deep fill (two layers for depth)
+            fill_path = _smooth_path(pts_b, close_bottom=True)
+            grad1 = QLinearGradient(0, T, 0, T + plot_h)
+            c1 = QColor(TEAL); c1.setAlpha(110)
+            c2 = QColor(TEAL); c2.setAlpha(30)
+            c3 = QColor(TEAL); c3.setAlpha(5)
+            grad1.setColorAt(0.0, c1)
+            grad1.setColorAt(0.5, c2)
+            grad1.setColorAt(1.0, c3)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.fillPath(fill_path, grad1)
+
+            # neon glow: outer → inner → solid
+            line_path = _smooth_path(pts_b)
+            for pw, pa in [(8, 15), (5, 35), (3, 70), (2, 150), (1, 255)]:
+                _c = QColor(TEAL_LT if pw <= 2 else TEAL)
+                _c.setAlpha(pa)
                 pen = QPen(_c, pw)
                 pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
                 painter.drawPath(line_path)
 
-        # ── Transfer: dashed cumulative line ─────────────────────────────
-        if len(self._intervals) >= 2:
-            pts_x = [(px(t), py2(x)) for t, _, x in self._intervals]
-            xfer_path = QPainterPath()
-            xfer_path.moveTo(pts_x[0][0], pts_x[0][1])
-            for i in range(1, len(pts_x)):
-                xfer_path.lineTo(pts_x[i][0], pts_x[i][1])
-            dash_pen = QPen(QColor(self._COLOR_TRANSFER))
-            dash_pen.setWidth(1)
-            dash_pen.setStyle(Qt.PenStyle.DashLine)
-            painter.setPen(dash_pen)
-            painter.drawPath(xfer_path)
+        elif len(self._intervals) == 1:
+            t0, b0, _ = self._intervals[0]
+            x0, y0 = px(t0), py(b0)
+            for pw, pa in [(6, 30), (3, 100), (2, 220)]:
+                _c = QColor(TEAL); _c.setAlpha(pa)
+                painter.setPen(QPen(_c, pw))
+                painter.drawLine(L, int(y0), L + plot_w, int(y0))
 
-        # ── Data point dots ───────────────────────────────────────────────
+        # ── Glowing data point dots ───────────────────────────────────────
         painter.setPen(Qt.PenStyle.NoPen)
-        for t, b, _ in self._intervals:
-            painter.setBrush(self._COLOR_BITRATE)
-            painter.drawEllipse(int(px(t)) - 2, int(py(b)) - 2, 4, 4)
+        for i, (t, b, _) in enumerate(self._intervals):
+            xp_d, yp_d = int(px(t)), int(py(b))
+            is_last = (i == len(self._intervals) - 1)
+            if is_last:
+                # large glowing dot for latest point
+                for r, a in [(7, 20), (5, 50), (3, 130), (2, 255)]:
+                    gc = QColor(TEAL_LT); gc.setAlpha(a)
+                    painter.setBrush(gc)
+                    painter.drawEllipse(xp_d - r, yp_d - r, r * 2, r * 2)
+            else:
+                gc = QColor(TEAL); gc.setAlpha(180)
+                painter.setBrush(gc)
+                painter.drawEllipse(xp_d - 2, yp_d - 2, 4, 4)
+
+        # ── Live value badge (last point) ─────────────────────────────────
+        if self._intervals:
+            t_last, b_last, x_last = self._intervals[-1]
+            x_lp = int(px(t_last))
+            y_lp = int(py(b_last))
+
+            # vertical cursor line
+            cur_c = QColor(TEAL_LT); cur_c.setAlpha(50)
+            painter.setPen(QPen(cur_c, 1, Qt.PenStyle.DashLine))
+            painter.drawLine(x_lp, T, x_lp, T + plot_h)
+
+            # badge background
+            badge_txt = fmt_bps(b_last)
+            fm = painter.fontMetrics()
+            bw = fm.horizontalAdvance(badge_txt) + 12
+            bh = 16
+            bx = min(x_lp + 6, L + plot_w - bw - 2)
+            by = max(T + 2, y_lp - bh - 4)
+            badge_bg = QColor(TEAL); badge_bg.setAlpha(200)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(badge_bg)
+            painter.drawRoundedRect(bx, by, bw, bh, 4, 4)
+            painter.setPen(QColor("#FFFFFF"))
+            painter.setFont(QFont("Monospace", 7, QFont.Weight.Bold))
+            painter.drawText(bx, by, bw, bh, Qt.AlignmentFlag.AlignCenter, badge_txt)
 
 
 class DeviceImageWorker(QThread):
@@ -15933,31 +16027,43 @@ class SerialTerminalGUI(QMainWindow):
         # ── Statistics group ───────────────────────────────────────────
         stats_group = QGroupBox("Statistics")
         stats_layout = QHBoxLayout()
-        stats_layout.setContentsMargins(10, 4, 10, 6)
-        stats_layout.setSpacing(16)
+        stats_layout.setContentsMargins(8, 6, 8, 8)
+        stats_layout.setSpacing(6)
 
-        def _stat_pair(label):
-            lbl = QLabel(label)
-            lbl.setStyleSheet("color: #666; font-size: 9pt;")
+        card_style = f"""
+            QFrame {{
+                background-color: #1a2a2a;
+                border: 1px solid #00695C;
+                border-radius: 8px;
+            }}
+        """
+
+        def _stat_card(icon, label, accent=BROWN):
+            card = QFrame()
+            card.setStyleSheet(card_style)
+            card.setMinimumHeight(62)
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(10, 6, 10, 6)
+            card_layout.setSpacing(2)
+            hdr = QLabel(f"{icon}  {label}")
+            hdr.setStyleSheet("color: #78909C; font-size: 8pt; font-weight: bold; background: transparent; border: none;")
             val = QLabel("—")
-            val.setStyleSheet(f"color: {BROWN}; font-size: 11pt; font-weight: bold;")
-            return lbl, val
+            val.setStyleSheet(f"color: {accent}; font-size: 16pt; font-weight: bold; background: transparent; border: none;")
+            val.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            card_layout.addWidget(hdr)
+            card_layout.addWidget(val)
+            return card, val
 
-        thr_lbl, self.iperf_stat_throughput = _stat_pair("Throughput")
-        xfr_lbl, self.iperf_stat_transfer   = _stat_pair("Transfer")
-        jit_lbl, self.iperf_stat_jitter     = _stat_pair("Jitter")
-        los_lbl, self.iperf_stat_loss       = _stat_pair("Loss")
+        thr_card, self.iperf_stat_throughput = _stat_card("⚡", "THROUGHPUT", BROWN)
+        xfr_card, self.iperf_stat_transfer   = _stat_card("📦", "TRANSFER",   "#78909C")
+        jit_card, self.iperf_stat_jitter     = _stat_card("〜", "JITTER",     "#80CBC4")
+        los_card, self.iperf_stat_loss       = _stat_card("✗", "LOSS",        "#EF9A9A")
 
-        for lbl, val in ((thr_lbl, self.iperf_stat_throughput),
-                         (xfr_lbl, self.iperf_stat_transfer),
-                         (jit_lbl, self.iperf_stat_jitter),
-                         (los_lbl, self.iperf_stat_loss)):
-            pair = QVBoxLayout()
-            pair.setSpacing(0)
-            pair.addWidget(lbl)
-            pair.addWidget(val)
-            stats_layout.addLayout(pair)
-        stats_layout.addStretch()
+        # Throughput card gets 2x weight
+        stats_layout.addWidget(thr_card, 2)
+        stats_layout.addWidget(xfr_card, 1)
+        stats_layout.addWidget(jit_card, 1)
+        stats_layout.addWidget(los_card, 1)
 
         stats_group.setLayout(stats_layout)
         stats_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
