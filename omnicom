@@ -3182,6 +3182,77 @@ class PingTCPWorker(QThread):
         self.ping_finished.emit(sent, received, avg)
 
 
+class Iperf3DiscoverWorker(QThread):
+    """Scan the local /24 subnet for hosts with iperf3 port open."""
+    host_found  = pyqtSignal(str)   # first IP found
+    scan_status = pyqtSignal(str)   # progress text
+    not_found   = pyqtSignal()
+
+    def __init__(self, port=5201, timeout=0.3, parent=None):
+        super().__init__(parent)
+        self.port       = port
+        self.timeout    = timeout
+        self._stop_flag = False
+
+    def stop(self): self._stop_flag = True
+
+    def run(self):
+        import socket as _s, ipaddress as _ip
+        from concurrent.futures import ThreadPoolExecutor, as_completed as _ac
+
+        # Detect local IP via UDP trick (no packet sent)
+        try:
+            sock = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+            sock.connect(('8.8.8.8', 80))
+            local_ip = sock.getsockname()[0]
+            sock.close()
+        except Exception:
+            self.scan_status.emit("Cannot detect local IP")
+            self.not_found.emit()
+            return
+
+        # Build /24 target list (skip network/broadcast and self)
+        try:
+            network = _ip.IPv4Network(f"{local_ip}/24", strict=False)
+        except Exception:
+            self.not_found.emit()
+            return
+
+        targets = [str(h) for h in network.hosts() if str(h) != local_ip]
+        self.scan_status.emit(f"Scanning {network} for iperf3 port {self.port}…")
+
+        found = None
+
+        def probe(ip):
+            if self._stop_flag:
+                return None
+            try:
+                s = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+                s.settimeout(self.timeout)
+                err = s.connect_ex((ip, self.port))
+                s.close()
+                return ip if err == 0 else None
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=64) as pool:
+            futures = {pool.submit(probe, ip): ip for ip in targets}
+            for future in _ac(futures):
+                if self._stop_flag or found:
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
+                result = future.result()
+                if result:
+                    found = result
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
+
+        if found:
+            self.host_found.emit(found)
+        else:
+            self.not_found.emit()
+
+
 class Iperf3Worker(QThread):
     """Run iperf3 as client or server and emit real-time interval data."""
     interval_result = pyqtSignal(float, float, float, float)
@@ -15742,6 +15813,29 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_host_input.setPlaceholderText("iperf3 server address")
         self.iperf_host_input.setFixedHeight(26)
         self.iperf_host_input.setStyleSheet(field_style)
+        self.iperf_discover_btn = QPushButton("Scan LAN")
+        self.iperf_discover_btn.setFixedHeight(26)
+        self.iperf_discover_btn.setFixedWidth(72)
+        self.iperf_discover_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.iperf_discover_btn.setToolTip("Scan local /24 network for an iperf3 server on port 5201")
+        self.iperf_discover_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #e0e0e0;
+                border: 1px solid #b0b0b0;
+                border-radius: 4px;
+                color: #333333;
+                font-size: 9pt;
+                font-weight: normal;
+                padding: 2px 4px;
+            }}
+            QPushButton:hover {{
+                background-color: {BROWN};
+                color: white;
+                border-color: {BROWN};
+            }}
+            QPushButton:disabled {{ color: #aaaaaa; background-color: #eeeeee; }}
+        """)
+        self.iperf_discover_btn.clicked.connect(self._iperf_discover)
         port_lbl = QLabel("Port:")
         port_lbl.setFixedWidth(30)
         port_lbl.setStyleSheet(lbl_style)
@@ -15761,6 +15855,7 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_duration_spin.setStyleSheet(spin_style)
         row1.addWidget(host_lbl)
         row1.addWidget(self.iperf_host_input, 1)
+        row1.addWidget(self.iperf_discover_btn)
         row1.addWidget(port_lbl)
         row1.addWidget(self.iperf_port_input)
         row1.addWidget(dur_lbl)
@@ -16935,6 +17030,36 @@ class SerialTerminalGUI(QMainWindow):
             btn.setChecked(m == mode)
         is_server = (mode == 'Server')
         self.iperf_host_input.setEnabled(not is_server)
+
+    def _iperf_discover(self):
+        """Scan local /24 subnet for an iperf3 server and auto-fill host field."""
+        try:
+            port = int(self.iperf_port_input.text().strip() or '5201')
+        except ValueError:
+            port = 5201
+
+        self.iperf_discover_btn.setEnabled(False)
+        self.iperf_discover_btn.setText("Scanning…")
+        self.iperf_log.appendPlainText(f"[SCAN] Searching local network for iperf3 server on port {port}…")
+
+        self._iperf_discover_worker = Iperf3DiscoverWorker(port=port)
+        self._iperf_discover_worker.host_found.connect(self._on_iperf_host_found)
+        self._iperf_discover_worker.scan_status.connect(
+            lambda msg: self.iperf_log.appendPlainText(f"[SCAN] {msg}")
+        )
+        self._iperf_discover_worker.not_found.connect(self._on_iperf_host_not_found)
+        self._iperf_discover_worker.finished.connect(
+            lambda: (self.iperf_discover_btn.setEnabled(True),
+                     self.iperf_discover_btn.setText("Scan LAN"))
+        )
+        self._iperf_discover_worker.start()
+
+    def _on_iperf_host_found(self, ip):
+        self.iperf_host_input.setText(ip)
+        self.iperf_log.appendPlainText(f"[SCAN] Found iperf3 server at {ip} — host field updated.")
+
+    def _on_iperf_host_not_found(self):
+        self.iperf_log.appendPlainText("[SCAN] No iperf3 server found on local network.")
 
     def _iperf_run(self):
         # Toggle stop if already running
