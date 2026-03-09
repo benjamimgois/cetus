@@ -259,7 +259,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPlainTextEdit, QDialog, QInputDialog, QLineEdit,
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
+    QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
     QProgressBar, QSpinBox
 )
@@ -464,7 +464,7 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH', vendor='Default'):
+    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH', vendor='Default', group='Default'):
         """Save an SSH connection profile"""
         profiles = self.get_ssh_profiles()
         # Update existing or add new
@@ -474,7 +474,7 @@ class ConfigManager:
                     'name': name, 'host': host, 'port': port,
                     'username': username, 'auth_method': auth_method,
                     'key_path': key_path, 'protocol': protocol,
-                    'vendor': vendor
+                    'vendor': vendor, 'group': group
                 }
                 break
         else:
@@ -482,7 +482,7 @@ class ConfigManager:
                 'name': name, 'host': host, 'port': port,
                 'username': username, 'auth_method': auth_method,
                 'key_path': key_path, 'protocol': protocol,
-                'vendor': vendor
+                'vendor': vendor, 'group': group
             })
         self.set('ssh_profiles', json.dumps(profiles))
 
@@ -14402,15 +14402,30 @@ class SerialTerminalGUI(QMainWindow):
             QApplication.clipboard().setText(ip)
 
     def _ssh_profile_context_menu(self, pos):
-        """Context menu for SSH Quick Connect table — network tools."""
-        item = self.ssh_profiles_table.itemAt(pos)
+        """Context menu for SSH Quick Connect tree — network tools or group actions."""
+        item = self.ssh_profiles_tree.itemAt(pos)
         if not item:
             return
-        row = item.row()
-        ip_item = self.ssh_profiles_table.item(row, 1)
-        if not ip_item:
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+
+        # --- Group header context menu ---
+        if not profile:
+            menu = QMenu(self)
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #ffffff; color: #333333;
+                    border: 1px solid #d0d0d0; border-radius: 4px; padding: 4px;
+                }
+                QMenu::item { padding: 6px 20px; border-radius: 3px; }
+                QMenu::item:selected { background-color: #e8e8e8; }
+            """)
+            rename_action = menu.addAction("Rename Group")
+            action = menu.exec(self.ssh_profiles_tree.viewport().mapToGlobal(pos))
+            if action == rename_action:
+                self._rename_ssh_group(item)
             return
-        ip = ip_item.text().strip()
+
+        ip = profile.get('host', '').strip()
         if not ip:
             return
 
@@ -14447,7 +14462,7 @@ class SerialTerminalGUI(QMainWindow):
         menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
-        action = menu.exec(self.ssh_profiles_table.viewport().mapToGlobal(pos))
+        action = menu.exec(self.ssh_profiles_tree.viewport().mapToGlobal(pos))
 
         if action == http_action:
             import webbrowser
@@ -14775,40 +14790,46 @@ class SerialTerminalGUI(QMainWindow):
         profiles_layout.setContentsMargins(10, 2, 10, 8)
         profiles_layout.setSpacing(6)
 
-        # Profiles table (at the top)
-        self.ssh_profiles_table = QTableWidget()
-        self.ssh_profiles_table.setColumnCount(5)
-        self.ssh_profiles_table.setHorizontalHeaderLabels(["Name", "IP", "Port", "Protocol", "Vendor"])
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_table.setColumnWidth(1, 105)
-        self.ssh_profiles_table.setColumnWidth(2, 38)
-        self.ssh_profiles_table.setColumnWidth(3, 62)
-        self.ssh_profiles_table.setColumnWidth(4, 56)
-        self.ssh_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.ssh_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.ssh_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.ssh_profiles_table.verticalHeader().setVisible(False)
-        self.ssh_profiles_table.doubleClicked.connect(self.load_ssh_profile_from_table)
-        self.ssh_profiles_table.setStyleSheet("""
-            QTableWidget {
+        # Profiles tree
+        self.ssh_profiles_tree = QTreeWidget()
+        self.ssh_profiles_tree.setColumnCount(5)
+        self.ssh_profiles_tree.setHeaderLabels(["Name", "IP", "Port", "Protocol", "Vendor"])
+        self.ssh_profiles_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.ssh_profiles_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.ssh_profiles_tree.setColumnWidth(1, 105)
+        self.ssh_profiles_tree.setColumnWidth(2, 38)
+        self.ssh_profiles_tree.setColumnWidth(3, 62)
+        self.ssh_profiles_tree.setColumnWidth(4, 56)
+        self.ssh_profiles_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.ssh_profiles_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.ssh_profiles_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.ssh_profiles_tree.setRootIsDecorated(False)
+        self.ssh_profiles_tree.setIndentation(14)
+        self.ssh_profiles_tree.itemDoubleClicked.connect(self.load_ssh_profile_from_tree)
+        self.ssh_profiles_tree.itemExpanded.connect(self._ssh_group_expanded)
+        self.ssh_profiles_tree.itemCollapsed.connect(self._ssh_group_collapsed)
+        self.ssh_profiles_tree.setStyleSheet("""
+            QTreeWidget {
                 background-color: #e8e8e8;
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 color: #333333;
                 font-size: 9pt;
-                gridline-color: #d0d0d0;
             }
-            QTableWidget::item {
-                padding: 4px;
-                background-color: #e8e8e8;
+            QTreeWidget::item {
+                padding: 4px 2px;
+                min-height: 28px;
             }
-            QTableWidget::item:selected {
+            QTreeWidget::item:selected {
                 background-color: #2196F3;
                 color: white;
+            }
+            QTreeWidget::branch {
+                image: none;
+                background: transparent;
             }
             QHeaderView::section {
                 background-color: #d0d0d0;
@@ -14819,10 +14840,9 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 9pt;
             }
         """)
-        profiles_layout.addWidget(self.ssh_profiles_table)
-        self._enable_table_tooltips(self.ssh_profiles_table)
-        self.ssh_profiles_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.ssh_profiles_table.customContextMenuRequested.connect(self._ssh_profile_context_menu)
+        profiles_layout.addWidget(self.ssh_profiles_tree)
+        self.ssh_profiles_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ssh_profiles_tree.customContextMenuRequested.connect(self._ssh_profile_context_menu)
 
         # Buttons row (centered, below table)
         btn_layout = QHBoxLayout()
@@ -15600,111 +15620,127 @@ class SerialTerminalGUI(QMainWindow):
                             profile.get('flow', 'None'), new_vendor
                         )
             else:
-                item = self.ssh_profiles_table.item(row, 0)
-                if item:
-                    profile = item.data(Qt.ItemDataRole.UserRole)
-                    if profile:
-                        profile['vendor'] = new_vendor
-                        self.config.save_ssh_profile(
-                            profile['name'], profile['host'], profile.get('port', '22'),
-                            profile.get('username', ''), profile.get('auth_method', 'password'),
-                            profile.get('key_path', ''), profile.get('protocol', 'SSH'),
-                            new_vendor
-                        )
+                # row is a QTreeWidgetItem for the ssh tree
+                tree_item = row
+                profile = tree_item.data(0, Qt.ItemDataRole.UserRole)
+                if profile:
+                    profile['vendor'] = new_vendor
+                    self.config.save_ssh_profile(
+                        profile['name'], profile['host'], profile.get('port', '22'),
+                        profile.get('username', ''), profile.get('auth_method', 'password'),
+                        profile.get('key_path', ''), profile.get('protocol', 'SSH'),
+                        new_vendor, profile.get('group', 'Default')
+                    )
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, profile)
 
     def refresh_ssh_profiles(self):
-        """Refresh the SSH profiles table"""
-        self.ssh_profiles_table.setRowCount(0)
+        """Refresh the SSH profiles tree, grouped by profile group"""
+        self.ssh_profiles_tree.clear()
         profiles = self.config.get_ssh_profiles()
+
+        # Group profiles preserving insertion order
+        groups = {}
         for profile in profiles:
-            row = self.ssh_profiles_table.rowCount()
-            self.ssh_profiles_table.insertRow(row)
-            self.ssh_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
-            self.ssh_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('host', '')))
-            self.ssh_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('port', '22')))
+            group = profile.get('group', 'Default') or 'Default'
+            groups.setdefault(group, []).append(profile)
 
-            # Determine protocol based on port (22=SSH, 23=Telnet, or use saved protocol)
-            port = profile.get('port', '22')
-            protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
-            self.ssh_profiles_table.setItem(row, 3, QTableWidgetItem(protocol))
+        group_header_bg = QColor('#c8c8c8')
+        group_header_fg = QColor('#333333')
 
-            # Vendor icon widget
-            vendor = profile.get('vendor', 'Default')
-            vendor_widget = self._create_vendor_icon_widget(vendor, row)
-            self.ssh_profiles_table.setCellWidget(row, 4, vendor_widget)
-            self.ssh_profiles_table.setRowHeight(row, 42)
+        for group_name, group_profiles in groups.items():
+            # Group header item (non-selectable, spans visually)
+            group_item = QTreeWidgetItem(self.ssh_profiles_tree)
+            group_item.setText(0, f" ▼  {group_name}")
+            group_item.setData(0, Qt.ItemDataRole.UserRole, None)
+            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable
+            font = group_item.font(0)
+            font.setBold(True)
+            group_item.setFont(0, font)
+            for col in range(5):
+                group_item.setBackground(col, group_header_bg)
+                group_item.setForeground(col, group_header_fg)
+            # Span name column visually across all columns
+            group_item_row = self.ssh_profiles_tree.indexOfTopLevelItem(group_item)
+            self.ssh_profiles_tree.setFirstColumnSpanned(
+                group_item_row, self.ssh_profiles_tree.rootIndex(), True)
 
-            # Store profile data in first column item
-            self.ssh_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
-
-
-
-    def load_ssh_profile_from_table(self):
-        """Load selected SSH profile from table and initiate connection"""
-        row = self.ssh_profiles_table.currentRow()
-        if row < 0:
-            return
-        item = self.ssh_profiles_table.item(row, 0)
-        if item:
-            profile = item.data(Qt.ItemDataRole.UserRole)
-            if profile:
-                self._pending_profile_name = profile.get('name', '')
-                # Load profile data into form fields
-                self.ssh_host.setText(profile.get('host', ''))
-                self.ssh_port.setText(profile.get('port', '22'))
-                self.ssh_username.setText(profile.get('username', ''))
-                
-                # Set authentication method
-                if profile.get('auth_method') == 'key':
-                    self.use_ssh_key.setChecked(True)
-                    self.ssh_key_path.setText(profile.get('key_path', ''))
-                else:
-                    self.use_ssh_key.setChecked(False)
-                
-                # Set protocol (SSH or Telnet)
-                # Use saved protocol, or detect from port if not saved
+            for profile in group_profiles:
+                child = QTreeWidgetItem(group_item)
+                child.setText(0, profile.get('name', ''))
+                child.setText(1, profile.get('host', ''))
+                child.setText(2, profile.get('port', '22'))
                 port = profile.get('port', '22')
-                protocol = profile.get('protocol')
-                
-                # Fallback: detect protocol from port if not explicitly saved
-                if not protocol:
-                    protocol = 'Telnet' if port == '23' else 'SSH'
-                
-                print(f"DEBUG: Loading profile with protocol: {protocol} (port: {port})")
-                print(f"DEBUG: Full profile data: {profile}")
+                protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
+                child.setText(3, protocol)
+                child.setData(0, Qt.ItemDataRole.UserRole, profile)
 
-                # Set protocol using button click
-                self._ssh_protocol_btn_clicked(protocol)
-                
-                # Read vendor from the icon button in the table
-                cell_widget = self.ssh_profiles_table.cellWidget(row, 4)
-                if cell_widget:
-                    btn = cell_widget.findChild(QPushButton)
-                    self._pending_vendor = btn.property('vendor') if btn else 'Default'
-                else:
-                    self._pending_vendor = 'Default'
+                # Vendor icon widget
+                vendor = profile.get('vendor', 'Default')
+                vendor_widget = self._create_vendor_icon_widget(vendor, child, table='ssh')
+                self.ssh_profiles_tree.setItemWidget(child, 4, vendor_widget)
 
-                # Force UI update before connecting
-                QApplication.processEvents()
-
-                # Use QTimer to delay connection slightly to ensure UI updates complete
-                QTimer.singleShot(100, self.connect_ssh)
+            group_item.setExpanded(True)
 
 
 
-
-
-
-    def save_current_ssh_profile(self):
-        """Save current SSH settings as a profile"""
-        host = self.ssh_host.text().strip()
-        if not host:
-            QMessageBox.warning(self, "Warning", "Enter a host before saving")
+    def load_ssh_profile_from_tree(self, item, column):
+        """Load selected SSH profile from tree and initiate connection"""
+        if item is None:
             return
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+        if not profile:  # group header clicked
+            return
+
+        self._pending_profile_name = profile.get('name', '')
+        self.ssh_host.setText(profile.get('host', ''))
+        self.ssh_port.setText(profile.get('port', '22'))
+        self.ssh_username.setText(profile.get('username', ''))
+
+        if profile.get('auth_method') == 'key':
+            self.use_ssh_key.setChecked(True)
+            self.ssh_key_path.setText(profile.get('key_path', ''))
+        else:
+            self.use_ssh_key.setChecked(False)
+
+        port = profile.get('port', '22')
+        protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
+        self._ssh_protocol_btn_clicked(protocol)
+
+        # Read vendor from the icon button in the tree
+        vendor_widget = self.ssh_profiles_tree.itemWidget(item, 4)
+        if vendor_widget:
+            btn = vendor_widget.findChild(QPushButton)
+            self._pending_vendor = btn.property('vendor') if btn else 'Default'
+        else:
+            self._pending_vendor = 'Default'
+
+        QApplication.processEvents()
+        QTimer.singleShot(100, self.connect_ssh)
+
+    def _ssh_group_expanded(self, item):
+        """Update group item arrow indicator when expanded"""
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            return
+        text = item.text(0)
+        item.setText(0, text.replace('▶', '▼', 1))
+
+    def _ssh_group_collapsed(self, item):
+        """Update group item arrow indicator when collapsed"""
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            return
+        text = item.text(0)
+        item.setText(0, text.replace('▼', '▶', 1))
+
+    def _rename_ssh_group(self, group_item):
+        """Rename a group and update all its profiles"""
+        old_text = group_item.text(0)
+        # Extract group name stripping leading arrow + spaces
+        old_name = old_text.lstrip('▼▶ ').strip()
 
         dialog = QInputDialog(self)
-        dialog.setWindowTitle("Save Profile")
-        dialog.setLabelText("Profile name:")
+        dialog.setWindowTitle("Rename Group")
+        dialog.setLabelText("New group name:")
+        dialog.setTextValue(old_name)
         dialog.setStyleSheet("""
             QInputDialog { background-color: #2b2b2b; }
             QLabel { color: #e0e0e0; font-size: 10pt; }
@@ -15718,38 +15754,118 @@ class SerialTerminalGUI(QMainWindow):
             }
             QPushButton:hover { background-color: #43a047; }
         """)
-        ok = dialog.exec()
-        name = dialog.textValue()
-        if ok and name:
-            auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
-            protocol = self.ssh_current_protocol
-            self.config.save_ssh_profile(
-                name, host, self.ssh_port.text(),
-                self.ssh_username.text(), auth_method,
-                self.ssh_key_path.text() if auth_method == 'key' else '',
-                protocol
-            )
-            self.refresh_ssh_profiles()
-            QMessageBox.information(self, "Saved", f"Profile '{name}' saved")
+        if not dialog.exec():
+            return
+        new_name = dialog.textValue().strip()
+        if not new_name or new_name == old_name:
+            return
+
+        # Update all child profiles
+        for i in range(group_item.childCount()):
+            child = group_item.child(i)
+            profile = child.data(0, Qt.ItemDataRole.UserRole)
+            if profile:
+                profile['group'] = new_name
+                self.config.save_ssh_profile(
+                    profile['name'], profile['host'], profile.get('port', '22'),
+                    profile.get('username', ''), profile.get('auth_method', 'password'),
+                    profile.get('key_path', ''), profile.get('protocol', 'SSH'),
+                    profile.get('vendor', 'Default'), new_name
+                )
+
+        # Update header text preserving arrow
+        arrow = '▼' if group_item.isExpanded() else '▶'
+        group_item.setText(0, f" {arrow}  {new_name}")
+
+
+
+
+
+
+    def save_current_ssh_profile(self):
+        """Save current SSH settings as a profile"""
+        host = self.ssh_host.text().strip()
+        if not host:
+            QMessageBox.warning(self, "Warning", "Enter a host before saving")
+            return
+
+        _dialog_style = """
+            QInputDialog { background-color: #2b2b2b; }
+            QLabel { color: #e0e0e0; font-size: 10pt; }
+            QLineEdit, QComboBox {
+                background-color: #3a3a3a; color: #e0e0e0;
+                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: #3a3a3a; color: #e0e0e0;
+                selection-background-color: #4caf50;
+            }
+            QPushButton {
+                background-color: #4caf50; color: #ffffff;
+                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #43a047; }
+        """
+
+        name_dialog = QInputDialog(self)
+        name_dialog.setWindowTitle("Save Profile")
+        name_dialog.setLabelText("Profile name:")
+        name_dialog.setStyleSheet(_dialog_style)
+        if not name_dialog.exec():
+            return
+        name = name_dialog.textValue().strip()
+        if not name:
+            return
+
+        # Collect existing groups from the tree for autocomplete
+        existing_groups = []
+        root = self.ssh_profiles_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            existing_groups.append(root.child(i).text(0).strip())
+        if not existing_groups:
+            existing_groups = ['Default']
+
+        group_dialog = QInputDialog(self)
+        group_dialog.setWindowTitle("Profile Group")
+        group_dialog.setLabelText("Group:")
+        group_dialog.setComboBoxItems(existing_groups)
+        group_dialog.setComboBoxEditable(True)
+        group_dialog.setTextValue(existing_groups[0])
+        group_dialog.setStyleSheet(_dialog_style)
+        if not group_dialog.exec():
+            return
+        group = group_dialog.textValue().strip() or 'Default'
+
+        auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
+        protocol = self.ssh_current_protocol
+        self.config.save_ssh_profile(
+            name, host, self.ssh_port.text(),
+            self.ssh_username.text(), auth_method,
+            self.ssh_key_path.text() if auth_method == 'key' else '',
+            protocol, group=group
+        )
+        self.refresh_ssh_profiles()
+        QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
 
     def delete_ssh_profile(self):
-        """Delete selected SSH profile from table"""
-        row = self.ssh_profiles_table.currentRow()
-        if row < 0:
+        """Delete selected SSH profile from tree"""
+        item = self.ssh_profiles_tree.currentItem()
+        if item is None:
             QMessageBox.warning(self, "Warning", "Select a profile to delete")
             return
-        item = self.ssh_profiles_table.item(row, 0)
-        if item:
-            profile = item.data(Qt.ItemDataRole.UserRole)
-            if profile:
-                reply = QMessageBox.question(
-                    self, "Delete Profile",
-                    f"Delete profile '{profile['name']}'?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    self.config.delete_ssh_profile(profile['name'])
-                    self.refresh_ssh_profiles()
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+        if not profile:
+            QMessageBox.warning(self, "Warning", "Select a profile to delete")
+            return
+        reply = QMessageBox.question(
+            self, "Delete Profile",
+            f"Delete profile '{profile['name']}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.config.delete_ssh_profile(profile['name'])
+            self.refresh_ssh_profiles()
 
     def _parse_serial_config(self):
         """Parse serial_config combo text into (databits, parity, stopbits) strings."""
