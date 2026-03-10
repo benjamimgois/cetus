@@ -14827,10 +14827,14 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_profiles_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_tree.setColumnWidth(1, 105)
+        self.ssh_profiles_tree.setColumnWidth(1, 185)
         self.ssh_profiles_tree.setColumnWidth(2, 38)
         self.ssh_profiles_tree.setColumnWidth(3, 62)
-        self.ssh_profiles_tree.setColumnWidth(4, 56)
+        self.ssh_profiles_tree.setColumnWidth(4, 42)
+        # Center-align all column headers
+        for col in range(5):
+            self.ssh_profiles_tree.headerItem().setTextAlignment(
+                col, Qt.AlignmentFlag.AlignCenter)
         self.ssh_profiles_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.ssh_profiles_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.ssh_profiles_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -14848,8 +14852,8 @@ class SerialTerminalGUI(QMainWindow):
                 font-size: 9pt;
             }
             QTreeWidget::item {
-                padding: 4px 2px;
-                min-height: 28px;
+                padding: 2px 2px;
+                min-height: 36px;
             }
             QTreeWidget::item:selected {
                 background-color: #2196F3;
@@ -14866,6 +14870,7 @@ class SerialTerminalGUI(QMainWindow):
                 border: none;
                 font-weight: bold;
                 font-size: 9pt;
+                qproperty-alignment: AlignCenter;
             }
         """)
         profiles_layout.addWidget(self.ssh_profiles_tree)
@@ -15672,18 +15677,20 @@ class SerialTerminalGUI(QMainWindow):
             group = profile.get('group', 'Default') or 'Default'
             groups.setdefault(group, []).append(profile)
 
-        group_header_bg = QColor('#c8c8c8')
-        group_header_fg = QColor('#333333')
+        group_header_bg = QColor('#546e7a')
+        group_header_fg = QColor('#ffffff')
 
         for group_name, group_profiles in groups.items():
             # Group header item (non-selectable, spans visually)
             group_item = QTreeWidgetItem(self.ssh_profiles_tree)
-            group_item.setText(0, f" ▼  {group_name}")
+            group_item.setText(0, f"  ▼   {group_name.upper()}")
             group_item.setData(0, Qt.ItemDataRole.UserRole, None)
             group_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable
             font = group_item.font(0)
             font.setBold(True)
+            font.setPointSize(font.pointSize() + 1)
             group_item.setFont(0, font)
+            group_item.setSizeHint(0, QSize(0, 34))
             for col in range(5):
                 group_item.setBackground(col, group_header_bg)
                 group_item.setForeground(col, group_header_fg)
@@ -15759,6 +15766,8 @@ class SerialTerminalGUI(QMainWindow):
         text = item.text(0)
         item.setText(0, text.replace('▼', '▶', 1))
 
+
+
     def _rename_ssh_group(self, group_item):
         """Rename a group and update all its profiles"""
         old_text = group_item.text(0)
@@ -15803,7 +15812,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Update header text preserving arrow
         arrow = '▼' if group_item.isExpanded() else '▶'
-        group_item.setText(0, f" {arrow}  {new_name}")
+        group_item.setText(0, f"  {arrow}   {new_name.upper()}")
 
 
 
