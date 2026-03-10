@@ -506,6 +506,23 @@ class ConfigManager:
         history.insert(0, community)
         self.set('vuln_community_history', json.dumps(history[:20]))
 
+    def get_snmp_ip_community(self, ip):
+        """Return the last working SNMP community for a given IP, or None."""
+        try:
+            mapping = json.loads(self.settings.get('snmp_ip_community_map', '{}'))
+            return mapping.get(ip)
+        except Exception:
+            return None
+
+    def set_snmp_ip_community(self, ip, community):
+        """Save the last working SNMP community for a given IP."""
+        try:
+            mapping = json.loads(self.settings.get('snmp_ip_community_map', '{}'))
+        except Exception:
+            mapping = {}
+        mapping[ip] = community
+        self.set('snmp_ip_community_map', json.dumps(mapping))
+
     def get_serial_profiles(self):
         """Get list of saved serial connection profiles"""
         profiles_json = self.settings.get('serial_profiles', '[]')
@@ -9840,7 +9857,7 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        self.snmp_type_walk_btn = QPushButton("snmpwalk")
+        self.snmp_type_walk_btn = QPushButton("WALK")
         self.snmp_type_walk_btn.setCheckable(True)
         self.snmp_type_walk_btn.setChecked(True)
         self.snmp_type_walk_btn.setFixedWidth(90)
@@ -9848,7 +9865,7 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_type_walk_btn.setStyleSheet(type_btn_style)
         self.snmp_type_walk_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpwalk"))
 
-        self.snmp_type_get_btn = QPushButton("snmpget")
+        self.snmp_type_get_btn = QPushButton("GET")
         self.snmp_type_get_btn.setCheckable(True)
         self.snmp_type_get_btn.setFixedWidth(90)
         self.snmp_type_get_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -9890,7 +9907,7 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.snmp_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.snmp_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.snmp_results_table.setColumnWidth(3, 65)
+        self.snmp_results_table.setColumnWidth(3, 95)
         self.snmp_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.snmp_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.snmp_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -10862,6 +10879,8 @@ class SerialTerminalGUI(QMainWindow):
 
                 # Create and start worker
         self.snmp_results_table.setSortingEnabled(False)
+        self._snmp_last_host = host
+        self._snmp_last_community = community
         self.snmp_worker = SNMPWorker(
             host, port, oid, query_type, version, community,
             v3_username, v3_auth_proto, v3_auth_pass, v3_priv_proto, v3_priv_pass
@@ -11163,8 +11182,17 @@ class SerialTerminalGUI(QMainWindow):
 
     def _on_snmp_finished(self, message, success):
         """Handle SNMP query completion"""
-        self.snmp_execute_btn.setText("SNMP WALK")
+        self.snmp_execute_btn.setText(
+            "SNMP GET" if self.snmp_current_type == "snmpget" else "SNMP WALK"
+        )
         self.snmp_execute_btn.setEnabled(True)
+
+        # Save working community for this host
+        if success:
+            host = getattr(self, '_snmp_last_host', '')
+            community = getattr(self, '_snmp_last_community', '')
+            if host and community:
+                self.config.set_snmp_ip_community(host, community)
 
         # Update colors: families with only 1 member should be white
         if success and hasattr(self, "_snmp_family_counts"):
@@ -17132,6 +17160,9 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_type_buttons[query_type].setChecked(True)
         # Store current type
         self.snmp_current_type = query_type
+        # Update execute button label
+        label_map = {"snmpwalk": "SNMP WALK", "snmpget": "SNMP GET"}
+        self.snmp_execute_btn.setText(label_map.get(query_type, "SNMP WALK"))
 
     def _ssh_protocol_btn_clicked(self, protocol):
         """Handle SSH protocol button click - ensure only one button is checked"""
@@ -17174,7 +17205,11 @@ class SerialTerminalGUI(QMainWindow):
         btn = self.snmp_ip_profiles_btn
         chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
         if chosen and chosen.isEnabled():
-            self.snmp_host_input.setText(chosen.data())
+            host = chosen.data()
+            self.snmp_host_input.setText(host)
+            saved_community = self.config.get_snmp_ip_community(host)
+            if saved_community:
+                self.snmp_community_input.setText(saved_community)
 
     def _snmp_show_community_menu(self):
         """Show a dropdown of previously used SNMP community strings."""
