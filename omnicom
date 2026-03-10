@@ -11046,6 +11046,15 @@ class SerialTerminalGUI(QMainWindow):
             if host and community:
                 self.config.set_snmp_ip_community(host, community)
 
+        # For GETNEXT: update OID field with the returned OID so the next
+        # click advances to the following entry in the MIB tree
+        if success and self.snmp_current_type == "snmpgetnext":
+            last_row = self.snmp_results_table.rowCount() - 1
+            if last_row >= 0:
+                oid_item = self.snmp_results_table.item(last_row, 1)
+                if oid_item:
+                    self.snmp_oid_input.setText(oid_item.text())
+
         # Update colors: families with only 1 member should be white
         if success and hasattr(self, "_snmp_family_counts"):
             white_color = QColor(255, 255, 255)
