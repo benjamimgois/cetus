@@ -14284,6 +14284,8 @@ class SerialTerminalGUI(QMainWindow):
         snmpwalk_action = menu.addAction("SNMP Walk")
         tracert_action  = menu.addAction("Traceroute (ICMP MTR)")
         menu.addSeparator()
+        add_ssh_action  = menu.addAction("Add to SSH List")
+        menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
         action = menu.exec(self.scan_results_table.viewport().mapToGlobal(pos))
@@ -14311,6 +14313,8 @@ class SerialTerminalGUI(QMainWindow):
             self._traceroute_method_changed('ICMP (MTR)')
             self.switch_tab(5)
             self._start_traceroute()
+        elif action == add_ssh_action:
+            self._add_ip_to_ssh_list(ip)
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
@@ -14403,6 +14407,20 @@ class SerialTerminalGUI(QMainWindow):
             self._start_traceroute()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
+
+    def _add_ip_to_ssh_list(self, ip):
+        """Add a scanned IP to the SSH Quick Connect list under group Default."""
+        existing = [p.get('host') for p in self.config.get_ssh_profiles()]
+        if ip in existing:
+            QMessageBox.information(self, "SSH List", f"{ip} is already in the SSH list.")
+            return
+        self.config.save_ssh_profile(
+            name=ip, host=ip, port='22', username='',
+            auth_method='password', key_path='',
+            protocol='SSH', vendor='Default', group='Default'
+        )
+        self.refresh_ssh_profiles()
+        QMessageBox.information(self, "SSH List", f"{ip} added to Quick Connect (group Default).")
 
     def _scan_open_connection(self, host, protocol):
         """Open SSH or Telnet connection to a host from scan results"""
