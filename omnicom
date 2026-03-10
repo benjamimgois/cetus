@@ -15434,6 +15434,19 @@ class SerialTerminalGUI(QMainWindow):
 
     # === SSH/Telnet Helper Methods ===
 
+    def _ssh_protocol_btn_clicked(self, protocol):
+        """Handle SSH/Telnet protocol button click"""
+        for btn in self.ssh_protocol_buttons.values():
+            btn.setChecked(False)
+        self.ssh_protocol_buttons[protocol].setChecked(True)
+        self.ssh_current_protocol = protocol
+        if protocol == "SSH":
+            self.ssh_port.setText("22")
+            self.ssh_connect_btn.setText("CONNECT SSH")
+        else:
+            self.ssh_port.setText("23")
+            self.ssh_connect_btn.setText("CONNECT TELNET")
+
     def toggle_protocol(self, button):
         """Toggle between SSH and Telnet protocol"""
         if button == self.protocol_ssh_btn or self.ssh_current_protocol == "SSH":
