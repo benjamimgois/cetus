@@ -9703,8 +9703,16 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_type_get_btn.setStyleSheet(type_btn_style)
         self.snmp_type_get_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpget"))
 
+        self.snmp_type_getnext_btn = QPushButton("GETNEXT")
+        self.snmp_type_getnext_btn.setCheckable(True)
+        self.snmp_type_getnext_btn.setFixedWidth(90)
+        self.snmp_type_getnext_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snmp_type_getnext_btn.setStyleSheet(type_btn_style)
+        self.snmp_type_getnext_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpgetnext"))
+
         type_layout.addWidget(self.snmp_type_walk_btn)
         type_layout.addWidget(self.snmp_type_get_btn)
+        type_layout.addWidget(self.snmp_type_getnext_btn)
         type_layout.addStretch()
         type_widget.setLayout(type_layout)
         query_layout.addRow("Type:", type_widget)
@@ -9712,7 +9720,8 @@ class SerialTerminalGUI(QMainWindow):
         # Store type buttons for easy access
         self.snmp_type_buttons = {
             'snmpwalk': self.snmp_type_walk_btn,
-            'snmpget': self.snmp_type_get_btn
+            'snmpget': self.snmp_type_get_btn,
+            'snmpgetnext': self.snmp_type_getnext_btn
         }
         self.snmp_current_type = "snmpwalk"
 
@@ -10487,21 +10496,33 @@ class SerialTerminalGUI(QMainWindow):
         if query_type == "snmpwalk" and not oid:
             oid = ".1.3.6.1.2.1"  # Default: walk entire MIB-2 tree
 
-        # Update UI
+        # For GETNEXT: derive OID from last row in table if field is empty
+        if query_type == "snmpgetnext":
+            if not oid:
+                last_row = self.snmp_results_table.rowCount() - 1
+                if last_row >= 0:
+                    oid_item = self.snmp_results_table.item(last_row, 1)
+                    oid = oid_item.text() if oid_item else ""
+            if not oid:
+                self.snmp_results_group.setTitle("Results — Error: OID is required for GETNEXT")
+                return
+
+        # Update UI — for GETNEXT keep existing rows; clear for other types
         self.snmp_results_group.setTitle(f"Results (executing {query_type}...)")
-        self.snmp_search_input.blockSignals(True)
-        self.snmp_search_input.clear()
-        self.snmp_search_input.blockSignals(False)
-        self.snmp_results_table.setRowCount(0)
-        self._snmp_oid_family_colors = {}
-        self._snmp_oid_color_index = 0
-        self._snmp_family_first_row = {}
-        self._snmp_family_counts = {}
-        self.snmp_index_list.clear()
         self.snmp_execute_btn.setEnabled(False)
-        # Reset device image for new scan
-        self._snmp_update_device_image('Default', '')
-        self._snmp_device_pixmap_full = None
+
+        if query_type != "snmpgetnext":
+            self.snmp_search_input.blockSignals(True)
+            self.snmp_search_input.clear()
+            self.snmp_search_input.blockSignals(False)
+            self.snmp_results_table.setRowCount(0)
+            self._snmp_oid_family_colors = {}
+            self._snmp_oid_color_index = 0
+            self._snmp_family_first_row = {}
+            self._snmp_family_counts = {}
+            self.snmp_index_list.clear()
+            self._snmp_update_device_image('Default', '')
+            self._snmp_device_pixmap_full = None
         self._snmp_image_fetched = False
         if query_type == "snmpwalk":
             self.snmp_execute_btn.setText("Walking 0%")
@@ -10583,7 +10604,7 @@ class SerialTerminalGUI(QMainWindow):
                     from pysnmp.hlapi.v3arch.asyncio import (
                         SnmpEngine, CommunityData, UsmUserData, UdpTransportTarget,
                         ContextData, ObjectType, ObjectIdentity,
-                        get_cmd, walk_cmd,
+                        get_cmd, next_cmd, walk_cmd,
                         usmHMACMD5AuthProtocol, usmHMACSHAAuthProtocol,
                         usmHMAC128SHA224AuthProtocol, usmHMAC192SHA256AuthProtocol,
                         usmHMAC256SHA384AuthProtocol, usmHMAC384SHA512AuthProtocol,
@@ -10645,8 +10666,9 @@ class SerialTerminalGUI(QMainWindow):
                                 retries=1
                             )
 
-                            if self.query_type == "snmpget":
-                                errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                            if self.query_type in ("snmpget", "snmpgetnext"):
+                                cmd_func = get_cmd if self.query_type == "snmpget" else next_cmd
+                                errorIndication, errorStatus, errorIndex, varBinds = await cmd_func(
                                     engine,
                                     auth_data,
                                     target,
@@ -11013,9 +11035,8 @@ class SerialTerminalGUI(QMainWindow):
 
     def _on_snmp_finished(self, message, success):
         """Handle SNMP query completion"""
-        self.snmp_execute_btn.setText(
-            "SNMP GET" if self.snmp_current_type == "snmpget" else "SNMP WALK"
-        )
+        label_map = {"snmpget": "SNMP GET", "snmpgetnext": "SNMP GETNEXT"}
+        self.snmp_execute_btn.setText(label_map.get(self.snmp_current_type, "SNMP WALK"))
         self.snmp_execute_btn.setEnabled(True)
 
         # Save working community for this host
@@ -11243,7 +11264,7 @@ class SerialTerminalGUI(QMainWindow):
             btn.setChecked(False)
         self.snmp_type_buttons[query_type].setChecked(True)
         self.snmp_current_type = query_type
-        label_map = {"snmpwalk": "SNMP WALK", "snmpget": "SNMP GET"}
+        label_map = {"snmpwalk": "SNMP WALK", "snmpget": "SNMP GET", "snmpgetnext": "SNMP GETNEXT"}
         self.snmp_execute_btn.setText(label_map.get(query_type, "SNMP WALK"))
 
     def _snmp_show_ip_menu(self):
