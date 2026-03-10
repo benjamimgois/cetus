@@ -13841,6 +13841,14 @@ class SerialTerminalGUI(QMainWindow):
         """)
         return bar
 
+    def _scan_method_btn_clicked(self, method):
+        """Handle scan method button click - ensure only one button is checked"""
+        for btn in self.scan_method_buttons.values():
+            btn.setChecked(False)
+        self.scan_method_buttons[method].setChecked(True)
+        self.scan_current_method = method
+        self._scan_method_changed(method)
+
     def _scan_method_changed(self, method):
         """Show/hide ports field based on scan method"""
         show_ports = method in ('TCP', 'UDP')
