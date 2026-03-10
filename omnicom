@@ -11227,6 +11227,63 @@ class SerialTerminalGUI(QMainWindow):
         elif action == copy_both_action:
             QApplication.clipboard().setText(f"{oid} = {value}")
 
+    def _snmp_version_btn_clicked(self, version):
+        """Handle version button click - ensure only one button is checked"""
+        for btn in self.snmp_version_buttons.values():
+            btn.setChecked(False)
+        self.snmp_version_buttons[version].setChecked(True)
+        self.snmp_current_version = version
+        is_v3 = (version == "v3")
+        for widget in self.snmp_v3_widgets.values():
+            widget.setVisible(is_v3)
+
+    def _snmp_type_btn_clicked(self, query_type):
+        """Handle type button click - ensure only one button is checked"""
+        for btn in self.snmp_type_buttons.values():
+            btn.setChecked(False)
+        self.snmp_type_buttons[query_type].setChecked(True)
+        self.snmp_current_type = query_type
+        label_map = {"snmpwalk": "SNMP WALK", "snmpget": "SNMP GET"}
+        self.snmp_execute_btn.setText(label_map.get(query_type, "SNMP WALK"))
+
+    def _snmp_show_ip_menu(self):
+        """Show a dropdown of all SSH profiles so the user can pick a host."""
+        profiles = self.config.get_ssh_profiles()
+        menu = QMenu(self)
+        if not profiles:
+            act = menu.addAction("No SSH profiles registered")
+            act.setEnabled(False)
+        else:
+            for p in profiles:
+                name = p.get('name', '')
+                host = p.get('host', '')
+                label = f"{name}  ({host})" if name else host
+                action = menu.addAction(label)
+                action.setData(host)
+        btn = self.snmp_ip_profiles_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            host = chosen.data()
+            self.snmp_host_input.setText(host)
+            saved_community = self.config.get_snmp_ip_community(host)
+            if saved_community:
+                self.snmp_community_input.setText(saved_community)
+
+    def _snmp_show_community_menu(self):
+        """Show a dropdown of previously used SNMP community strings."""
+        history = self.config.get_vuln_community_history()
+        menu = QMenu(self)
+        if not history:
+            act = menu.addAction("No history yet")
+            act.setEnabled(False)
+        else:
+            for c in history:
+                menu.addAction(c)
+        btn = self.snmp_community_hist_btn
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen and chosen.isEnabled():
+            self.snmp_community_input.setText(chosen.text())
+
     # =========================================================
     #  WiFi Site Survey
     # =========================================================
