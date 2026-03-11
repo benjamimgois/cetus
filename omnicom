@@ -3454,85 +3454,102 @@ class SshProfilesTree(QTreeWidget):
 
 
 class SpeedTestWorker(QThread):
-    """Run speed test using Ookla CLI (preferred) or speedtest-cli (fallback)."""
-    result   = pyqtSignal(float, float, float)   # ping_ms, dl_mbps, ul_mbps
-    info     = pyqtSignal(str, str, str, str)    # isp, isp_rating, country, server_name
-    log_line = pyqtSignal(str)
-    error    = pyqtSignal(str)
+    """Measure download speed using the 'fast' CLI (fast.com / Netflix CDN)."""
+
+    result      = pyqtSignal(float, float, float)  # ping_ms, dl_mbps, ul_mbps
+    info        = pyqtSignal(str, str, str, str)   # isp, rating, country, server
+    phase_start = pyqtSignal(str)                  # 'download'
+    phase_done  = pyqtSignal(str, float)           # phase, avg_mbps
+    progress    = pyqtSignal(float, float, float)  # elapsed_s, speed_mbps, 0.0
+    log_line    = pyqtSignal(str)
+    error       = pyqtSignal(str)
 
     def run(self):
-        import subprocess as _sp
-        import json as _json
+        import subprocess as _sp, re as _re, time as _time
 
-        # ── Strategy 1: Python speedtest-cli --json ──────────────────────
-        # Works for `speedtest` or `speedtest-cli` Python packages.
-        # Output: single JSON blob — download/upload in bits/s, ping in ms.
-        for cmd in (['speedtest',     '--json', '--secure', '--no-pre-allocate'],
-                    ['speedtest-cli', '--json', '--secure', '--no-pre-allocate']):
-            try:
-                self.log_line.emit(f"Trying: {' '.join(cmd)}")
-                proc = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
-                output = proc.stdout.read()
-                proc.wait()
-                if output.strip():
-                    self.log_line.emit(output.strip())
-                data = _json.loads(output.strip())
-                ping = float(data.get('ping', 0))
-                dl   = float(data.get('download', 0)) / 1_000_000   # bits/s → Mbps
-                ul   = float(data.get('upload',   0)) / 1_000_000
-                if dl > 0 or ul > 0:
-                    client = data.get('client', {})
-                    server = data.get('server', {})
-                    isp         = client.get('isp', '—')
-                    isp_rating  = client.get('isprating', '—')
-                    country     = client.get('country', '—')
-                    server_name = f"{server.get('name', '—')} ({server.get('country', '—')})"
-                    self.info.emit(isp, isp_rating, country, server_name)
-                    self.result.emit(ping, dl, ul)
-                    return
-            except FileNotFoundError:
-                self.log_line.emit(f"{cmd[0]} not found.")
-            except _json.JSONDecodeError:
-                self.log_line.emit(f"{cmd[0]}: output is not JSON — skipping.")
-            except Exception as exc:
-                self.log_line.emit(f"{cmd[0]} failed: {exc}")
+        # Strip ANSI escape sequences (e.g. \x1b[2K)
+        _ansi = _re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+        # Strip spinner prefix and arrow  (-  \  |  /  ->  → and spaces)
+        _pfx  = _re.compile(r'^[\-\\/|>\s→]+')
 
-        # ── Strategy 2: Ookla CLI --format=json (JSONL, bytes/s) ────────
         try:
-            self.log_line.emit("Trying: speedtest --format=json (Ookla CLI)")
             proc = _sp.Popen(
-                ['speedtest', '--format=json', '--accept-license', '--accept-gdpr'],
-                stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True
+                ['fast', '--upload'],
+                stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                bufsize=0
             )
-            best: dict = {}
-            for raw in proc.stdout:
-                line = raw.strip()
-                if not line:
-                    continue
-                self.log_line.emit(line)
-                try:
-                    d = _json.loads(line)
-                    if 'download' in d and 'upload' in d:
-                        best = d
-                except Exception:
-                    pass
-            proc.wait()
-            if best:
-                ping = best.get('ping', {}).get('latency', 0.0)
-                dl   = best['download'].get('bandwidth', 0) * 8 / 1_000_000
-                ul   = best['upload'].get('bandwidth',   0) * 8 / 1_000_000
-                self.result.emit(ping, dl, ul)
-                return
         except FileNotFoundError:
-            self.log_line.emit("speedtest (Ookla) not found.")
-        except Exception as exc:
-            self.log_line.emit(f"Ookla CLI error: {exc}")
+            self.error.emit(
+                "'fast' não encontrado.\n"
+                "Instale com: npm install --global fast-cli"
+            )
+            return
 
-        self.error.emit(
-            "Speed test falhou — nenhuma ferramenta retornou resultado.\n"
-            "Instale a CLI oficial da Ookla: https://www.speedtest.net/apps/cli\n"
-            "Ou: pip install speedtest-cli"
-        )
+        t0 = _time.monotonic()
+        self.phase_start.emit('download')
+        self.log_line.emit("Iniciando fast.com…")
+
+        dl = ul = 0.0
+        phase = 'download'
+        last_emit = t0
+        buf = ''
+
+        while True:
+            raw = proc.stdout.read(1)
+            if not raw:
+                break
+            ch = raw.decode('utf-8', errors='replace')
+
+            if ch in ('\r', '\n'):
+                line = _pfx.sub('', _ansi.sub('', buf)).strip()
+                buf = ''
+                if not line or line in ('connecting', 'loading'):
+                    continue
+
+                now     = _time.monotonic()
+                elapsed = now - t0
+
+                m = _re.search(r'([\d.]+)\s*(Gbps|Mbps|Kbps)', line, _re.IGNORECASE)
+                if not m:
+                    self.log_line.emit(line)
+                    continue
+
+                val  = float(m.group(1))
+                unit = m.group(2).lower()
+                if   unit == 'gbps': val *= 1000
+                elif unit == 'kbps': val /= 1000
+
+                # Detect upload phase: after download settled, speed drops to <30%
+                if phase == 'download' and dl > 0 and val < dl * 0.3 and elapsed > 15:
+                    self.phase_done.emit('download', dl)
+                    self.phase_start.emit('upload')
+                    phase = 'upload'
+                    self.log_line.emit(f"Download: {dl:.2f} Mbps")
+
+                if phase == 'download':
+                    dl = val
+                else:
+                    ul = val
+
+                if now - last_emit >= 0.5:
+                    self.progress.emit(elapsed, val, 0.0)
+                    last_emit = now
+            else:
+                buf += ch
+
+        proc.wait()
+
+        if dl > 0:
+            if phase == 'download':
+                self.phase_done.emit('download', dl)
+            self.log_line.emit(
+                f"Download: {dl:.2f} Mbps" +
+                (f"  |  Upload: {ul:.2f} Mbps" if ul > 0 else "")
+            )
+            self.info.emit('fast.com', '—', '—', 'Netflix CDN')
+            self.result.emit(0.0, dl, ul)
+        else:
+            self.error.emit("Nenhum resultado obtido.")
 
 
 class PingWorker(QThread):
@@ -3571,18 +3588,27 @@ class IperfGraphWidget(QWidget):
     _COLOR_BITRATE  = QColor('#00897B')   # teal accent
     _COLOR_TRANSFER = QColor('#78909C')   # blue-grey for cumulative
 
+    _COLOR_UPLOAD    = QColor('#E65100')
+    _COLOR_UPLOAD_LT = QColor('#FFAB40')
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._intervals: list = []   # [(t_end_s, bitrate_mbps, transfer_mb)]
+        self._intervals: list = []   # [(t_end_s, bitrate_mbps, transfer_mb, series)]
         self.setMinimumSize(300, 140)
         self.setStyleSheet("background: transparent;")
 
-    def add_interval(self, t_end: float, bitrate_mbps: float, transfer_mb: float):
-        self._intervals.append((t_end, bitrate_mbps, transfer_mb))
+    def add_interval(self, t_end: float, bitrate_mbps: float, transfer_mb: float,
+                     series: int = 0):
+        self._intervals.append((t_end, bitrate_mbps, transfer_mb, series))
         self.update()
 
     def clear(self):
         self._intervals = []
+        self.update()
+
+    def clear_series(self, series: int):
+        """Remove all intervals belonging to *series*, keep others."""
+        self._intervals = [item for item in self._intervals if item[3] != series]
         self.update()
 
     def paintEvent(self, event):
@@ -3624,12 +3650,12 @@ class IperfGraphWidget(QWidget):
             return
 
         # ── Data ranges ───────────────────────────────────────────────────
-        max_t    = max(t for t, _, _ in self._intervals)
-        max_bps  = max(b for _, b, _ in self._intervals)
+        max_t    = max(item[0] for item in self._intervals)
+        max_bps  = max(item[1] for item in self._intervals)
         max_bps  = max(max_bps * 1.25, 1.0)
-        max_xfer = max(x for _, _, x in self._intervals)
+        max_xfer = max(item[2] for item in self._intervals)
         max_xfer = max(max_xfer * 1.25, 1.0)
-        peak_bps = max(b for _, b, _ in self._intervals)
+        peak_bps = max(item[1] for item in self._intervals)
 
         def px(t): return L + (t / max(max_t, 1)) * plot_w
         def py(b): return T + plot_h - (b / max_bps) * plot_h
@@ -3726,7 +3752,7 @@ class IperfGraphWidget(QWidget):
 
         # ── Transfer: smooth filled area (behind bitrate) ─────────────────
         if len(self._intervals) >= 2:
-            pts_x = [(px(t), py2(x)) for t, _, x in self._intervals]
+            pts_x = [(px(item[0]), py2(item[2])) for item in self._intervals]
             xp = QPainterPath()
             xp.moveTo(pts_x[0][0], T + plot_h)
             xp.lineTo(pts_x[0][0], pts_x[0][1])
@@ -3750,92 +3776,95 @@ class IperfGraphWidget(QWidget):
             painter.setPen(QPen(xfr_lc, 1, Qt.PenStyle.DashLine))
             painter.drawPath(xfr_line)
 
-        # ── Bitrate: rich filled area + multi-pass neon glow ─────────────
-        if len(self._intervals) >= 2:
-            pts_b = [(px(t), py(b)) for t, b, _ in self._intervals]
+        # ── Bitrate: series-aware filled area + neon glow ────────────────
+        def _smooth_path(pts, close_bottom=False):
+            p = QPainterPath()
+            if close_bottom:
+                p.moveTo(pts[0][0], T + plot_h)
+                p.lineTo(pts[0][0], pts[0][1])
+            else:
+                p.moveTo(pts[0][0], pts[0][1])
+            for i in range(1, len(pts)):
+                cx = (pts[i-1][0] + pts[i][0]) / 2
+                p.cubicTo(cx, pts[i-1][1], cx, pts[i][1], pts[i][0], pts[i][1])
+            if close_bottom:
+                p.lineTo(pts[-1][0], T + plot_h)
+                p.closeSubpath()
+            return p
 
-            # Build smooth path
-            def _smooth_path(pts, close_bottom=False):
-                p = QPainterPath()
-                if close_bottom:
-                    p.moveTo(pts[0][0], T + plot_h)
-                    p.lineTo(pts[0][0], pts[0][1])
-                else:
-                    p.moveTo(pts[0][0], pts[0][1])
-                for i in range(1, len(pts)):
-                    cx = (pts[i-1][0] + pts[i][0]) / 2
-                    p.cubicTo(cx, pts[i-1][1], cx, pts[i][1], pts[i][0], pts[i][1])
-                if close_bottom:
-                    p.lineTo(pts[-1][0], T + plot_h)
-                    p.closeSubpath()
-                return p
+        _SERIES_COLORS = {
+            0: (TEAL,                  TEAL_LT),                  # download
+            1: (self._COLOR_UPLOAD,    self._COLOR_UPLOAD_LT),    # upload
+        }
 
-            # deep fill (two layers for depth)
-            fill_path = _smooth_path(pts_b, close_bottom=True)
-            grad1 = QLinearGradient(0, T, 0, T + plot_h)
-            c1 = QColor(TEAL); c1.setAlpha(110)
-            c2 = QColor(TEAL); c2.setAlpha(30)
-            c3 = QColor(TEAL); c3.setAlpha(5)
-            grad1.setColorAt(0.0, c1)
-            grad1.setColorAt(0.5, c2)
-            grad1.setColorAt(1.0, c3)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.fillPath(fill_path, grad1)
+        # Group intervals by series (preserving time order within each group)
+        _series_pts: dict = {}
+        for item in self._intervals:
+            s = item[3]
+            _series_pts.setdefault(s, []).append((px(item[0]), py(item[1])))
 
-            # neon glow: outer → inner → solid
-            line_path = _smooth_path(pts_b)
-            for pw, pa in [(8, 15), (5, 35), (3, 70), (2, 150), (1, 255)]:
-                _c = QColor(TEAL_LT if pw <= 2 else TEAL)
-                _c.setAlpha(pa)
-                pen = QPen(_c, pw)
-                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(pen)
-                painter.drawPath(line_path)
+        for s_idx, pts_b in sorted(_series_pts.items()):
+            c_main, c_lt = _SERIES_COLORS.get(s_idx, _SERIES_COLORS[0])
+            if len(pts_b) >= 2:
+                fill_path = _smooth_path(pts_b, close_bottom=True)
+                grad1 = QLinearGradient(0, T, 0, T + plot_h)
+                c1 = QColor(c_main); c1.setAlpha(110)
+                c2 = QColor(c_main); c2.setAlpha(30)
+                c3 = QColor(c_main); c3.setAlpha(5)
+                grad1.setColorAt(0.0, c1); grad1.setColorAt(0.5, c2); grad1.setColorAt(1.0, c3)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.fillPath(fill_path, grad1)
 
-        elif len(self._intervals) == 1:
-            t0, b0, _ = self._intervals[0]
-            x0, y0 = px(t0), py(b0)
-            for pw, pa in [(6, 30), (3, 100), (2, 220)]:
-                _c = QColor(TEAL); _c.setAlpha(pa)
-                painter.setPen(QPen(_c, pw))
-                painter.drawLine(L, int(y0), L + plot_w, int(y0))
+                line_path = _smooth_path(pts_b)
+                for pw, pa in [(8, 15), (5, 35), (3, 70), (2, 150), (1, 255)]:
+                    _c = QColor(c_lt if pw <= 2 else c_main); _c.setAlpha(pa)
+                    pen = QPen(_c, pw)
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(pen)
+                    painter.drawPath(line_path)
+            elif len(pts_b) == 1:
+                _, y0 = pts_b[0]
+                for pw, pa in [(6, 30), (3, 100), (2, 220)]:
+                    _c = QColor(c_main); _c.setAlpha(pa)
+                    painter.setPen(QPen(_c, pw))
+                    painter.drawLine(L, int(y0), L + plot_w, int(y0))
 
         # ── Glowing data point dots ───────────────────────────────────────
         painter.setPen(Qt.PenStyle.NoPen)
-        for i, (t, b, _) in enumerate(self._intervals):
+        for i, item in enumerate(self._intervals):
+            t, b, _, s = item
             xp_d, yp_d = int(px(t)), int(py(b))
+            c_main, c_lt = _SERIES_COLORS.get(s, _SERIES_COLORS[0])
             is_last = (i == len(self._intervals) - 1)
             if is_last:
-                # large glowing dot for latest point
                 for r, a in [(7, 20), (5, 50), (3, 130), (2, 255)]:
-                    gc = QColor(TEAL_LT); gc.setAlpha(a)
+                    gc = QColor(c_lt); gc.setAlpha(a)
                     painter.setBrush(gc)
                     painter.drawEllipse(xp_d - r, yp_d - r, r * 2, r * 2)
             else:
-                gc = QColor(TEAL); gc.setAlpha(180)
+                gc = QColor(c_main); gc.setAlpha(180)
                 painter.setBrush(gc)
                 painter.drawEllipse(xp_d - 2, yp_d - 2, 4, 4)
 
         # ── Live value badge (last point) ─────────────────────────────────
         if self._intervals:
-            t_last, b_last, x_last = self._intervals[-1]
+            t_last, b_last, _, s_last = self._intervals[-1]
+            c_badge, _ = _SERIES_COLORS.get(s_last, _SERIES_COLORS[0])
             x_lp = int(px(t_last))
             y_lp = int(py(b_last))
 
-            # vertical cursor line
-            cur_c = QColor(TEAL_LT); cur_c.setAlpha(50)
+            cur_c = QColor(c_badge); cur_c.setAlpha(50)
             painter.setPen(QPen(cur_c, 1, Qt.PenStyle.DashLine))
             painter.drawLine(x_lp, T, x_lp, T + plot_h)
 
-            # badge background
             badge_txt = fmt_bps(b_last)
             fm = painter.fontMetrics()
             bw = fm.horizontalAdvance(badge_txt) + 12
             bh = 16
             bx = min(x_lp + 6, L + plot_w - bw - 2)
             by = max(T + 2, y_lp - bh - 4)
-            badge_bg = QColor(TEAL); badge_bg.setAlpha(200)
+            badge_bg = QColor(c_badge); badge_bg.setAlpha(200)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(badge_bg)
             painter.drawRoundedRect(bx, by, bw, bh, 4, 4)
@@ -16475,7 +16504,6 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {{
                 background-color: #e8e8e8;
                 border: 1px solid #b0b0b0;
-                border-right: none;
                 border-radius: 6px 0px 0px 6px;
                 color: #555555;
                 font-size: 10pt;
@@ -16497,6 +16525,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #e8e8e8;
                 border: 1px solid #b0b0b0;
                 border-radius: 0px 6px 6px 0px;
+                margin-left: -1px;
                 color: #555555;
                 font-size: 10pt;
                 font-weight: bold;
@@ -16583,8 +16612,59 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_duration_combo.setCurrentText("10 s")
         self.iperf_duration_combo.setFixedWidth(70)
         self.iperf_duration_combo.setFixedHeight(26)
+        # Arrow button — public iPerf3 server presets
+        _iperf_servers = [
+            ("🇧🇷 Brasil — São Paulo",      "speedtest.claro.net.br"),
+            ("🇧🇷 Brasil — Rio de Janeiro", "200.160.7.186"),
+            (None, None),
+            ("🇺🇸 USA — Fremont, CA",       "iperf.he.net"),
+            ("🇺🇸 USA — New York",          "nyc.speedtest.clouvider.net"),
+            ("🇨🇦 Canadá — Toronto",        "speedtest.eastlink.ca"),
+            (None, None),
+            ("🇬🇧 UK — London",             "lon.speedtest.clouvider.net"),
+            ("🇫🇷 França — Paris",          "bouygues.iperf.fr"),
+            ("🇩🇪 Alemanha — Frankfurt",    "fra.speedtest.clouvider.net"),
+            ("🇳🇱 Holanda",                 "speedtest.serverius.net"),
+            (None, None),
+            ("🇸🇬 Singapura",               "sgp.speedtest.clouvider.net"),
+            ("🇦🇺 Austrália — Sydney",      "syd.speedtest.clouvider.net"),
+        ]
+        _srv_btn = QPushButton()
+        _srv_btn.setIcon(QIcon(self.get_arrow_icon_path()))
+        _srv_btn.setIconSize(QSize(16, 16))
+        _srv_btn.setFixedWidth(28)
+        _srv_btn.setFixedHeight(self.iperf_host_input.sizeHint().height() or 26)
+        _srv_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _srv_btn.setToolTip("Servidores iPerf3 públicos")
+        _srv_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f5f5;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+            }
+            QPushButton:hover  { background-color: #e8e8e8; border-color: #b0b0b0; }
+            QPushButton:pressed { background-color: #d8d8d8; }
+        """)
+
+        def _show_iperf_servers():
+            menu = QMenu(_srv_btn)
+            for entry in _iperf_servers:
+                label, host = entry
+                if label is None:
+                    menu.addSeparator()
+                else:
+                    action = menu.addAction(f"{label}  —  {host}")
+                    action.setData(host)
+            chosen = menu.exec(_srv_btn.mapToGlobal(_srv_btn.rect().bottomLeft()))
+            if chosen and chosen.data():
+                self.iperf_host_input.setText(chosen.data())
+
+        _srv_btn.clicked.connect(_show_iperf_servers)
+
         row1.addWidget(host_lbl)
         row1.addWidget(self.iperf_host_input, 1)
+        row1.addWidget(_srv_btn)
         row1.addWidget(port_lbl)
         row1.addWidget(self.iperf_port_input)
         row1.addWidget(dur_lbl)
@@ -16691,11 +16771,12 @@ class SerialTerminalGUI(QMainWindow):
             return card, val
 
         self._ping_card, self.stat_ping      = _stat_card("🏓", "PING",     "#FFB300")
-        dl_card,         self.stat_download  = _stat_card("⬇",  "DOWNLOAD", BROWN)
-        ul_card,         self.stat_upload    = _stat_card("⬆",  "UPLOAD",   "#78909C")
-        stats_layout.addWidget(self._ping_card, 1)
-        stats_layout.addWidget(dl_card,         2)
-        stats_layout.addWidget(ul_card,         2)
+        dl_card,         self.stat_download  = _stat_card("⬇",  "THROUGHPUT", BROWN)
+        self._ul_card,   self.stat_upload    = _stat_card("⬆",  "UPLOAD",   "#78909C")
+        stats_layout.addWidget(self._ping_card,  1)
+        stats_layout.addWidget(dl_card,          2)
+        stats_layout.addWidget(self._ul_card,    2)
+        self._ul_card.setVisible(False)   # hidden by default (Speed Test mode)
 
         stats_group.setLayout(stats_layout)
         stats_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -17008,6 +17089,7 @@ class SerialTerminalGUI(QMainWindow):
         self._test_mode_iperf_btn.setChecked(is_iperf)
         self._iperf_options_widget.setVisible(is_iperf)
         self._speedtest_info_bar.setVisible(not is_iperf)
+        self._ul_card.setVisible(False)   # always hidden — unified single-speed view
         # Reset stats
         for lbl in (self.stat_ping, self.stat_download, self.stat_upload,
                     self._st_info_isp, self._st_info_rating,
@@ -17060,6 +17142,8 @@ class SerialTerminalGUI(QMainWindow):
         self._speedtest_worker = SpeedTestWorker()
         self._speedtest_worker.result.connect(self._on_speedtest_result)
         self._speedtest_worker.info.connect(self._on_speedtest_info)
+        self._speedtest_worker.progress.connect(self._on_speedtest_progress)
+        self._speedtest_worker.phase_done.connect(self._on_speedtest_phase_done)
         self._speedtest_worker.log_line.connect(self._on_speedtest_log)
         self._speedtest_worker.error.connect(self._on_speedtest_error)
         self._speedtest_worker.finished.connect(self._on_speedtest_done)
@@ -17075,24 +17159,19 @@ class SerialTerminalGUI(QMainWindow):
         self._st_info_country.setText(country)
         self._st_info_server.setText(server_name)
 
+    def _on_speedtest_progress(self, elapsed_s, speed_mbps, total_mb):
+        """Real-time sample from the download worker — add directly to graph."""
+        self.iperf_graph.add_interval(elapsed_s, speed_mbps, total_mb, 0)
+        self.stat_download.setText(f"{speed_mbps:.2f} Mbps")
+
+    def _on_speedtest_phase_done(self, phase, mbps):
+        pass   # graph already populated by real-time progress samples
+
     def _on_speedtest_result(self, ping_ms, dl_mbps, ul_mbps):
-        self.stat_ping.setText(f"{ping_ms:.1f} ms")
+        self.stat_ping.setText(f"{ping_ms:.0f} ms")
         self.stat_download.setText(f"{dl_mbps:.2f} Mbps")
-        self.stat_upload.setText(f"{ul_mbps:.2f} Mbps")
-        # Feed graph: download phase (8 steps) + upload phase (8 steps),
-        # each with ramp-up so it fills the full chart width naturally.
-        STEPS = 8
-        cum = 0.0
-        for i in range(1, STEPS + 1):
-            ramp = min(1.0, (i / 3.0) ** 1.5)
-            bitrate = dl_mbps * ramp
-            cum += bitrate / 8.0
-            self.iperf_graph.add_interval(float(i), bitrate, cum)
-        for i in range(1, STEPS + 1):
-            ramp = min(1.0, (i / 3.0) ** 1.5)
-            bitrate = ul_mbps * ramp
-            cum += bitrate / 8.0
-            self.iperf_graph.add_interval(float(STEPS + i), bitrate, cum)
+        if ul_mbps > 0:
+            self.stat_upload.setText(f"{ul_mbps:.2f} Mbps")
 
     def _on_speedtest_log(self, line):
         self.iperf_log.appendPlainText(line)
@@ -17106,6 +17185,12 @@ class SerialTerminalGUI(QMainWindow):
     def _on_speedtest_done(self):
         self.iperf_run_btn.setEnabled(True)
         self.iperf_run_btn.setText("SPEED TEST")
+        # Ping fast.com to fill the latency card
+        self.stat_ping.setText("…")
+        self._st_ping_worker = PingWorker('fast.com')
+        self._st_ping_worker.result.connect(lambda ms: self.stat_ping.setText(f"{ms:.1f} ms"))
+        self._st_ping_worker.error.connect(lambda _: self.stat_ping.setText("—"))
+        self._st_ping_worker.start()
 
 
 def main():
