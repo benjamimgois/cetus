@@ -3340,11 +3340,9 @@ class Iperf3Worker(QThread):
             r'\s+([\d.]+)\s+(\w+bits/sec)'
             r'(?:\s+([\d.]+)\s+ms\s+(\d+)/(\d+)\s+\(([\d.]+)%\))?'
         )
-        summary_re = _re.compile(r'sender|receiver', _re.IGNORECASE)
-
         intervals = []
-        last_jitter = 0.0
-        last_loss   = 0.0
+        last_jitter = -1.0   # -1 = no data (TCP has no jitter/loss)
+        last_loss   = -1.0
 
         for line in self._process.stdout:
             if self._stop_flag:
@@ -3352,27 +3350,29 @@ class Iperf3Worker(QThread):
             line = line.rstrip('\n')
             self.log_line.emit(line)
 
-            # Skip summary / header lines
-            if summary_re.search(line):
-                continue
-
             m = interval_re.search(line)
             if not m:
                 continue
 
-            t_end    = float(m.group(2))
-            transfer = self._to_mb(float(m.group(3)), m.group(4))
-            bitrate  = self._to_mbps(float(m.group(5)), m.group(6))
-            jitter   = float(m.group(7)) if m.group(7) else 0.0
-            loss_pct = float(m.group(10)) if m.group(10) else 0.0
+            t_end      = float(m.group(2))
+            transfer   = self._to_mb(float(m.group(3)), m.group(4))
+            bitrate    = self._to_mbps(float(m.group(5)), m.group(6))
+            jitter_raw = m.group(7)
+            loss_raw   = m.group(10)
+            jitter     = float(jitter_raw) if jitter_raw else 0.0
+            loss_pct   = float(loss_raw)   if loss_raw   else 0.0
 
-            # Skip multi-stream aggregate "[SUM]" duplicates (they share same t_end)
+            # Capture jitter/loss from any matched line, including sender/receiver summaries
+            if jitter_raw:
+                last_jitter = jitter
+            if loss_raw is not None:
+                last_loss = loss_pct
+
+            # Skip multi-stream "[SUM]" duplicates and summary lines (same t_end)
             if intervals and abs(t_end - intervals[-1][0]) < 0.01:
                 continue
 
             intervals.append((t_end, bitrate, transfer))
-            last_jitter = jitter
-            last_loss   = loss_pct
             self.interval_result.emit(t_end, bitrate, transfer, jitter)
 
         self._process.wait()
@@ -8963,7 +8963,7 @@ class SerialTerminalGUI(QMainWindow):
         net_input_layout.setSpacing(4)
 
         self.scan_network_input = QLineEdit()
-        self.scan_network_input.setFixedWidth(combo_width)
+        self.scan_network_input.setFixedWidth(162)
         self.scan_network_input.setPlaceholderText("192.168.1.0")
         self.scan_network_input.setToolTip("Network or host IP address")
         self.scan_network_input.setStyleSheet("""
@@ -8989,10 +8989,36 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_mask_combo.setFixedWidth(80)
         self.scan_mask_combo.setToolTip("Subnet mask (CIDR prefix length)")
 
+        self.scan_dns_checkbox = QCheckBox("DNS Lookup")
+        self.scan_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS (slower)")
+        self.scan_dns_checkbox.setChecked(True)
+        self.scan_dns_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #333333;
+                font-size: 9pt;
+                spacing: 4px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                background-color: #f5f5f5;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ef5350;
+                border-color: #ef5350;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #ef5350;
+            }
+        """)
+
         net_input_layout.addWidget(self.scan_network_input)
         net_input_layout.addWidget(slash_label)
         net_input_layout.addWidget(self.scan_mask_combo)
-        net_input_layout.addStretch()
+        net_input_layout.addSpacing(10)
+        net_input_layout.addWidget(self.scan_dns_checkbox)
         net_widget = QWidget()
         net_widget.setContentsMargins(0, 0, 0, 0)
         net_widget.setLayout(net_input_layout)
@@ -9079,7 +9105,7 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_ports_input = QLineEdit()
         self.scan_ports_input.setPlaceholderText("22,80,443 or 1-1024")
         self.scan_ports_input.setToolTip("Comma-separated ports or range (e.g. 22,80,443 or 1-1024)")
-        self.scan_ports_input.setText("22,23,80,443,3389")
+        self.scan_ports_input.setText("22,23,80,139,443,445,3389")
         self.scan_ports_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
@@ -9096,6 +9122,8 @@ class SerialTerminalGUI(QMainWindow):
 
         # Common ports quick preset button
         _common_ports = [
+            ("Default Ports", "22,23,80,139,443,445,3389"),
+            ("---", None),
             ("SSH (22)", "22"),
             ("Telnet (23)", "23"),
             ("FTP (20-21)", "20,21"),
@@ -9106,6 +9134,7 @@ class SerialTerminalGUI(QMainWindow):
             ("POP3 (110)", "110"),
             ("IMAP (143)", "143"),
             ("SNMP (161)", "161"),
+            ("SMB (139,445)", "139,445"),
             ("RDP (3389)", "3389"),
             ("VNC (5900)", "5900"),
             ("MySQL (3306)", "3306"),
@@ -9155,18 +9184,21 @@ class SerialTerminalGUI(QMainWindow):
                 _ports_quick_btn.mapToGlobal(_ports_quick_btn.rect().bottomLeft())
             )
             if chosen and chosen.data():
-                current_text = self.scan_ports_input.text().strip()
                 new_ports = chosen.data()
-                if current_text:
-                    # Add to existing ports if not already present
-                    existing_ports = set(current_text.split(','))
-                    new_ports_list = new_ports.split(',')
-                    for port in new_ports_list:
-                        if port not in existing_ports:
-                            current_text += ',' + port
-                    self.scan_ports_input.setText(current_text)
-                else:
+                if chosen.text() == "Default Ports":
                     self.scan_ports_input.setText(new_ports)
+                else:
+                    current_text = self.scan_ports_input.text().strip()
+                    if current_text:
+                        # Add to existing ports if not already present
+                        existing_ports = set(current_text.split(','))
+                        new_ports_list = new_ports.split(',')
+                        for port in new_ports_list:
+                            if port not in existing_ports:
+                                current_text += ',' + port
+                        self.scan_ports_input.setText(current_text)
+                    else:
+                        self.scan_ports_input.setText(new_ports)
 
         _ports_quick_btn.clicked.connect(_show_ports_menu)
 
@@ -9193,35 +9225,8 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_timeout_combo.addItems(["1s", "2s", "3s", "5s"])
         self.scan_timeout_combo.setFixedWidth(80)
 
-        self.scan_dns_checkbox = QCheckBox("DNS Lookup")
-        self.scan_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS (slower)")
-        self.scan_dns_checkbox.setChecked(False)
-        self.scan_dns_checkbox.setStyleSheet("""
-            QCheckBox {
-                color: #333333;
-                font-size: 9pt;
-                spacing: 4px;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-                border: 1px solid #d0d0d0;
-                border-radius: 3px;
-                background-color: #f5f5f5;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #ef5350;
-                border-color: #ef5350;
-            }
-            QCheckBox::indicator:hover {
-                border-color: #ef5350;
-            }
-        """)
-
         options_layout.addWidget(timeout_label)
         options_layout.addWidget(self.scan_timeout_combo)
-        options_layout.addSpacing(10)
-        options_layout.addWidget(self.scan_dns_checkbox)
         options_layout.addStretch()
 
         options_widget = QWidget()
@@ -16296,9 +16301,9 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_host_input.setPlaceholderText("iperf3 server address")
         self.iperf_host_input.setFixedHeight(26)
         self.iperf_host_input.setStyleSheet(field_style)
-        self.iperf_discover_btn = QPushButton("Scan LAN")
-        self.iperf_discover_btn.setFixedHeight(26)
-        self.iperf_discover_btn.setFixedWidth(72)
+        self.iperf_discover_btn = QPushButton("Scan Server")
+        self.iperf_discover_btn.setFixedHeight(24)
+        self.iperf_discover_btn.setFixedWidth(90)
         self.iperf_discover_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.iperf_discover_btn.setToolTip("Scan local /24 network for an iperf3 server on port 5201")
         self.iperf_discover_btn.setStyleSheet(f"""
@@ -16329,20 +16334,17 @@ class SerialTerminalGUI(QMainWindow):
         dur_lbl = QLabel("Duration:")
         dur_lbl.setFixedWidth(56)
         dur_lbl.setStyleSheet(lbl_style)
-        self.iperf_duration_spin = QSpinBox()
-        self.iperf_duration_spin.setRange(1, 3600)
-        self.iperf_duration_spin.setValue(10)
-        self.iperf_duration_spin.setSuffix(" s")
-        self.iperf_duration_spin.setFixedWidth(70)
-        self.iperf_duration_spin.setFixedHeight(26)
-        self.iperf_duration_spin.setStyleSheet(spin_style)
+        self.iperf_duration_combo = QComboBox()
+        self.iperf_duration_combo.addItems(["5 s", "10 s", "15 s", "20 s", "30 s", "60 s", "120 s", "300 s"])
+        self.iperf_duration_combo.setCurrentText("10 s")
+        self.iperf_duration_combo.setFixedWidth(70)
+        self.iperf_duration_combo.setFixedHeight(26)
         row1.addWidget(host_lbl)
         row1.addWidget(self.iperf_host_input, 1)
-        row1.addWidget(self.iperf_discover_btn)
         row1.addWidget(port_lbl)
         row1.addWidget(self.iperf_port_input)
         row1.addWidget(dur_lbl)
-        row1.addWidget(self.iperf_duration_spin)
+        row1.addWidget(self.iperf_duration_combo)
         cfg_layout.addLayout(row1)
 
         # Row 2: Protocol / Streams / Bandwidth
@@ -16407,6 +16409,7 @@ class SerialTerminalGUI(QMainWindow):
             row3.addWidget(btn)
         self._iperf_mode_btns['Client'].setChecked(True)
         row3.addStretch()
+        row3.addWidget(self.iperf_discover_btn)
         cfg_layout.addLayout(row3)
 
         cfg_group.setLayout(cfg_layout)
@@ -16445,14 +16448,9 @@ class SerialTerminalGUI(QMainWindow):
 
         thr_card, self.iperf_stat_throughput = _stat_card("⚡", "THROUGHPUT", BROWN)
         xfr_card, self.iperf_stat_transfer   = _stat_card("📦", "TRANSFER",   "#78909C")
-        jit_card, self.iperf_stat_jitter     = _stat_card("〜", "JITTER",     "#80CBC4")
-        los_card, self.iperf_stat_loss       = _stat_card("✗", "LOSS",        "#EF9A9A")
 
-        # Throughput card gets 2x weight
         stats_layout.addWidget(thr_card, 2)
         stats_layout.addWidget(xfr_card, 1)
-        stats_layout.addWidget(jit_card, 1)
-        stats_layout.addWidget(los_card, 1)
 
         stats_group.setLayout(stats_layout)
         stats_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -16551,7 +16549,7 @@ class SerialTerminalGUI(QMainWindow):
         self._iperf_discover_worker.not_found.connect(self._on_iperf_host_not_found)
         self._iperf_discover_worker.finished.connect(
             lambda: (self.iperf_discover_btn.setEnabled(True),
-                     self.iperf_discover_btn.setText("Scan LAN"))
+                     self.iperf_discover_btn.setText("Scan Server"))
         )
         self._iperf_discover_worker.start()
 
@@ -16581,7 +16579,7 @@ class SerialTerminalGUI(QMainWindow):
         except ValueError:
             port = 5201
 
-        duration = self.iperf_duration_spin.value()
+        duration = int(self.iperf_duration_combo.currentText().split()[0])
         streams  = self.iperf_streams_spin.value()
         reverse  = (mode == 'Reverse')
         iperf_mode = 'server' if mode == 'Server' else 'client'
@@ -16594,8 +16592,7 @@ class SerialTerminalGUI(QMainWindow):
         # Reset UI
         self.iperf_graph.clear()
         self.iperf_log.clear()
-        for lbl in (self.iperf_stat_throughput, self.iperf_stat_transfer,
-                    self.iperf_stat_jitter, self.iperf_stat_loss):
+        for lbl in (self.iperf_stat_throughput, self.iperf_stat_transfer):
             lbl.setText("—")
 
         self.iperf_run_btn.setText("STOP ■")
@@ -16642,7 +16639,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:disabled { background-color: #4DB6AC; color: #ffffffaa; }
         """)
 
-    def _on_iperf_interval(self, t_end, bitrate_mbps, transfer_mb, jitter_ms):
+    def _on_iperf_interval(self, t_end, bitrate_mbps, transfer_mb):
         self.iperf_graph.add_interval(t_end, bitrate_mbps, transfer_mb)
         unit = "Gbps" if bitrate_mbps >= 1000 else "Mbps"
         disp = f"{bitrate_mbps/1000:.2f}" if bitrate_mbps >= 1000 else f"{bitrate_mbps:.1f}"
@@ -16650,19 +16647,14 @@ class SerialTerminalGUI(QMainWindow):
         xfer_unit = "GB" if transfer_mb >= 1024 else "MB"
         xfer_disp = f"{transfer_mb/1024:.2f}" if transfer_mb >= 1024 else f"{transfer_mb:.1f}"
         self.iperf_stat_transfer.setText(f"{xfer_disp} {xfer_unit}")
-        if jitter_ms > 0:
-            self.iperf_stat_jitter.setText(f"{jitter_ms:.3f} ms")
 
-    def _on_iperf_finished(self, avg_bps, total_mb, jitter_ms, loss_pct):
+    def _on_iperf_finished(self, avg_bps, total_mb):
         unit = "Gbps" if avg_bps >= 1000 else "Mbps"
         disp = f"{avg_bps/1000:.2f}" if avg_bps >= 1000 else f"{avg_bps:.1f}"
         self.iperf_stat_throughput.setText(f"{disp} {unit} avg")
         xfer_unit = "GB" if total_mb >= 1024 else "MB"
         xfer_disp = f"{total_mb/1024:.2f}" if total_mb >= 1024 else f"{total_mb:.1f}"
         self.iperf_stat_transfer.setText(f"{xfer_disp} {xfer_unit}")
-        if jitter_ms > 0:
-            self.iperf_stat_jitter.setText(f"{jitter_ms:.3f} ms")
-        self.iperf_stat_loss.setText(f"{loss_pct:.1f}%")
 
     def _on_iperf_error(self, msg):
         self.iperf_log.appendPlainText(f"[ERROR] {msg}")
