@@ -3386,6 +3386,73 @@ class Iperf3Worker(QThread):
                 self.error.emit("No interval data received — check host/port and iperf3 server.")
 
 
+class SshProfilesTree(QTreeWidget):
+    """QTreeWidget with internal drag-and-drop reordering of SSH profiles."""
+    reordered = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+
+    def dragEnterEvent(self, event):
+        item = self.currentItem()
+        if item is not None and item.parent() is not None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        item = self.currentItem()
+        if item is not None and item.parent() is not None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        dragged = self.currentItem()
+        # Only profile items (children) can be dragged — not group headers (root items)
+        if dragged is None or dragged.parent() is None:
+            event.ignore()
+            return
+
+        pos = event.position().toPoint()
+        target = self.itemAt(pos)
+        if target is None or target is dragged:
+            event.ignore()
+            return
+
+        indicator = self.dropIndicatorPosition()
+        if target.parent() is None:
+            # Dropped on a group header → append at end of that group
+            target_group = target
+            insert_idx = target_group.childCount()
+        else:
+            target_group = target.parent()
+            idx = target_group.indexOfChild(target)
+            insert_idx = idx + 1 if indicator == QAbstractItemView.DropIndicatorPosition.BelowItem else idx
+
+        old_parent = dragged.parent()
+        old_idx = old_parent.indexOfChild(dragged)
+
+        # Remove from current position
+        old_parent.takeChild(old_idx)
+
+        # Adjust index if moving down within the same group
+        if target_group is old_parent and old_idx < insert_idx:
+            insert_idx -= 1
+
+        # Insert at new position
+        target_group.insertChild(insert_idx, dragged)
+        target_group.setExpanded(True)
+        self.setCurrentItem(dragged)
+
+        event.accept()
+        self.reordered.emit()
+
+
 class IperfGraphWidget(QWidget):
     """Real-time iperf3 throughput chart — bitrate (left Y) and cumulative transfer (right Y)."""
 
@@ -8118,7 +8185,7 @@ class SerialTerminalGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"Omnicom v{VERSION_LABEL}")
         self.setMinimumSize(600, 780)
-        self.resize(650, 780)
+        self.resize(750, 780)
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
         self.tftp_process = None
@@ -14754,7 +14821,7 @@ class SerialTerminalGUI(QMainWindow):
         profiles_layout.setSpacing(6)
 
         # Profiles tree
-        self.ssh_profiles_tree = QTreeWidget()
+        self.ssh_profiles_tree = SshProfilesTree()
         self.ssh_profiles_tree.setColumnCount(5)
         self.ssh_profiles_tree.setHeaderLabels(["Name", "IP", "Port", "Protocol", "Vendor"])
         self.ssh_profiles_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -14778,6 +14845,7 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_profiles_tree.itemDoubleClicked.connect(self.load_ssh_profile_from_tree)
         self.ssh_profiles_tree.itemExpanded.connect(self._ssh_group_expanded)
         self.ssh_profiles_tree.itemCollapsed.connect(self._ssh_group_collapsed)
+        self.ssh_profiles_tree.reordered.connect(self._ssh_tree_save_order)
         self.ssh_profiles_tree.setStyleSheet("""
             QTreeWidget {
                 background-color: #e8e8e8;
@@ -15633,7 +15701,8 @@ class SerialTerminalGUI(QMainWindow):
             group_item = QTreeWidgetItem(self.ssh_profiles_tree)
             group_item.setText(0, f"  ▼   {group_name.upper()}")
             group_item.setData(0, Qt.ItemDataRole.UserRole, None)
-            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable
+            group_item.setData(0, Qt.ItemDataRole.UserRole + 1, group_name)  # original name for drag-drop
+            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsDropEnabled)
             font = group_item.font(0)
             font.setBold(True)
             font.setPointSize(font.pointSize() + 1)
@@ -15656,6 +15725,8 @@ class SerialTerminalGUI(QMainWindow):
                 protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
                 child.setText(3, protocol)
                 child.setData(0, Qt.ItemDataRole.UserRole, profile)
+                child.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
+                               Qt.ItemFlag.ItemIsDragEnabled)
 
                 # Vendor icon widget
                 vendor = profile.get('vendor', 'Default')
@@ -15762,7 +15833,23 @@ class SerialTerminalGUI(QMainWindow):
         arrow = '▼' if group_item.isExpanded() else '▶'
         group_item.setText(0, f"  {arrow}   {new_name.upper()}")
 
-
+    def _ssh_tree_save_order(self):
+        """Walk the tree in current visual order and persist to config."""
+        profiles = []
+        root = self.ssh_profiles_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            group_item = root.child(i)
+            group_name = (group_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                          or group_item.text(0).lstrip('▼▶ ').strip())
+            for j in range(group_item.childCount()):
+                child = group_item.child(j)
+                profile = child.data(0, Qt.ItemDataRole.UserRole)
+                if profile:
+                    profile = dict(profile)
+                    profile['group'] = group_name
+                    profiles.append(profile)
+        self.config.set('ssh_profiles', json.dumps(profiles))
+        self.refresh_ssh_profiles()
 
 
 
@@ -15774,53 +15861,27 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Enter a host before saving")
             return
 
-        _dialog_style = """
-            QInputDialog { background-color: #2b2b2b; }
-            QLabel { color: #e0e0e0; font-size: 10pt; }
-            QLineEdit, QComboBox {
-                background-color: #3a3a3a; color: #e0e0e0;
-                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView {
-                background-color: #3a3a3a; color: #e0e0e0;
-                selection-background-color: #4caf50;
-            }
-            QPushButton {
-                background-color: #4caf50; color: #ffffff;
-                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px;
-            }
-            QPushButton:hover { background-color: #43a047; }
-        """
-
-        name_dialog = QInputDialog(self)
-        name_dialog.setWindowTitle("Save Profile")
-        name_dialog.setLabelText("Profile name:")
-        name_dialog.setStyleSheet(_dialog_style)
-        if not name_dialog.exec():
+        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
+        if not ok or not name.strip():
             return
-        name = name_dialog.textValue().strip()
-        if not name:
-            return
+        name = name.strip()
 
         # Collect existing groups from the tree for autocomplete
         existing_groups = []
         root = self.ssh_profiles_tree.invisibleRootItem()
         for i in range(root.childCount()):
-            existing_groups.append(root.child(i).text(0).strip())
+            grp_item = root.child(i)
+            grp_name = (grp_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                        or grp_item.text(0).lstrip('▼▶ ').strip())
+            existing_groups.append(grp_name)
         if not existing_groups:
             existing_groups = ['Default']
 
-        group_dialog = QInputDialog(self)
-        group_dialog.setWindowTitle("Profile Group")
-        group_dialog.setLabelText("Group:")
-        group_dialog.setComboBoxItems(existing_groups)
-        group_dialog.setComboBoxEditable(True)
-        group_dialog.setTextValue(existing_groups[0])
-        group_dialog.setStyleSheet(_dialog_style)
-        if not group_dialog.exec():
+        group, ok = QInputDialog.getItem(
+            self, "Profile Group", "Group:", existing_groups, 0, True)
+        if not ok:
             return
-        group = group_dialog.textValue().strip() or 'Default'
+        group = group.strip() or 'Default'
 
         auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
         protocol = self.ssh_current_protocol
