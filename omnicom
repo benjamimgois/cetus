@@ -8519,7 +8519,7 @@ class SerialTerminalGUI(QMainWindow):
         # iPerf3 tab button (index 6)
         self.iperf_tab_btn = QPushButton()
         self.iperf_tab_btn.setFixedSize(62, 52)
-        iperf_icon_path = self.get_tab_icon_path('iperf.svg')
+        iperf_icon_path = self.get_tab_icon_path('speed.svg')
         iperf_icon = load_svg_icon(iperf_icon_path, icon_size) if iperf_icon_path else None
         if iperf_icon:
             self.iperf_tab_btn.setIcon(iperf_icon)
@@ -8527,7 +8527,7 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.iperf_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_MediaVolume))
-        self.iperf_tab_btn.setToolTip("iPerf3 Bandwidth Test")
+        self.iperf_tab_btn.setToolTip("Speed Test\nTeste de velocidade via fast.com (Netflix CDN) ou iPerf3")
         self.iperf_tab_btn.setCheckable(True)
         self.iperf_tab_btn.clicked.connect(lambda: self.switch_tab(6))
         self.iperf_tab_btn.setStyleSheet(tab_btn_style.format(color='#00897B'))
@@ -16494,54 +16494,51 @@ class SerialTerminalGUI(QMainWindow):
         cfg_layout.setSpacing(8)
 
         # Row 0: test-mode selector (Speed Test | iPerf3)
-        sel_row = QHBoxLayout()
-        sel_row.setSpacing(0)
+        # Outer QFrame owns the border+radius; buttons have no border of their own
+        _btn_style = f"""
+            QPushButton {{
+                background-color: #e8e8e8;
+                border: none;
+                color: #555555;
+                font-size: 10pt;
+                font-weight: bold;
+                padding: 4px 24px;
+                min-height: 32px;
+                min-width: 110px;
+            }}
+            QPushButton:checked     {{ background-color: {BROWN}; color: white; }}
+            QPushButton:hover:!checked {{ background-color: #d8d8d8; }}
+        """
         self._test_mode_speedtest_btn = QPushButton("Speed Test")
         self._test_mode_speedtest_btn.setCheckable(True)
         self._test_mode_speedtest_btn.setChecked(True)
-        self._test_mode_speedtest_btn.setMinimumHeight(34)
-        self._test_mode_speedtest_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #e8e8e8;
-                border: 1px solid #b0b0b0;
-                border-radius: 6px 0px 0px 6px;
-                color: #555555;
-                font-size: 10pt;
-                font-weight: bold;
-                padding: 4px 24px;
-            }}
-            QPushButton:checked {{
-                background-color: {BROWN};
-                border-color: {BROWN};
-                color: white;
-            }}
-            QPushButton:hover:!checked {{ background-color: #d0d0d0; }}
-        """)
+        self._test_mode_speedtest_btn.setStyleSheet(
+            _btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
+        )
         self._test_mode_iperf_btn = QPushButton("iPerf3")
         self._test_mode_iperf_btn.setCheckable(True)
-        self._test_mode_iperf_btn.setMinimumHeight(34)
-        self._test_mode_iperf_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #e8e8e8;
-                border: 1px solid #b0b0b0;
-                border-radius: 0px 6px 6px 0px;
-                margin-left: -1px;
-                color: #555555;
-                font-size: 10pt;
-                font-weight: bold;
-                padding: 4px 24px;
-            }}
-            QPushButton:checked {{
-                background-color: {BROWN};
-                border-color: {BROWN};
-                color: white;
-            }}
-            QPushButton:hover:!checked {{ background-color: #d0d0d0; }}
-        """)
+        self._test_mode_iperf_btn.setStyleSheet(
+            _btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
+        )
+        # 1-px separator line between the two buttons
+        _sep = QFrame()
+        _sep.setFixedWidth(1)
+        _sep.setStyleSheet("background-color: #b0b0b0; border: none;")
+        # Outer frame — visible border and rounded corners
+        _sel_wrap = QFrame()
+        _sel_wrap.setStyleSheet(
+            "QFrame { border: 1px solid #b0b0b0; border-radius: 6px; background: transparent; }"
+        )
+        _sel_inner = QHBoxLayout(_sel_wrap)
+        _sel_inner.setContentsMargins(0, 0, 0, 0)
+        _sel_inner.setSpacing(0)
+        _sel_inner.addWidget(self._test_mode_speedtest_btn)
+        _sel_inner.addWidget(_sep)
+        _sel_inner.addWidget(self._test_mode_iperf_btn)
+
         self._test_mode_speedtest_btn.setToolTip(
-            "Testa a velocidade da sua conexão com a internet\n"
-            "(ping, download e upload) usando speedtest-cli.\n"
-            "Requer: pip install speedtest-cli"
+            "Testa a velocidade de download da conexão com a internet\n"
+            "usando fast.com (Netflix CDN).\nRequer: npm install -g fast-cli"
         )
         self._test_mode_iperf_btn.setToolTip(
             "Mede a largura de banda entre dois hosts usando iperf3.\n"
@@ -16552,9 +16549,10 @@ class SerialTerminalGUI(QMainWindow):
             lambda: self._iperf_switch_test_mode('speedtest'))
         self._test_mode_iperf_btn.clicked.connect(
             lambda: self._iperf_switch_test_mode('iperf'))
+
+        sel_row = QHBoxLayout()
         sel_row.addStretch()
-        sel_row.addWidget(self._test_mode_speedtest_btn)
-        sel_row.addWidget(self._test_mode_iperf_btn)
+        sel_row.addWidget(_sel_wrap)
         sel_row.addStretch()
         cfg_layout.addLayout(sel_row)
 
