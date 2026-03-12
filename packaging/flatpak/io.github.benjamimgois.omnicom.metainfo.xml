@@ -52,6 +52,23 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.6" date="2026-03-12">
+      <description>
+        <p>UI polish, new official icon, and Speed tab improvements</p>
+        <ul>
+          <li>New official app icon: gradient O with C cutout (omnicom_icon.svg)</li>
+          <li>Scalable SVG icon installed in hicolor theme for all packaging formats</li>
+          <li>Serial tab: port type selector replaced with toggle buttons (USB / Serial)</li>
+          <li>Standardized button widths across all tabs (90px / 110px)</li>
+          <li>Traceroute: renamed ICMP (MTR) button to ICMP</li>
+          <li>Renamed Save Current to Save and Delete Selected to Delete throughout</li>
+          <li>TFTP tab: removed redundant Copy Name button</li>
+          <li>Speed tab: larger font for ISP, Country and Server labels</li>
+          <li>Speed tab: removed ISP Rating field; Country now populated via ip-api.com</li>
+          <li>All UI strings and code comments translated to English</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5" date="2026-03-11">
       <description>
         <p>Speed Test tab with iPerf3 and fast.com, Vulnerability Scanner improvements</p>

@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.4"
+VERSION="1.6"
 PKGNAME="omnicom"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 
