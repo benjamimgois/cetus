@@ -3549,7 +3549,7 @@ class SpeedTestWorker(QThread):
             self.info.emit('fast.com', '—', '—', 'Netflix CDN')
             self.result.emit(0.0, dl, ul)
         else:
-            self.error.emit("Nenhum resultado obtido.")
+            self.error.emit("No results obtained.")
 
 
 class PingWorker(QThread):
@@ -4164,10 +4164,10 @@ class SignalHistoryWidget(QWidget):
         # Score axis range (Right Y)
         SCORE_MIN, SCORE_MAX = 0, 100
 
-        # "Agora" no lado direito: cada ponto é posicionado pela sua IDADE
-        # conforme o tempo passa a idade aumenta e o ponto desliza para a esquerda
+        # "Now" on the right side: each point is positioned by its AGE
+        # as time passes the age increases and the point slides to the left
         import time as _time
-        now = _time.monotonic() - self._t_ref  # tempo atual em segundos desde o início dos scans
+        now = _time.monotonic() - self._t_ref  # current time in seconds since scan start
         W_S = float(self._window_s)
 
         def _x(pt):
@@ -4247,7 +4247,7 @@ class SignalHistoryWidget(QWidget):
             painter.drawText(x - 22, PT + ch + 3, 44, 14,
                              Qt.AlignmentFlag.AlignCenter, label)
 
-        # Curva de sinal: filtra pontos dentro da janela de tempo
+        # Signal curve: filter points within the time window
         # Element format: (pt_ts, dbm, [score_optional])
         visible = [p for p in self._points if 0.0 <= (now - p[0]) <= W_S]
 
@@ -6281,7 +6281,7 @@ class LatencyGraphWidget(QWidget):
                 painter.drawRect(L, T, region_w, H)
 
                 # ── growing latency curve from (0, 0ms) to hop 1 ──────────────
-                # painter.save() aqui garante que o pen ciano NÃO vaza para o restante
+                # painter.save() here ensures the cyan pen does NOT leak into the rest
                 painter.save()
                 first_hop = next(
                     ((hn, ip, hostname, lat) for hn, ip, hostname, lat in self.hops
@@ -6313,7 +6313,7 @@ class LatencyGraphWidget(QWidget):
                         gp.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                         painter.setPen(gp)
                         painter.drawPath(curve_path)
-                painter.restore()  # reseta pen/brush antes do restante do gráfico
+                painter.restore()  # reset pen/brush before the rest of the graph
 
                 # dashed vertical at hop 1 position
                 dash_pen = QPen(QColor("#00BCD4"))
@@ -6338,7 +6338,7 @@ class LatencyGraphWidget(QWidget):
                 painter.restore()
 
         # ── Origin point: local machine (hop 0) ─────────────────────────────
-        painter.save()  # isola brush/pen — evita vazar para a curva verde
+        painter.save()  # isolate brush/pen — prevents leaking into the green curve
         origin_x, origin_y = L, T + H
         origin_color = QColor("#00E5FF")
         # glow rings
@@ -8527,7 +8527,7 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.iperf_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_MediaVolume))
-        self.iperf_tab_btn.setToolTip("Speed Test\nTeste de velocidade via fast.com (Netflix CDN) ou iPerf3")
+        self.iperf_tab_btn.setToolTip("Speed Test\nBandwidth test via fast.com (Netflix CDN) or iPerf3")
         self.iperf_tab_btn.setCheckable(True)
         self.iperf_tab_btn.clicked.connect(lambda: self.switch_tab(6))
         self.iperf_tab_btn.setStyleSheet(tab_btn_style.format(color='#00897B'))
@@ -8619,24 +8619,48 @@ class SerialTerminalGUI(QMainWindow):
         port_layout.setContentsMargins(0, 0, 0, 0)
 
         # Different widths for type and port fields
-        type_field_width = 120
         port_field_width = 200
 
-        # Port type
+        # Port type — toggle buttons (USB / Serial) in the Serial tab blue colour
+        _SERIAL_COLOR = '#2196F3'
+        _port_type_style = f"""
+            QPushButton {{
+                background-color: #d8d8d8;
+                border: 1px solid #b0b0b0;
+                border-radius: 4px;
+                color: #444444;
+                font-size: 9pt;
+                padding: 3px 10px;
+            }}
+            QPushButton:checked {{
+                background-color: {_SERIAL_COLOR};
+                border-color: {_SERIAL_COLOR};
+                color: white;
+                font-weight: bold;
+            }}
+            QPushButton:hover:!checked {{
+                background-color: #c8c8c8;
+            }}
+        """
         type_container = QWidget()
         type_layout = QHBoxLayout()
         type_layout.setContentsMargins(0, 0, 0, 0)
-        type_layout.setSpacing(6)
+        type_layout.setSpacing(4)
         type_label = QLabel("Type:")
         type_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.port_type = QComboBox()
-        self.port_type.addItems(['USB', 'Serial'])
-        self.port_type.setCurrentIndex(0)
-        self.port_type.setFixedWidth(type_field_width)
-        self.port_type.setToolTip("Select the type of serial port")
-        self.port_type.currentIndexChanged.connect(self.update_port_list)
         type_layout.addWidget(type_label)
-        type_layout.addWidget(self.port_type)
+        self._port_type_btns = {}
+        for _ptype in ('USB', 'Serial'):
+            _btn = QPushButton(_ptype)
+            _btn.setCheckable(True)
+            _btn.setFixedWidth(90)
+            _btn.setFixedHeight(26)
+            _btn.setStyleSheet(_port_type_style)
+            _btn.setToolTip("Select the type of serial port")
+            _btn.clicked.connect(lambda _c, t=_ptype: self._port_type_clicked(t))
+            self._port_type_btns[_ptype] = _btn
+            type_layout.addWidget(_btn)
+        self._port_type_btns['USB'].setChecked(True)
         type_container.setLayout(type_layout)
 
         # Port
@@ -8820,7 +8844,8 @@ class SerialTerminalGUI(QMainWindow):
         serial_btn_layout = QHBoxLayout()
         serial_btn_layout.setSpacing(8)
 
-        self.save_serial_profile_btn = QPushButton("Save Current")
+        self.save_serial_profile_btn = QPushButton("Save")
+        self.save_serial_profile_btn.setFixedWidth(110)
         self.save_serial_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_serial_profile_btn.setStyleSheet("""
             QPushButton {
@@ -8837,7 +8862,8 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.save_serial_profile_btn.clicked.connect(self.save_current_serial_profile)
 
-        self.delete_serial_profile_btn = QPushButton("Delete Selected")
+        self.delete_serial_profile_btn = QPushButton("Delete")
+        self.delete_serial_profile_btn.setFixedWidth(110)
         self.delete_serial_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_serial_profile_btn.setStyleSheet("""
             QPushButton {
@@ -9068,6 +9094,7 @@ class SerialTerminalGUI(QMainWindow):
         refresh_btn_layout = QHBoxLayout()
         refresh_btn_layout.addStretch()
         self.tftp_refresh_btn = QPushButton("Refresh")
+        self.tftp_refresh_btn.setFixedWidth(90)
         self.tftp_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tftp_refresh_btn.setStyleSheet("""
             QPushButton {
@@ -9085,23 +9112,7 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_refresh_btn.clicked.connect(self.refresh_tftp_files)
         refresh_btn_layout.addWidget(self.tftp_refresh_btn)
 
-        self.tftp_copy_btn = QPushButton("Copy Name")
-        self.tftp_copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.tftp_copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #78909c;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #607d8b;
-            }
-        """)
-        self.tftp_copy_btn.clicked.connect(self.copy_tftp_filename)
-        refresh_btn_layout.addWidget(self.tftp_copy_btn)
+
 
         refresh_btn_layout.addStretch()
         files_layout.addLayout(refresh_btn_layout)
@@ -9265,28 +9276,28 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_method_icmp_btn = QPushButton("ICMP")
         self.scan_method_icmp_btn.setCheckable(True)
         self.scan_method_icmp_btn.setChecked(True)
-        self.scan_method_icmp_btn.setFixedWidth(60)
+        self.scan_method_icmp_btn.setFixedWidth(90)
         self.scan_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_method_icmp_btn.setStyleSheet(method_btn_style)
         self.scan_method_icmp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ICMP"))
 
         self.scan_method_tcp_btn = QPushButton("TCP")
         self.scan_method_tcp_btn.setCheckable(True)
-        self.scan_method_tcp_btn.setFixedWidth(60)
+        self.scan_method_tcp_btn.setFixedWidth(90)
         self.scan_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_method_tcp_btn.setStyleSheet(method_btn_style)
         self.scan_method_tcp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("TCP"))
 
         self.scan_method_udp_btn = QPushButton("UDP")
         self.scan_method_udp_btn.setCheckable(True)
-        self.scan_method_udp_btn.setFixedWidth(60)
+        self.scan_method_udp_btn.setFixedWidth(90)
         self.scan_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_method_udp_btn.setStyleSheet(method_btn_style)
         self.scan_method_udp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("UDP"))
 
         self.scan_method_arp_btn = QPushButton("ARP")
         self.scan_method_arp_btn.setCheckable(True)
-        self.scan_method_arp_btn.setFixedWidth(60)
+        self.scan_method_arp_btn.setFixedWidth(90)
         self.scan_method_arp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_method_arp_btn.setStyleSheet(method_btn_style)
         self.scan_method_arp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ARP"))
@@ -9525,12 +9536,14 @@ class SerialTerminalGUI(QMainWindow):
         """
 
         self.scan_export_btn = QPushButton("Export CSV")
+        self.scan_export_btn.setFixedWidth(110)
         self.scan_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_export_btn.setStyleSheet(btn_style)
         self.scan_export_btn.clicked.connect(self._scan_export_csv)
         actions_layout.addWidget(self.scan_export_btn)
 
         self.scan_clear_btn = QPushButton("Clear")
+        self.scan_clear_btn.setFixedWidth(110)
         self.scan_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_clear_btn.setStyleSheet(btn_style)
         self.scan_clear_btn.clicked.connect(self._scan_clear_results)
@@ -9704,21 +9717,21 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_version_v2c_btn = QPushButton("v2c")
         self.snmp_version_v2c_btn.setCheckable(True)
         self.snmp_version_v2c_btn.setChecked(True)
-        self.snmp_version_v2c_btn.setFixedWidth(60)
+        self.snmp_version_v2c_btn.setFixedWidth(90)
         self.snmp_version_v2c_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snmp_version_v2c_btn.setStyleSheet(version_btn_style)
         self.snmp_version_v2c_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v2c"))
 
         self.snmp_version_v1_btn = QPushButton("v1")
         self.snmp_version_v1_btn.setCheckable(True)
-        self.snmp_version_v1_btn.setFixedWidth(60)
+        self.snmp_version_v1_btn.setFixedWidth(90)
         self.snmp_version_v1_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snmp_version_v1_btn.setStyleSheet(version_btn_style)
         self.snmp_version_v1_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v1"))
 
         self.snmp_version_v3_btn = QPushButton("v3")
         self.snmp_version_v3_btn.setCheckable(True)
-        self.snmp_version_v3_btn.setFixedWidth(60)
+        self.snmp_version_v3_btn.setFixedWidth(90)
         self.snmp_version_v3_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snmp_version_v3_btn.setStyleSheet(version_btn_style)
         self.snmp_version_v3_btn.clicked.connect(lambda: self._snmp_version_btn_clicked("v3"))
@@ -10017,7 +10030,7 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_index_list = QListWidget()
         self.snmp_index_list.setSpacing(1)
         self.snmp_index_list.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.snmp_index_list.setToolTip("Clique para navegar até a família")
+        self.snmp_index_list.setToolTip("Click to navigate to the OID family")
         # No ::item rule — lets setItemWidget colors render without interference
         self.snmp_index_list.setStyleSheet("""
             QListWidget {
@@ -10265,40 +10278,45 @@ class SerialTerminalGUI(QMainWindow):
         _tr_method_layout.setContentsMargins(0, 0, 0, 0)
         _tr_method_layout.setSpacing(4)
 
-        self.traceroute_method_icmp_btn = QPushButton("ICMP (MTR)")
+        self.traceroute_method_icmp_btn = QPushButton("ICMP")
         self.traceroute_method_icmp_btn.setCheckable(True)
         self.traceroute_method_icmp_btn.setChecked(True)
+        self.traceroute_method_icmp_btn.setFixedWidth(90)
         self.traceroute_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_icmp_btn.setStyleSheet(_tr_method_btn_style)
 
         self.traceroute_method_tcp_btn = QPushButton("TCP")
         self.traceroute_method_tcp_btn.setCheckable(True)
+        self.traceroute_method_tcp_btn.setFixedWidth(90)
         self.traceroute_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_tcp_btn.setStyleSheet(_tr_method_btn_style)
 
         self.traceroute_method_udp_btn = QPushButton("UDP")
         self.traceroute_method_udp_btn.setCheckable(True)
+        self.traceroute_method_udp_btn.setFixedWidth(90)
         self.traceroute_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_udp_btn.setStyleSheet(_tr_method_btn_style)
 
         self.traceroute_method_pingicmp_btn = QPushButton("Ping ICMP")
         self.traceroute_method_pingicmp_btn.setCheckable(True)
+        self.traceroute_method_pingicmp_btn.setFixedWidth(90)
         self.traceroute_method_pingicmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_pingicmp_btn.setStyleSheet(_tr_method_btn_style)
 
         self.traceroute_method_pingtcp_btn = QPushButton("Ping TCP")
         self.traceroute_method_pingtcp_btn.setCheckable(True)
+        self.traceroute_method_pingtcp_btn.setFixedWidth(90)
         self.traceroute_method_pingtcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_method_pingtcp_btn.setStyleSheet(_tr_method_btn_style)
 
         self._traceroute_method_btns = {
-            'ICMP (MTR)': self.traceroute_method_icmp_btn,
+            'ICMP': self.traceroute_method_icmp_btn,
             'TCP':        self.traceroute_method_tcp_btn,
             'UDP':        self.traceroute_method_udp_btn,
             'Ping ICMP':  self.traceroute_method_pingicmp_btn,
             'Ping TCP':   self.traceroute_method_pingtcp_btn,
         }
-        self.traceroute_current_method = 'ICMP (MTR)'
+        self.traceroute_current_method = 'ICMP'
 
         def _tr_method_btn_clicked(m):
             for _k, _b in self._traceroute_method_btns.items():
@@ -10306,7 +10324,7 @@ class SerialTerminalGUI(QMainWindow):
             self.traceroute_current_method = m
             self._traceroute_method_changed(m)
 
-        self.traceroute_method_icmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('ICMP (MTR)'))
+        self.traceroute_method_icmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('ICMP'))
         self.traceroute_method_tcp_btn.clicked.connect(lambda: _tr_method_btn_clicked('TCP'))
         self.traceroute_method_udp_btn.clicked.connect(lambda: _tr_method_btn_clicked('UDP'))
         self.traceroute_method_pingicmp_btn.clicked.connect(lambda: _tr_method_btn_clicked('Ping ICMP'))
@@ -10327,7 +10345,7 @@ class SerialTerminalGUI(QMainWindow):
         self._proxy_port = ""
 
         self.traceroute_proxy_btn = QPushButton("Configure...")
-        self.traceroute_proxy_btn.setFixedWidth(110)
+        self.traceroute_proxy_btn.setFixedWidth(90)
         self.traceroute_proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_proxy_btn.setToolTip("Configure proxy settings for traceroute")
         self.traceroute_proxy_btn.setStyleSheet("""
@@ -10571,12 +10589,14 @@ class SerialTerminalGUI(QMainWindow):
         """
 
         self.traceroute_export_btn = QPushButton("Export CSV")
+        self.traceroute_export_btn.setFixedWidth(110)
         self.traceroute_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_export_btn.setStyleSheet(btn_style)
         self.traceroute_export_btn.clicked.connect(self._traceroute_export_csv)
         actions_layout.addWidget(self.traceroute_export_btn)
 
         self.traceroute_clear_btn = QPushButton("Clear")
+        self.traceroute_clear_btn.setFixedWidth(110)
         self.traceroute_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.traceroute_clear_btn.setStyleSheet(btn_style)
         self.traceroute_clear_btn.clicked.connect(self._traceroute_clear_results)
@@ -11041,80 +11061,80 @@ class SerialTerminalGUI(QMainWindow):
     # Known OID prefix → detailed tooltip (human-readable explanation)
     _OID_TOOLTIPS = {
         # System
-        "1.3.6.1.2.1.1":       "Grupo System (MIB-II)\nInformações gerais do dispositivo: nome, descrição,\nlocalização, contato e tempo de atividade.",
-        "1.3.6.1.2.1.1.1":     "sysDescr\nDescrição textual completa do dispositivo,\nincluindo hardware, SO e versão de firmware.",
-        "1.3.6.1.2.1.1.2":     "sysObjectID\nIdentificador de objeto do fabricante (OID enterprise)\nque identifica o modelo do dispositivo.",
-        "1.3.6.1.2.1.1.3":     "sysUpTime\nTempo decorrido (em centésimos de segundo) desde\no último reinício do agente SNMP.",
-        "1.3.6.1.2.1.1.4":     "sysContact\nNome ou e-mail do responsável pelo dispositivo.",
-        "1.3.6.1.2.1.1.5":     "sysName\nNome administrativo do dispositivo (hostname).",
-        "1.3.6.1.2.1.1.6":     "sysLocation\nLocalização física do dispositivo.",
-        "1.3.6.1.2.1.1.7":     "sysServices\nCamadas OSI (bitmask) em que o dispositivo opera\n(ex: 78 = camadas 1-4 e 7).",
+        "1.3.6.1.2.1.1":       "System Group (MIB-II)\nGeneral device information: name, description,\nlocation, contact and uptime.",
+        "1.3.6.1.2.1.1.1":     "sysDescr\nFull text description of the device,\nincluding hardware, OS and firmware version.",
+        "1.3.6.1.2.1.1.2":     "sysObjectID\nVendor enterprise OID that identifies\nthe device model.",
+        "1.3.6.1.2.1.1.3":     "sysUpTime\nTime elapsed (in hundredths of a second) since\nthe last SNMP agent restart.",
+        "1.3.6.1.2.1.1.4":     "sysContact\nName or email of the person responsible for the device.",
+        "1.3.6.1.2.1.1.5":     "sysName\nAdministrative name of the device (hostname).",
+        "1.3.6.1.2.1.1.6":     "sysLocation\nPhysical location of the device.",
+        "1.3.6.1.2.1.1.7":     "sysServices\nOSI layers (bitmask) the device operates on\n(e.g. 78 = layers 1-4 and 7).",
         # Interfaces
-        "1.3.6.1.2.1.2":       "Grupo Interfaces (MIB-II)\nInformações sobre todas as interfaces de rede\ndo dispositivo.",
-        "1.3.6.1.2.1.2.1":     "ifNumber\nNúmero total de interfaces de rede presentes.",
-        "1.3.6.1.2.1.2.2.1.1": "ifIndex\nÍndice único que identifica cada interface.",
-        "1.3.6.1.2.1.2.2.1.2": "ifDescr\nNome ou descrição textual da interface\n(ex: 'eth0', 'GigabitEthernet0/1').",
-        "1.3.6.1.2.1.2.2.1.3": "ifType\nTipo físico da interface (ex: ethernetCsmacd=6,\nsoftwareLoopback=24, ieee80211=71).",
-        "1.3.6.1.2.1.2.2.1.4": "ifMtu\nMáximo de bytes em um quadro transmissível\npela interface (MTU).",
-        "1.3.6.1.2.1.2.2.1.5": "ifSpeed\nVelocidade nominal da interface em bits/s\n(ex: 1000000000 = 1 Gbps).",
-        "1.3.6.1.2.1.2.2.1.6": "ifPhysAddress (MAC)\nEndereço físico da interface (ex: MAC address),\narmazenado como OctetString binário.",
-        "1.3.6.1.2.1.2.2.1.7": "ifAdminStatus\nEstado administrativo configurado:\n1=up, 2=down, 3=testing.",
-        "1.3.6.1.2.1.2.2.1.8": "ifOperStatus\nEstado operacional real da interface:\n1=up, 2=down, 3=testing, 4=unknown.",
-        "1.3.6.1.2.1.2.2.1.9": "ifLastChange\nSysUpTime no momento da última mudança\nde estado operacional.",
-        "1.3.6.1.2.1.2.2.1.10":"ifInOctets\nTotal de bytes recebidos pela interface,\nincluindo cabeçalhos de framing.",
-        "1.3.6.1.2.1.2.2.1.11":"ifInUcastPkts\nPacotes unicast recebidos e entregues\na uma camada superior.",
-        "1.3.6.1.2.1.2.2.1.12":"ifInNUcastPkts\nPacotes não-unicast (broadcast/multicast)\nrecebidos e entregues.",
-        "1.3.6.1.2.1.2.2.1.13":"ifInDiscards\nPacotes recebidos descartados (sem erros),\npor ex. falta de buffer.",
-        "1.3.6.1.2.1.2.2.1.14":"ifInErrors\nPacotes recebidos com erros (CRC, alinhamento,\noverfow, etc.).",
-        "1.3.6.1.2.1.2.2.1.16":"ifOutOctets\nTotal de bytes transmitidos pela interface,\nincluindo cabeçalhos de framing.",
-        "1.3.6.1.2.1.2.2.1.17":"ifOutUcastPkts\nPacotes unicast solicitados à camada superior\npara transmissão.",
-        "1.3.6.1.2.1.2.2.1.19":"ifOutDiscards\nPacotes saintes descartados sem erros,\npor ex. falta de buffer de saída.",
-        "1.3.6.1.2.1.2.2.1.20":"ifOutErrors\nPacotes que falharam na transmissão\ndevido a erros.",
+        "1.3.6.1.2.1.2":       "Interfaces Group (MIB-II)\nInformation about all network interfaces\non the device.",
+        "1.3.6.1.2.1.2.1":     "ifNumber\nTotal number of network interfaces present.",
+        "1.3.6.1.2.1.2.2.1.1": "ifIndex\nUnique index identifying each interface.",
+        "1.3.6.1.2.1.2.2.1.2": "ifDescr\nName or text description of the interface\n(e.g. 'eth0', 'GigabitEthernet0/1').",
+        "1.3.6.1.2.1.2.2.1.3": "ifType\nPhysical type of the interface (e.g. ethernetCsmacd=6,\nsoftwareLoopback=24, ieee80211=71).",
+        "1.3.6.1.2.1.2.2.1.4": "ifMtu\nMaximum bytes in a frame that can be\ntransmitted by the interface (MTU).",
+        "1.3.6.1.2.1.2.2.1.5": "ifSpeed\nNominal interface speed in bits/s\n(e.g. 1000000000 = 1 Gbps).",
+        "1.3.6.1.2.1.2.2.1.6": "ifPhysAddress (MAC)\nPhysical address of the interface (e.g. MAC address),\nstored as binary OctetString.",
+        "1.3.6.1.2.1.2.2.1.7": "ifAdminStatus\nConfigured administrative state:\n1=up, 2=down, 3=testing.",
+        "1.3.6.1.2.1.2.2.1.8": "ifOperStatus\nActual operational state of the interface:\n1=up, 2=down, 3=testing, 4=unknown.",
+        "1.3.6.1.2.1.2.2.1.9": "ifLastChange\nSysUpTime at the time of the last\noperational state change.",
+        "1.3.6.1.2.1.2.2.1.10":"ifInOctets\nTotal bytes received by the interface,\nincluding framing headers.",
+        "1.3.6.1.2.1.2.2.1.11":"ifInUcastPkts\nUnicast packets received and delivered\nto an upper layer.",
+        "1.3.6.1.2.1.2.2.1.12":"ifInNUcastPkts\nNon-unicast (broadcast/multicast) packets\nreceived and delivered.",
+        "1.3.6.1.2.1.2.2.1.13":"ifInDiscards\nReceived packets discarded (no errors),\ne.g. buffer exhaustion.",
+        "1.3.6.1.2.1.2.2.1.14":"ifInErrors\nPackets received with errors (CRC, alignment,\noverflow, etc.).",
+        "1.3.6.1.2.1.2.2.1.16":"ifOutOctets\nTotal bytes transmitted by the interface,\nincluding framing headers.",
+        "1.3.6.1.2.1.2.2.1.17":"ifOutUcastPkts\nUnicast packets requested by upper layer\nfor transmission.",
+        "1.3.6.1.2.1.2.2.1.19":"ifOutDiscards\nOutgoing packets discarded without errors,\ne.g. output buffer exhaustion.",
+        "1.3.6.1.2.1.2.2.1.20":"ifOutErrors\nPackets that failed transmission\ndue to errors.",
         # IP
-        "1.3.6.1.2.1.4":       "Grupo IP (MIB-II)\nEstatísticas e configurações da camada IP,\nincluindo roteamento e tabela de endereços.",
-        "1.3.6.1.2.1.4.1":     "ipForwarding\nIndica se o dispositivo age como roteador IP:\n1=forwarding, 2=notForwarding.",
-        "1.3.6.1.2.1.4.2":     "ipDefaultTTL\nValor padrão de TTL inserido nos datagramas IP.",
-        "1.3.6.1.2.1.4.3":     "ipInReceives\nTotal de datagramas IP recebidos,\nincluindo os com erros.",
-        "1.3.6.1.2.1.4.20.1.1":"ipAdEntAddr\nEndereço IP atribuído à interface.",
-        "1.3.6.1.2.1.4.20.1.2":"ipAdEntIfIndex\nÍndice da interface à qual o endereço IP pertence.",
-        "1.3.6.1.2.1.4.20.1.3":"ipAdEntNetMask\nMáscara de sub-rede associada ao endereço IP.",
-        "1.3.6.1.2.1.4.20.1.4":"ipAdEntBcastAddr\nBit menos significativo do endereço de broadcast.",
-        "1.3.6.1.2.1.4.21":    "ipRouteTable\nTabela de roteamento IP do dispositivo.",
-        "1.3.6.1.2.1.4.22":    "ARP (ipNetToMediaTable)\nTabela ARP: mapeamento entre endereços IP\ne endereços físicos (MAC).",
+        "1.3.6.1.2.1.4":       "IP Group (MIB-II)\nIP layer statistics and configuration,\nincluding routing and address table.",
+        "1.3.6.1.2.1.4.1":     "ipForwarding\nIndicates whether the device acts as an IP router:\n1=forwarding, 2=notForwarding.",
+        "1.3.6.1.2.1.4.2":     "ipDefaultTTL\nDefault TTL value inserted into IP datagrams.",
+        "1.3.6.1.2.1.4.3":     "ipInReceives\nTotal IP datagrams received,\nincluding those with errors.",
+        "1.3.6.1.2.1.4.20.1.1":"ipAdEntAddr\nIP address assigned to the interface.",
+        "1.3.6.1.2.1.4.20.1.2":"ipAdEntIfIndex\nIndex of the interface to which the IP address belongs.",
+        "1.3.6.1.2.1.4.20.1.3":"ipAdEntNetMask\nSubnet mask associated with the IP address.",
+        "1.3.6.1.2.1.4.20.1.4":"ipAdEntBcastAddr\nLeast significant bit of the broadcast address.",
+        "1.3.6.1.2.1.4.21":    "ipRouteTable\nIP routing table of the device.",
+        "1.3.6.1.2.1.4.22":    "ARP (ipNetToMediaTable)\nARP table: mapping between IP addresses\nand physical (MAC) addresses.",
         # TCP / UDP / ICMP / SNMP
-        "1.3.6.1.2.1.5":       "Grupo ICMP (MIB-II)\nContadores de mensagens ICMP enviadas e recebidas\n(echo, redirect, unreachable, etc.).",
-        "1.3.6.1.2.1.6":       "Grupo TCP (MIB-II)\nParâmetros e estatísticas da camada TCP,\nincluindo tabela de conexões ativas.",
-        "1.3.6.1.2.1.6.1":     "tcpRtoAlgorithm\nAlgoritmo de retransmissão usado:\n1=other, 2=constant, 3=rsre, 4=vanj.",
-        "1.3.6.1.2.1.6.13":    "tcpConnTable\nTabela de conexões TCP ativas: endereço local,\nporta local, endereço remoto, porta remota e estado.",
-        "1.3.6.1.2.1.7":       "Grupo UDP (MIB-II)\nEstatísticas de datagramas UDP enviados,\nrecebidos e com erros.",
-        "1.3.6.1.2.1.7.5":     "udpTable\nTabela de endpoints UDP ativos no dispositivo.",
-        "1.3.6.1.2.1.11":      "Grupo SNMP (MIB-II)\nEstatísticas do próprio agente SNMP:\npacotes recebidos, erros, gets, sets, traps.",
+        "1.3.6.1.2.1.5":       "ICMP Group (MIB-II)\nCounters of ICMP messages sent and received\n(echo, redirect, unreachable, etc.).",
+        "1.3.6.1.2.1.6":       "TCP Group (MIB-II)\nTCP layer parameters and statistics,\nincluding active connection table.",
+        "1.3.6.1.2.1.6.1":     "tcpRtoAlgorithm\nRetransmission algorithm in use:\n1=other, 2=constant, 3=rsre, 4=vanj.",
+        "1.3.6.1.2.1.6.13":    "tcpConnTable\nActive TCP connections: local address,\nlocal port, remote address, remote port and state.",
+        "1.3.6.1.2.1.7":       "UDP Group (MIB-II)\nStatistics of UDP datagrams sent,\nreceived and with errors.",
+        "1.3.6.1.2.1.7.5":     "udpTable\nActive UDP endpoints on the device.",
+        "1.3.6.1.2.1.11":      "SNMP Group (MIB-II)\nStatistics of the SNMP agent itself:\npackets received, errors, gets, sets, traps.",
         # Host Resources
-        "1.3.6.1.2.1.25":      "Host Resources MIB (RFC 2790)\nRecursos do sistema: CPU, memória, disco,\nprocessos e software instalado.",
-        "1.3.6.1.2.1.25.1":    "hrSystem\nInformações gerais do sistema: uptime,\ndata/hora e número de usuários.",
-        "1.3.6.1.2.1.25.2":    "hrStorage\nTabela de áreas de armazenamento: RAM,\nswap, sistemas de arquivos e uso atual.",
-        "1.3.6.1.2.1.25.3":    "hrDevice\nDispositivos detectados: processadores,\ninterfaces de rede, discos e impressoras.",
-        "1.3.6.1.2.1.25.4":    "hrSWRun\nTabela de processos em execução:\nnome, caminho, parâmetros e estado.",
-        "1.3.6.1.2.1.25.5":    "hrSWRunPerf\nPerformance por processo:\ntempo de CPU e uso de memória real.",
-        "1.3.6.1.2.1.25.6":    "hrSWInstalled\nSoftware instalado no sistema:\nnome, versão e data de instalação.",
+        "1.3.6.1.2.1.25":      "Host Resources MIB (RFC 2790)\nSystem resources: CPU, memory, disk,\nprocesses and installed software.",
+        "1.3.6.1.2.1.25.1":    "hrSystem\nGeneral system information: uptime,\ndate/time and number of users.",
+        "1.3.6.1.2.1.25.2":    "hrStorage\nStorage areas table: RAM,\nswap, filesystems and current usage.",
+        "1.3.6.1.2.1.25.3":    "hrDevice\nDetected devices: processors,\nnetwork interfaces, disks and printers.",
+        "1.3.6.1.2.1.25.4":    "hrSWRun\nRunning processes table:\nname, path, parameters and state.",
+        "1.3.6.1.2.1.25.5":    "hrSWRunPerf\nPer-process performance:\nCPU time and real memory usage.",
+        "1.3.6.1.2.1.25.6":    "hrSWInstalled\nSoftware installed on the system:\nname, version and installation date.",
         # IF-MIB Extended
-        "1.3.6.1.2.1.31":      "IF-MIB Estendido (RFC 2863)\nExtensões da tabela de interfaces com contadores\nde 64 bits e informações adicionais.",
-        "1.3.6.1.2.1.31.1.1.1.1":  "ifName\nNome curto da interface (ex: 'eth0', 'Gi0/1'),\ncomo exibido no sistema operacional.",
-        "1.3.6.1.2.1.31.1.1.1.6":  "ifHCInOctets\nContador de 64 bits de bytes recebidos.\nSubstitui ifInOctets em links de alta velocidade.",
-        "1.3.6.1.2.1.31.1.1.1.10": "ifHCOutOctets\nContador de 64 bits de bytes transmitidos.\nSubstitui ifOutOctets em links de alta velocidade.",
-        "1.3.6.1.2.1.31.1.1.1.15": "ifHighSpeed\nVelocidade da interface em Mbps quando\nifSpeed (32 bits) não é suficiente.",
-        "1.3.6.1.2.1.31.1.1.1.18": "ifAlias\nNome descritivo atribuído pelo operador\nà interface (apelido configurável).",
+        "1.3.6.1.2.1.31":      "IF-MIB Extended (RFC 2863)\nInterface table extensions with 64-bit\ncounters and additional information.",
+        "1.3.6.1.2.1.31.1.1.1.1":  "ifName\nShort interface name (e.g. 'eth0', 'Gi0/1'),\nas shown by the operating system.",
+        "1.3.6.1.2.1.31.1.1.1.6":  "ifHCInOctets\n64-bit counter of bytes received.\nReplaces ifInOctets on high-speed links.",
+        "1.3.6.1.2.1.31.1.1.1.10": "ifHCOutOctets\n64-bit counter of bytes transmitted.\nReplaces ifOutOctets on high-speed links.",
+        "1.3.6.1.2.1.31.1.1.1.15": "ifHighSpeed\nInterface speed in Mbps when\nifSpeed (32-bit) is not sufficient.",
+        "1.3.6.1.2.1.31.1.1.1.18": "ifAlias\nDescriptive name assigned by the operator\nto the interface (configurable alias).",
         # Enterprises
-        "1.3.6.1.4.1":         "Enterprise MIBs (OIDs privadas)\nÁrvore de OIDs proprietárias dos fabricantes,\ncada um com sua sub-árvore exclusiva.",
-        "1.3.6.1.4.1.9":       "Cisco Systems\nMIBs proprietárias da Cisco: interfaces,\nVLANs, CDP, spanning tree, QoS, etc.",
-        "1.3.6.1.4.1.9.2":     "Cisco Local MIB\nInformações locais do dispositivo Cisco:\nversão de IOS, memória e configuração.",
-        "1.3.6.1.4.1.9.9":     "Cisco Enterprise MIBs\nMIBs específicas de funcionalidades Cisco:\nVTP, EIGRP, BGP, HSRP, entre outras.",
-        "1.3.6.1.4.1.14988":   "MikroTik RouterOS\nMIBs proprietárias MikroTik: interfaces\nwireless, filas, health e licença.",
-        "1.3.6.1.4.1.2636":    "Juniper Networks\nMIBs proprietárias Juniper: chassis,\nBGP, MPLS e estatísticas de roteamento.",
-        "1.3.6.1.4.1.2011":    "Huawei Technologies\nMIBs proprietárias Huawei para roteadores,\nswitches e equipamentos de telecom.",
-        "1.3.6.1.4.1.12356":   "Fortinet\nMIBs proprietárias FortiGate: VPN,\nfirewall, UTM e estatísticas de sessão.",
-        "1.3.6.1.4.1.25506":   "HP/H3C\nMIBs proprietárias HP Networking / H3C\npara switches e roteadores da linha ProCurve.",
-        "1.3.6.1.4.1.311":     "Microsoft\nMIBs proprietárias Microsoft para sistemas\nWindows Server e serviços de rede.",
+        "1.3.6.1.4.1":         "Enterprise MIBs (private OIDs)\nTree of vendor-proprietary OIDs,\neach with its own exclusive sub-tree.",
+        "1.3.6.1.4.1.9":       "Cisco Systems\nCisco proprietary MIBs: interfaces,\nVLANs, CDP, spanning tree, QoS, etc.",
+        "1.3.6.1.4.1.9.2":     "Cisco Local MIB\nLocal Cisco device information:\nIOS version, memory and configuration.",
+        "1.3.6.1.4.1.9.9":     "Cisco Enterprise MIBs\nCisco feature-specific MIBs:\nVTP, EIGRP, BGP, HSRP, among others.",
+        "1.3.6.1.4.1.14988":   "MikroTik RouterOS\nMikroTik proprietary MIBs: wireless interfaces,\nqueues, health and licensing.",
+        "1.3.6.1.4.1.2636":    "Juniper Networks\nJuniper proprietary MIBs: chassis,\nBGP, MPLS and routing statistics.",
+        "1.3.6.1.4.1.2011":    "Huawei Technologies\nHuawei proprietary MIBs for routers,\nswitches and telecom equipment.",
+        "1.3.6.1.4.1.12356":   "Fortinet\nFortiGate proprietary MIBs: VPN,\nfirewall, UTM and session statistics.",
+        "1.3.6.1.4.1.25506":   "HP/H3C\nHP Networking / H3C proprietary MIBs\nfor ProCurve switches and routers.",
+        "1.3.6.1.4.1.311":     "Microsoft\nMicrosoft proprietary MIBs for Windows\nServer systems and network services.",
     }
 
     @staticmethod
@@ -11607,6 +11627,7 @@ class SerialTerminalGUI(QMainWindow):
             (self.wifi_band_btn_both, "Show both bands simultaneously"),
         ]:
             _btn.setCheckable(True)
+            _btn.setFixedWidth(90)
             _btn.setFixedHeight(24)
             _btn.setCursor(Qt.CursorShape.PointingHandCursor)
             _btn.setToolTip(_tip)
@@ -11634,6 +11655,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_channel_btn = QPushButton("Spectrum")
         self.wifi_toggle_channel_btn.setCheckable(True)
         self.wifi_toggle_channel_btn.setChecked(True)
+        self.wifi_toggle_channel_btn.setFixedWidth(90)
         self.wifi_toggle_channel_btn.setFixedHeight(24)
         self.wifi_toggle_channel_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11642,6 +11664,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_history_btn = QPushButton("Power")
         self.wifi_toggle_history_btn.setCheckable(True)
         self.wifi_toggle_history_btn.setChecked(False)
+        self.wifi_toggle_history_btn.setFixedWidth(90)
         self.wifi_toggle_history_btn.setFixedHeight(24)
         self.wifi_toggle_history_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11676,6 +11699,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_heatmap_btn = QPushButton("Heatmap")
         self.wifi_toggle_heatmap_btn.setCheckable(True)
         self.wifi_toggle_heatmap_btn.setChecked(True)
+        self.wifi_toggle_heatmap_btn.setFixedWidth(90)
         self.wifi_toggle_heatmap_btn.setFixedHeight(24)
         self.wifi_toggle_heatmap_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_heatmap_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11693,6 +11717,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_noise_btn = QPushButton("White Noise")
         self.wifi_noise_btn.setCheckable(True)
         self.wifi_noise_btn.setChecked(True)
+        self.wifi_noise_btn.setFixedWidth(90)
         self.wifi_noise_btn.setFixedHeight(24)
         self.wifi_noise_btn.setStyleSheet(_toggle_style)
         self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11701,6 +11726,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_glow_btn = QPushButton("Glow")
         self.wifi_glow_btn.setCheckable(True)
         self.wifi_glow_btn.setChecked(False)
+        self.wifi_glow_btn.setFixedWidth(90)
         self.wifi_glow_btn.setFixedHeight(24)
         self.wifi_glow_btn.setStyleSheet(_toggle_style)
         self.wifi_glow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11709,6 +11735,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_scanlines_btn = QPushButton("Scanlines")
         self.wifi_scanlines_btn.setCheckable(True)
         self.wifi_scanlines_btn.setChecked(True)
+        self.wifi_scanlines_btn.setFixedWidth(90)
         self.wifi_scanlines_btn.setFixedHeight(24)
         self.wifi_scanlines_btn.setStyleSheet(_toggle_style)
         self.wifi_scanlines_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -11982,6 +12009,7 @@ class SerialTerminalGUI(QMainWindow):
         btn_row.setSpacing(8)
 
         self.wifi_export_btn = QPushButton("Export CSV")
+        self.wifi_export_btn.setFixedWidth(110)
         self.wifi_export_btn.setFixedHeight(36)
         self.wifi_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_export_btn.setEnabled(False)
@@ -12065,8 +12093,8 @@ class SerialTerminalGUI(QMainWindow):
             self._start_ping()
             return
 
-        # Branch to MTR if 'ICMP (MTR)' or legacy 'MTR' is selected
-        if method in ('MTR', 'ICMP (MTR)'):
+        # Branch to MTR if 'ICMP' or legacy 'MTR' is selected
+        if method in ('MTR', 'ICMP'):
             self._start_mtr()
             return
 
@@ -13011,7 +13039,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def _traceroute_method_changed(self, method):
         """Show/hide fields and switch table columns based on selected method"""
-        is_mtr  = method in ('MTR', 'ICMP (MTR)')
+        is_mtr  = method in ('MTR', 'ICMP')
         is_ping = method in ('Ping ICMP', 'Ping TCP')
         is_port = method in ('TCP', 'UDP', 'Ping TCP')
 
@@ -14551,9 +14579,9 @@ class SerialTerminalGUI(QMainWindow):
         elif action == tracert_action:
             self.traceroute_target_input.setText(ip)
             for _k, _b in self._traceroute_method_btns.items():
-                _b.setChecked(_k == 'ICMP (MTR)')
-            self.traceroute_current_method = 'ICMP (MTR)'
-            self._traceroute_method_changed('ICMP (MTR)')
+                _b.setChecked(_k == 'ICMP')
+            self.traceroute_current_method = 'ICMP'
+            self._traceroute_method_changed('ICMP')
             self.switch_tab(4)
             self._start_traceroute()
         elif action == add_ssh_action:
@@ -14643,9 +14671,9 @@ class SerialTerminalGUI(QMainWindow):
         elif action == tracert_action:
             self.traceroute_target_input.setText(ip)
             for _k, _b in self._traceroute_method_btns.items():
-                _b.setChecked(_k == 'ICMP (MTR)')
-            self.traceroute_current_method = 'ICMP (MTR)'
-            self._traceroute_method_changed('ICMP (MTR)')
+                _b.setChecked(_k == 'ICMP')
+            self.traceroute_current_method = 'ICMP'
+            self._traceroute_method_changed('ICMP')
             self.switch_tab(4)
             self._start_traceroute()
         elif action == copy_action:
@@ -14816,14 +14844,14 @@ class SerialTerminalGUI(QMainWindow):
         self.protocol_ssh_btn = QPushButton("SSH")
         self.protocol_ssh_btn.setCheckable(True)
         self.protocol_ssh_btn.setChecked(True)
-        self.protocol_ssh_btn.setFixedWidth(70)
+        self.protocol_ssh_btn.setFixedWidth(90)
         self.protocol_ssh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_ssh_btn.setStyleSheet(protocol_btn_style)
         self.protocol_ssh_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("SSH"))
 
         self.protocol_telnet_btn = QPushButton("Telnet")
         self.protocol_telnet_btn.setCheckable(True)
-        self.protocol_telnet_btn.setFixedWidth(70)
+        self.protocol_telnet_btn.setFixedWidth(90)
         self.protocol_telnet_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_telnet_btn.setStyleSheet(protocol_btn_style)
         self.protocol_telnet_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("Telnet"))
@@ -15025,7 +15053,8 @@ class SerialTerminalGUI(QMainWindow):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
 
-        self.save_profile_btn = QPushButton("Save Current")
+        self.save_profile_btn = QPushButton("Save")
+        self.save_profile_btn.setFixedWidth(110)
         self.save_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_profile_btn.setStyleSheet("""
             QPushButton {
@@ -15042,7 +15071,8 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.save_profile_btn.clicked.connect(self.save_current_ssh_profile)
 
-        self.delete_profile_btn = QPushButton("Delete Selected")
+        self.delete_profile_btn = QPushButton("Delete")
+        self.delete_profile_btn.setFixedWidth(110)
         self.delete_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_profile_btn.setStyleSheet("""
             QPushButton {
@@ -15312,10 +15342,8 @@ class SerialTerminalGUI(QMainWindow):
     def load_settings(self):
         """Load saved settings and apply to ComboBoxes"""
         # Load and set port type
-        port_type = self.config.get('port_type')
-        index = self.port_type.findText(port_type)
-        if index >= 0:
-            self.port_type.setCurrentIndex(index)
+        port_type = self.config.get('port_type') or 'USB'
+        self._port_type_clicked(port_type if port_type in self._port_type_btns else 'USB')
 
         # Load and set baudrate
         baudrate = self.config.get('baudrate')
@@ -15347,16 +15375,22 @@ class SerialTerminalGUI(QMainWindow):
                 self.flow.setCurrentIndex(idx)
 
         # Connect signals to save settings when changed
-        self.port_type.currentTextChanged.connect(lambda text: self.config.set('port_type', text))
         self.baudrate.currentTextChanged.connect(lambda text: self.config.set('baudrate', text))
         self.serial_config.currentTextChanged.connect(lambda text: self.config.set('serial_config', text))
         self.flow.currentTextChanged.connect(lambda text: self.config.set('flow', text))
+
+    def _port_type_clicked(self, ptype):
+        """Handle port type toggle button selection (USB / Serial)."""
+        for t, btn in self._port_type_btns.items():
+            btn.setChecked(t == ptype)
+        self.config.set('port_type', ptype)
+        self.update_port_list()
 
     def update_port_list(self):
         """Update the list of available ports"""
         self.port.clear()
 
-        port_type = self.port_type.currentText()
+        port_type = next((t for t, b in self._port_type_btns.items() if b.isChecked()), 'USB')
 
         # Use glob to search for ports based on type
         if port_type == 'Serial':
@@ -15430,44 +15464,6 @@ class SerialTerminalGUI(QMainWindow):
                 self.tftp_files_table.setItem(row, 2, QTableWidgetItem(date_str))
         except OSError:
             pass
-
-    def copy_tftp_filename(self):
-        """Copy the selected TFTP file name to the clipboard"""
-        selected = self.tftp_files_table.currentRow()
-        if selected >= 0:
-            item = self.tftp_files_table.item(selected, 0)
-            if item:
-                QApplication.clipboard().setText(item.text())
-                original_text = self.tftp_copy_btn.text()
-                self.tftp_copy_btn.setText("Copied!")
-                self.tftp_copy_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #4caf50;
-                        color: white;
-                        border: none;
-                        border-radius: 6px;
-                        font-weight: bold;
-                        padding: 6px 12px;
-                    }
-                """)
-                QTimer.singleShot(1500, lambda: self._reset_copy_btn(original_text))
-
-    def _reset_copy_btn(self, text):
-        """Restore the copy button to its default style"""
-        self.tftp_copy_btn.setText(text)
-        self.tftp_copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #78909c;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #607d8b;
-            }
-        """)
 
     def toggle_tftp_server(self):
         """Start or stop the TFTP server"""
@@ -16537,13 +16533,13 @@ class SerialTerminalGUI(QMainWindow):
         _sel_inner.addWidget(self._test_mode_iperf_btn)
 
         self._test_mode_speedtest_btn.setToolTip(
-            "Testa a velocidade de download da conexão com a internet\n"
-            "usando fast.com (Netflix CDN).\nRequer: npm install -g fast-cli"
+            "Tests internet download speed\n"
+            "using fast.com (Netflix CDN).\nRequires: npm install -g fast-cli"
         )
         self._test_mode_iperf_btn.setToolTip(
-            "Mede a largura de banda entre dois hosts usando iperf3.\n"
-            "Ideal para testes em rede local ou entre servidores.\n"
-            "Requer iperf3 instalado em ambas as máquinas."
+            "Measures bandwidth between two hosts using iperf3.\n"
+            "Ideal for LAN tests or between servers.\n"
+            "Requires iperf3 installed on both machines."
         )
         self._test_mode_speedtest_btn.clicked.connect(
             lambda: self._iperf_switch_test_mode('speedtest'))
@@ -16679,6 +16675,7 @@ class SerialTerminalGUI(QMainWindow):
         for proto in ('TCP', 'UDP'):
             btn = QPushButton(proto)
             btn.setCheckable(True)
+            btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setStyleSheet(_toggle_style(BROWN))
             btn.clicked.connect(lambda _checked, p=proto: self._iperf_proto_clicked(p))
@@ -16721,6 +16718,7 @@ class SerialTerminalGUI(QMainWindow):
         for mode in ('Client', 'Server', 'Reverse'):
             btn = QPushButton(mode)
             btn.setCheckable(True)
+            btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setStyleSheet(_toggle_style(BROWN))
             btn.clicked.connect(lambda _c, m=mode: self._iperf_mode_clicked(m))
@@ -16839,7 +16837,7 @@ class SerialTerminalGUI(QMainWindow):
         self._log_toggle_btn.setCheckable(True)
         self._log_toggle_btn.setChecked(False)
         self._log_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._log_toggle_btn.setToolTip("Clique para expandir / recolher o log")
+        self._log_toggle_btn.setToolTip("Click to expand / collapse the log")
         self._log_toggle_btn.setStyleSheet("""
             QPushButton {
                 background-color: #252535;
