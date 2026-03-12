@@ -1,10 +1,10 @@
 # Omnicom
 
 [![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
-[![Version](https://img.shields.io/badge/version-1.4-green)](https://github.com/benjamimgois/omnicom/releases)
+[![Version](https://img.shields.io/badge/version-1.6-green)](https://github.com/benjamimgois/omnicom/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner and SNMP.
+Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner, SNMP, Vulnerability Scanner, Speed Test and Wi-Fi Survey.
 
 <img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
@@ -16,6 +16,7 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - Elegant and responsive design
 - Automatic serial port detection with QSerialPortInfo
 - Support for serial ports (/dev/ttyS*) and USB adapters (/dev/ttyUSB*)
+- **Port type toggle buttons** (USB / Serial) for quick switching
 - Complete serial parameter configuration:
   - Baud rate - 300 to 921600 bps
   - Data bits (5-8)
@@ -54,12 +55,14 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 ### Traceroute / MTR
 - Graphical route visualization with glowing neon bars and hop details
 - **MTR (My Traceroute)** for continuous real-time path monitoring
+- **ICMP and TCP ping** with results visualization
 - Latency graph with premium dark/neon aesthetic
 - Automatic `cap_net_raw` capability configuration for TCP/UDP probes
 - Packet loss and latency statistics per hop
+- Configurable packet count and proxy (SOCKS/HTTP)
 
 ### SNMP Queries
-- SNMP GET and WALK operations (v1 and v2c)
+- SNMP GET, GETNEXT and WALK operations (v1 and v2c)
 - Real-time streaming results displayed in a sortable table (OID, Value, Type)
 - Automatic SNMP value type classification (Integer, String, Counter, TimeTicks, etc.)
 - Walk progress indicator on the execute button
@@ -69,7 +72,29 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - Built-in TFTP server for firmware transfers
 - Network interface auto-detection
 - Configurable root directory
-- Profile name banner with copy button for TFTP file names
+
+### Vulnerability Scanner
+- **Nmap integration** for OS and service version detection
+- **CVE search via NVD API** with CVSS severity badges
+- Supports Cisco, Huawei, MikroTik, Juniper and other vendors
+- MikroTik version discovery via SNMP OID
+- Export results to CSV
+
+### Speed Test
+- **iPerf3 mode** - LAN/WAN throughput testing (client/server/reverse)
+- **fast.com mode** - Internet speed test via Netflix CDN
+- Real-time throughput graph (bitrate + cumulative transfer)
+- Post-test latency measurement via ping
+- ISP and country detection via ip-api.com
+- iPerf3 public server list with country flags
+
+### Wi-Fi Survey
+- Network scanning with SSID, BSSID, channel, signal strength and security
+- **Channel usage chart** with Gaussian curves, BSSID grouping and animation
+- **Best channel recommendation** avoiding DFS channels
+- **Power Analysis graph** — scrolling signal history with loss detection
+- **Wi-Fi heatmap** for signal strength visualization
+- Audio feedback (beep alarm) for signal loss events
 
 ## Requirements
 
@@ -80,14 +105,21 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - picocom (for serial connections)
 - sudo configured
 
+### Optional System Tools
+- **iperf3** — Speed Test (LAN/WAN)
+- **nmap** — Vulnerability Scanner
+- **mtr** / **mtr-tiny** — MTR traceroute
+- **iw**, **network-manager** — Wi-Fi scanning
+- **nodejs** + **fast-cli** (`npm install -g fast-cli`) — Speed Test via fast.com
+
 ### Python Dependencies
 - **pyte** - Terminal emulator (VT100/ANSI)
 - **paramiko** - SSH protocol support (optional, for SSH connections)
 - **pysnmp** - SNMP protocol support (optional, for SNMP queries)
 - **standard-telnetlib** - Telnet protocol support (Python 3.13+)
 
-> **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information. 
-> Use SSH whenever possible for remote connections. Telnet should only be used in trusted, isolated networks 
+> **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information.
+> Use SSH whenever possible for remote connections. Telnet should only be used in trusted, isolated networks
 > or when connecting to devices that don't support SSH.
 
 ## Installation
@@ -98,7 +130,7 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 
 2. Install the package:
 ```bash
-sudo dpkg -i omnicom_1.4-1_all.deb
+sudo dpkg -i omnicom_1.6-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -116,13 +148,14 @@ sudo apt install debhelper dpkg-dev python3-pyqt6 picocom
 
 2. Build the package:
 ```bash
+cd scripts
 chmod +x make-deb.sh
 ./make-deb.sh
 ```
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../omnicom_1.4-1_all.deb
+sudo dpkg -i ../omnicom_1.6-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -140,7 +173,7 @@ paru -S omnicom
 
 2. Install the package:
 ```bash
-sudo pacman -U omnicom-1.4-1-any.pkg.tar.zst
+sudo pacman -U omnicom-1.6-1-any.pkg.tar.zst
 ```
 
 ### Flatpak
@@ -166,15 +199,15 @@ flatpak run io.github.benjamimgois.omnicom
 1. Install dependencies (if not already installed):
 ```bash
 # Arch Linux / Manjaro
-sudo pacman -S python-pyqt6 qt6-serialport picocom
+sudo pacman -S python-pyqt6 qt6-serialport picocom iperf3 nmap mtr iw
 pip install pyte paramiko pysnmp
 
 # Fedora / RHEL
-sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom
+sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom iperf3 nmap mtr iw
 pip3 install pyte paramiko pysnmp
 
 # Debian / Ubuntu (manual installation)
-sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom
+sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom iperf3 nmap mtr iw network-manager
 pip3 install pyte paramiko pysnmp
 
 # Python 3.13+ users also need:
@@ -188,26 +221,21 @@ chmod +x omnicom
 
 3. (Optional) Install system-wide:
 ```bash
-./install.sh
+./scripts/install.sh
 ```
 
 ## Usage
 
 Run the application:
 ```bash
-# Recommended way
 ./omnicom
-
-# Directly
-./omnicom
-
-# Or via Python
+# or
 python3 omnicom
 ```
 
 ### Serial Connection
 
-1. Select port type (Serial or USB)
+1. Select port type (USB or Serial toggle button)
 2. Choose specific port from the list
 3. Configure communication speed (main field)
 4. Adjust other parameters as needed
