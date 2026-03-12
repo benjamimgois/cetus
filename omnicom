@@ -16203,9 +16203,9 @@ class SerialTerminalGUI(QMainWindow):
                     item.setData(0, Qt.ItemDataRole.UserRole, e.path)
                     item.setData(0, Qt.ItemDataRole.UserRole + 1, e.is_dir())
                     self._ft_local_tree.addTopLevelItem(item)
-                except PermissionError:
+                except OSError:
                     pass
-        except PermissionError:
+        except OSError:
             pass
 
     def _ft_refresh_remote(self, path=None):
