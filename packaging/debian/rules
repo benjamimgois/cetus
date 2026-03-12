@@ -8,6 +8,7 @@ override_dh_auto_install:
 	install -Dm755 omnicom debian/omnicom/usr/bin/omnicom
 
 	# Install icon in hicolor theme (FreeDesktop.org standard)
+	install -Dm644 assets/icons/omnicom_icon.svg debian/omnicom/usr/share/icons/hicolor/scalable/apps/omnicom.svg
 	install -Dm644 assets/omnicom.png debian/omnicom/usr/share/icons/hicolor/512x512/apps/omnicom.png
 
 	# Install UI icons (sidebar and misc) — all SVGs

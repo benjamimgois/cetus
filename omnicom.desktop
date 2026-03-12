@@ -3,7 +3,7 @@
 Version=1.0
 Type=Application
 Name=Omnicom
-Comment=Interface gráfica para comunicação serial
+Comment=Network management and serial communication GUI
 Exec=/usr/bin/omnicom
 Icon=omnicom
 Terminal=false

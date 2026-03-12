@@ -96,6 +96,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 omnicom ${FLATPAK_DEST}/bin/omnicom
+      - install -Dm644 assets/icons/omnicom_icon.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
       - install -Dm644 assets/omnicom.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/omnicom-128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
