@@ -3480,14 +3480,14 @@ class SpeedTestWorker(QThread):
             )
         except FileNotFoundError:
             self.error.emit(
-                "'fast' não encontrado.\n"
-                "Instale com: npm install --global fast-cli"
+                "'fast' not found.\n"
+                "Install with: npm install --global fast-cli"
             )
             return
 
         t0 = _time.monotonic()
         self.phase_start.emit('download')
-        self.log_line.emit("Iniciando fast.com…")
+        self.log_line.emit("Starting fast.com…")
 
         dl = ul = 0.0
         phase = 'download'
@@ -3546,7 +3546,18 @@ class SpeedTestWorker(QThread):
                 f"Download: {dl:.2f} Mbps" +
                 (f"  |  Upload: {ul:.2f} Mbps" if ul > 0 else "")
             )
-            self.info.emit('fast.com', '—', '—', 'Netflix CDN')
+            # Fetch ISP and country from public IP geolocation
+            isp = '—'
+            country = '—'
+            try:
+                import urllib.request as _ur, json as _json
+                with _ur.urlopen('http://ip-api.com/json/?fields=isp,country', timeout=4) as _r:
+                    _d = _json.loads(_r.read().decode())
+                    isp     = _d.get('isp', '—') or '—'
+                    country = _d.get('country', '—') or '—'
+            except Exception:
+                pass
+            self.info.emit(isp, '—', country, 'Netflix CDN')
             self.result.emit(0.0, dl, ul)
         else:
             self.error.emit("No results obtained.")
@@ -16804,9 +16815,9 @@ class SerialTerminalGUI(QMainWindow):
             col = QVBoxLayout()
             col.setSpacing(1)
             t = QLabel(title)
-            t.setStyleSheet("color: #546e7a; font-size: 7pt; font-weight: bold; background: transparent; border: none;")
+            t.setStyleSheet("color: #546e7a; font-size: 9pt; font-weight: bold; background: transparent; border: none;")
             v = QLabel("—")
-            v.setStyleSheet("color: #cfd8dc; font-size: 9pt; background: transparent; border: none;")
+            v.setStyleSheet("color: #cfd8dc; font-size: 11pt; background: transparent; border: none;")
             col.addWidget(t)
             col.addWidget(v)
             info_row.addLayout(col, stretch)
@@ -16821,9 +16832,6 @@ class SerialTerminalGUI(QMainWindow):
             info_row.addSpacing(12)
 
         self._st_info_isp     = _info_col("ISP", 3)
-        _vsep()
-        self._st_info_rating  = _info_col("ISP RATING", 1)
-        self._st_info_rating.setStyleSheet("color: #FFB300; font-size: 9pt; background: transparent; border: none;")
         _vsep()
         self._st_info_country = _info_col("COUNTRY", 1)
         _vsep()
@@ -17132,8 +17140,7 @@ class SerialTerminalGUI(QMainWindow):
         self.stat_upload.setText("—")
         self.iperf_graph.clear()
         self.iperf_log.appendPlainText("\n── Speed Test ──")
-        for lbl in (self._st_info_isp, self._st_info_rating,
-                    self._st_info_country, self._st_info_server):
+        for lbl in (self._st_info_isp, self._st_info_country, self._st_info_server):
             lbl.setText("—")
         self._speedtest_worker = SpeedTestWorker()
         self._speedtest_worker.result.connect(self._on_speedtest_result)
@@ -17145,13 +17152,8 @@ class SerialTerminalGUI(QMainWindow):
         self._speedtest_worker.finished.connect(self._on_speedtest_done)
         self._speedtest_worker.start()
 
-    def _on_speedtest_info(self, isp, isp_rating, country, server_name):
+    def _on_speedtest_info(self, isp, _isp_rating, country, server_name):
         self._st_info_isp.setText(isp)
-        try:
-            rating = float(isp_rating)
-            self._st_info_rating.setText(f"⭐ {rating:.1f}")
-        except ValueError:
-            self._st_info_rating.setText(isp_rating)
         self._st_info_country.setText(country)
         self._st_info_server.setText(server_name)
 
