@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="512" height="512" alt="Omnicom" src="assets/icons/omnicom_icon.svg" />
+  <img width="256" height="256" alt="Omnicom" src="assets/icons/omnicom_icon.svg" />
 </p>
 
 <p align="center">
