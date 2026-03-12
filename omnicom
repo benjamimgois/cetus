@@ -261,7 +261,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox
+    QProgressBar, QSpinBox, QSplitter
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
@@ -5527,6 +5527,114 @@ class WifiHeatmapWidget(QWidget):
         painter.end()
 
 
+class FileConnectWorker(QThread):
+    connected = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, protocol, host, port, username, password, parent=None):
+        super().__init__(parent)
+        self._protocol = protocol
+        self._host = host
+        self._port = port
+        self._user = username
+        self._pass = password
+
+    def run(self):
+        try:
+            if self._protocol == 'SSH':
+                import paramiko
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(self._host, port=self._port, username=self._user,
+                            password=self._pass, timeout=10)
+                sftp = ssh.open_sftp()
+                self.connected.emit({'ssh': ssh, 'sftp': sftp})
+            elif self._protocol == 'FTP':
+                import ftplib
+                ftp = ftplib.FTP()
+                ftp.connect(self._host, self._port, timeout=10)
+                ftp.login(self._user, self._pass)
+                self.connected.emit({'ftp': ftp})
+            else:
+                self.error.emit(f"Client mode for {self._protocol} not yet implemented")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class FileListWorker(QThread):
+    result = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, protocol, conn_data, path, parent=None):
+        super().__init__(parent)
+        self._protocol = protocol
+        self._conn = conn_data
+        self._path = path
+
+    def run(self):
+        try:
+            entries = []
+            if self._protocol == 'SSH':
+                import stat as _stat
+                sftp = self._conn['sftp']
+                for attr in sftp.listdir_attr(self._path):
+                    is_dir = bool(attr.st_mode and _stat.S_ISDIR(attr.st_mode))
+                    entries.append((attr.filename, attr.st_size or 0, is_dir, attr.st_mtime or 0))
+            elif self._protocol == 'FTP':
+                ftp = self._conn['ftp']
+                ftp.cwd(self._path)
+                for name, facts in ftp.mlsd(facts=['size', 'type', 'modify']):
+                    if name in ('.', '..'):
+                        continue
+                    is_dir = facts.get('type', '') == 'dir'
+                    size = int(facts.get('size', 0))
+                    entries.append((name, size, is_dir, 0))
+            entries.sort(key=lambda x: (not x[2], x[0].lower()))
+            self.result.emit(entries)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class FileTransferWorker(QThread):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, direction, protocol, conn_data, local_path, remote_path, parent=None):
+        super().__init__(parent)
+        self._dir = direction   # 'upload' or 'download'
+        self._protocol = protocol
+        self._conn = conn_data
+        self._local = local_path
+        self._remote = remote_path
+        self._total = 0
+        self._done = 0
+
+    def _progress_cb(self, done, total):
+        if total:
+            self.progress.emit(int(done * 100 / total))
+
+    def run(self):
+        try:
+            if self._protocol == 'SSH':
+                sftp = self._conn['sftp']
+                if self._dir == 'upload':
+                    sftp.put(self._local, self._remote, callback=self._progress_cb)
+                else:
+                    sftp.get(self._remote, self._local, callback=self._progress_cb)
+            elif self._protocol == 'FTP':
+                ftp = self._conn['ftp']
+                if self._dir == 'upload':
+                    with open(self._local, 'rb') as f:
+                        ftp.storbinary(f'STOR {os.path.basename(self._remote)}', f)
+                else:
+                    with open(self._local, 'wb') as f:
+                        ftp.retrbinary(f'RETR {self._remote}', f.write)
+            self.progress.emit(100)
+            self.finished.emit(True, "Transfer complete")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class WiFiScanWorker(QThread):
     """Worker thread that scans for WiFi networks using nmcli."""
 
@@ -8341,6 +8449,12 @@ class SerialTerminalGUI(QMainWindow):
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
         self.tftp_process = None
+        self._ft_protocol = 'TFTP'
+        self._ft_mode = 'Server'
+        self._ft_conn = None
+        self._ft_connect_time = None
+        self._ft_local_path = os.path.expanduser('~')
+        self._ft_remote_path = '/'
         self._pending_profile_name = None
         self._pending_vendor = None
         self.config = ConfigManager()
@@ -8579,8 +8693,8 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_page = self.create_iperf_page()
         self.content_stack.addWidget(self.iperf_page)
 
-        # Create TFTP server page (index 7)
-        self.tftp_page = self.create_tftp_page()
+        # Create File Transfer page (index 7)
+        self.tftp_page = self.create_filetransfer_page()
         self.content_stack.addWidget(self.tftp_page)
 
         # Add to main layout
@@ -8958,16 +9072,123 @@ class SerialTerminalGUI(QMainWindow):
 
         return page
 
-    def create_tftp_page(self):
-        """Create the TFTP server configuration page"""
+    def create_filetransfer_page(self):
+        """Create the File Transfer page (SSH/SMB/FTP/TFTP, Server/Client modes)"""
+        PURPLE = '#9C27B0'
+
+        def _toggle_style(color):
+            return f"""
+                QPushButton {{
+                    background-color: #d8d8d8;
+                    border: 1px solid #b0b0b0;
+                    border-radius: 4px;
+                    color: #444444;
+                    font-size: 9pt;
+                    padding: 3px 10px;
+                }}
+                QPushButton:checked {{
+                    background-color: {color};
+                    border-color: {color};
+                    color: white;
+                    font-weight: bold;
+                }}
+                QPushButton:hover:!checked {{
+                    background-color: #c8c8c8;
+                }}
+            """
+
+        tree_style = """
+            QTreeWidget {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                color: #333333;
+                font-size: 9pt;
+            }
+            QTreeWidget::item {
+                padding: 3px;
+                background-color: #e8e8e8;
+            }
+            QTreeWidget::item:selected {
+                background-color: #9C27B0;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #d0d0d0;
+                color: #333333;
+                padding: 4px;
+                border: none;
+                font-weight: bold;
+                font-size: 9pt;
+            }
+        """
+
         page = QWidget()
         main_layout = QVBoxLayout()
         main_layout.setSpacing(6)
         main_layout.setContentsMargins(10, 8, 10, 8)
 
+        # ── Top controls row: Protocol toggles + Mode toggles ──────────
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
+
+        proto_lbl = QLabel("Protocol:")
+        proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
+        top_row.addWidget(proto_lbl)
+
+        self._ft_proto_btns = {}
+        for proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
+            btn = QPushButton(proto)
+            btn.setCheckable(True)
+            btn.setFixedWidth(60)
+            btn.setFixedHeight(24)
+            btn.setStyleSheet(_toggle_style(PURPLE))
+            btn.clicked.connect(lambda _c, p=proto: self._ft_proto_changed(p))
+            self._ft_proto_btns[proto] = btn
+            top_row.addWidget(btn)
+        self._ft_proto_btns['TFTP'].setChecked(True)
+
+        top_row.addSpacing(16)
+
+        mode_lbl = QLabel("Mode:")
+        mode_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
+        top_row.addWidget(mode_lbl)
+
+        self._ft_mode_btns = {}
+        for mode in ('Server', 'Client'):
+            btn = QPushButton(mode)
+            btn.setCheckable(True)
+            btn.setFixedWidth(70)
+            btn.setFixedHeight(24)
+            btn.setStyleSheet(_toggle_style(PURPLE))
+            btn.clicked.connect(lambda _c, m=mode: self._ft_mode_changed(m))
+            self._ft_mode_btns[mode] = btn
+            top_row.addWidget(btn)
+        self._ft_mode_btns['Server'].setChecked(True)
+
+        top_row.addStretch()
+        main_layout.addLayout(top_row)
+
+        # ── Main stacked widget: Server panel (0) / Client panel (1) ───
+        self._ft_stack = QStackedWidget()
+
+        # ── SERVER PANEL ────────────────────────────────────────────────
+        server_panel = QWidget()
+        server_layout = QVBoxLayout()
+        server_layout.setContentsMargins(0, 0, 0, 0)
+        server_layout.setSpacing(6)
+
+        # Inner stack per-protocol server UI
+        self._ft_server_stack = QStackedWidget()
+
+        # Index 0: TFTP server UI (existing widgets)
+        tftp_server_widget = QWidget()
+        tftp_server_vbox = QVBoxLayout()
+        tftp_server_vbox.setContentsMargins(0, 0, 0, 0)
+        tftp_server_vbox.setSpacing(6)
+
         combo_width = 200
 
-        # TFTP Server group
         tftp_group = QGroupBox("TFTP Server")
         tftp_layout = QFormLayout()
         tftp_layout.setVerticalSpacing(4)
@@ -8975,19 +9196,13 @@ class SerialTerminalGUI(QMainWindow):
         tftp_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         tftp_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        # Network interface selector
         self.tftp_interface = QComboBox()
         self.tftp_interface.setFixedWidth(combo_width)
         self.tftp_interface.setToolTip("Select network interface for TFTP server")
-        self.tftp_interface.setStyleSheet("""
-            QComboBox {
-                font-size: 8pt;
-            }
-        """)
+        self.tftp_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
         self.update_network_interfaces()
         tftp_layout.addRow("Interface:", self.tftp_interface)
 
-        # TFTP directory with browse button and start button
         tftp_dir_layout = QHBoxLayout()
         tftp_dir_layout.setContentsMargins(0, 0, 0, 0)
         tftp_dir_layout.setSpacing(2)
@@ -9041,7 +9256,6 @@ class SerialTerminalGUI(QMainWindow):
 
         tftp_group.setLayout(tftp_layout)
 
-        # Add shadow effect to tftp group
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setXOffset(0)
@@ -9049,12 +9263,11 @@ class SerialTerminalGUI(QMainWindow):
         shadow.setColor(QColor(0, 0, 0, 30))
         tftp_group.setGraphicsEffect(shadow)
 
-        main_layout.addWidget(tftp_group)
+        tftp_server_vbox.addWidget(tftp_group)
 
         # Initialize TFTP server instance
         self.tftp_server = None
 
-        # === Directory Contents ===
         files_group = QGroupBox("Directory Contents")
         files_layout = QVBoxLayout()
         files_layout.setContentsMargins(10, 2, 10, 8)
@@ -9086,7 +9299,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #e8e8e8;
             }
             QTableWidget::item:selected {
-                background-color: #2196F3;
+                background-color: #9C27B0;
                 color: white;
             }
             QHeaderView::section {
@@ -9101,7 +9314,6 @@ class SerialTerminalGUI(QMainWindow):
         files_layout.addWidget(self.tftp_files_table)
         self._enable_table_tooltips(self.tftp_files_table)
 
-        # Refresh button
         refresh_btn_layout = QHBoxLayout()
         refresh_btn_layout.addStretch()
         self.tftp_refresh_btn = QPushButton("Refresh")
@@ -9122,9 +9334,6 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.tftp_refresh_btn.clicked.connect(self.refresh_tftp_files)
         refresh_btn_layout.addWidget(self.tftp_refresh_btn)
-
-
-
         refresh_btn_layout.addStretch()
         files_layout.addLayout(refresh_btn_layout)
 
@@ -9137,17 +9346,216 @@ class SerialTerminalGUI(QMainWindow):
         shadow2.setColor(QColor(0, 0, 0, 30))
         files_group.setGraphicsEffect(shadow2)
 
-        main_layout.addWidget(files_group, 1)
+        tftp_server_vbox.addWidget(files_group, 1)
+        tftp_server_widget.setLayout(tftp_server_vbox)
+        self._ft_server_stack.addWidget(tftp_server_widget)   # index 0: TFTP
 
-        # Load initial file list
-        self.refresh_tftp_files()
+        # Indexes 1-3: placeholder pages for FTP, SSH, SMB
+        for proto_name in ('FTP', 'SSH', 'SMB'):
+            placeholder = QGroupBox("Service Configuration")
+            ph_layout = QVBoxLayout()
+            ph_layout.setContentsMargins(12, 12, 12, 12)
+            ph_lbl = QLabel(f"Server mode not available for {proto_name}")
+            ph_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ph_lbl.setStyleSheet("color: #888888; font-size: 10pt;")
+            ph_layout.addWidget(ph_lbl)
+            ph_layout.addStretch()
+            placeholder.setLayout(ph_layout)
+            wrap = QWidget()
+            wrap_vbox = QVBoxLayout()
+            wrap_vbox.setContentsMargins(0, 0, 0, 0)
+            wrap_vbox.addWidget(placeholder, 1)
+            wrap.setLayout(wrap_vbox)
+            self._ft_server_stack.addWidget(wrap)
 
-        # Start TFTP button (full-width at bottom)
+        server_layout.addWidget(self._ft_server_stack, 1)
+        server_panel.setLayout(server_layout)
+
+        # ── CLIENT PANEL ─────────────────────────────────────────────────
+        client_panel = QWidget()
+        client_layout = QVBoxLayout()
+        client_layout.setContentsMargins(0, 0, 0, 0)
+        client_layout.setSpacing(6)
+
+        # Connection group
+        conn_group = QGroupBox("Connection")
+        conn_form = QFormLayout()
+        conn_form.setVerticalSpacing(4)
+        conn_form.setContentsMargins(8, 6, 8, 8)
+        conn_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        field_style = """
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 2px 8px;
+                background-color: #f5f5f5;
+                color: #333333;
+                font-size: 9pt;
+            }
+            QLineEdit:focus {
+                border: 1px solid #9C27B0;
+            }
+        """
+
+        self._ft_host_input = QLineEdit()
+        self._ft_host_input.setPlaceholderText("IP or hostname")
+        self._ft_host_input.setFixedWidth(200)
+        self._ft_host_input.setStyleSheet(field_style)
+        conn_form.addRow("Host:", self._ft_host_input)
+
+        self._ft_port_input = QLineEdit("69")
+        self._ft_port_input.setFixedWidth(80)
+        self._ft_port_input.setStyleSheet(field_style)
+        conn_form.addRow("Port:", self._ft_port_input)
+
+        self._ft_user_input = QLineEdit()
+        self._ft_user_input.setFixedWidth(200)
+        self._ft_user_input.setStyleSheet(field_style)
+        conn_form.addRow("Username:", self._ft_user_input)
+
+        self._ft_pass_input = QLineEdit()
+        self._ft_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._ft_pass_input.setFixedWidth(200)
+        self._ft_pass_input.setStyleSheet(field_style)
+        conn_form.addRow("Password:", self._ft_pass_input)
+
+        conn_group.setLayout(conn_form)
+
+        conn_shadow = QGraphicsDropShadowEffect()
+        conn_shadow.setBlurRadius(15)
+        conn_shadow.setXOffset(0)
+        conn_shadow.setYOffset(2)
+        conn_shadow.setColor(QColor(0, 0, 0, 30))
+        conn_group.setGraphicsEffect(conn_shadow)
+
+        client_layout.addWidget(conn_group)
+
+        # File Browser group
+        browser_group = QGroupBox("File Browser")
+        browser_outer = QVBoxLayout()
+        browser_outer.setContentsMargins(8, 6, 8, 8)
+        browser_outer.setSpacing(4)
+
+        browser_h = QHBoxLayout()
+        browser_h.setSpacing(6)
+
+        # LEFT: local tree
+        local_col = QVBoxLayout()
+        local_col.setSpacing(2)
+        self._ft_local_path_label = QLabel(self._ft_local_path)
+        self._ft_local_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
+        self._ft_local_path_label.setWordWrap(True)
+        local_col.addWidget(self._ft_local_path_label)
+        self._ft_local_tree = QTreeWidget()
+        self._ft_local_tree.setColumnCount(3)
+        self._ft_local_tree.setHeaderLabels(["Name", "Size", "Modified"])
+        self._ft_local_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._ft_local_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._ft_local_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self._ft_local_tree.setColumnWidth(1, 70)
+        self._ft_local_tree.setColumnWidth(2, 110)
+        self._ft_local_tree.setStyleSheet(tree_style)
+        self._ft_local_tree.itemDoubleClicked.connect(self._ft_local_double_clicked)
+        local_col.addWidget(self._ft_local_tree, 1)
+        browser_h.addLayout(local_col, 1)
+
+        # CENTER: arrow buttons
+        arrow_col = QVBoxLayout()
+        arrow_col.setSpacing(8)
+        arrow_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self._ft_upload_btn = QPushButton("→")
+        self._ft_upload_btn.setToolTip("Upload to remote")
+        self._ft_upload_btn.setFixedSize(36, 36)
+        self._ft_upload_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 14pt;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #7B1FA2; }
+            QPushButton:pressed { background-color: #4A148C; }
+            QPushButton:disabled { background-color: #cccccc; color: #888888; }
+        """)
+        self._ft_upload_btn.clicked.connect(self._ft_upload)
+        self._ft_download_btn = QPushButton("←")
+        self._ft_download_btn.setToolTip("Download from remote")
+        self._ft_download_btn.setFixedSize(36, 36)
+        self._ft_download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 14pt;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #7B1FA2; }
+            QPushButton:pressed { background-color: #4A148C; }
+            QPushButton:disabled { background-color: #cccccc; color: #888888; }
+        """)
+        self._ft_download_btn.clicked.connect(self._ft_download)
+        arrow_col.addStretch()
+        arrow_col.addWidget(self._ft_upload_btn)
+        arrow_col.addWidget(self._ft_download_btn)
+        arrow_col.addStretch()
+        browser_h.addLayout(arrow_col)
+
+        # RIGHT: remote tree
+        remote_col = QVBoxLayout()
+        remote_col.setSpacing(2)
+        self._ft_remote_path_label = QLabel("/")
+        self._ft_remote_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
+        self._ft_remote_path_label.setWordWrap(True)
+        remote_col.addWidget(self._ft_remote_path_label)
+        self._ft_remote_tree = QTreeWidget()
+        self._ft_remote_tree.setColumnCount(3)
+        self._ft_remote_tree.setHeaderLabels(["Name", "Size", "Modified"])
+        self._ft_remote_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._ft_remote_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._ft_remote_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self._ft_remote_tree.setColumnWidth(1, 70)
+        self._ft_remote_tree.setColumnWidth(2, 110)
+        self._ft_remote_tree.setStyleSheet(tree_style)
+        self._ft_remote_tree.itemDoubleClicked.connect(self._ft_remote_double_clicked)
+        remote_col.addWidget(self._ft_remote_tree, 1)
+        browser_h.addLayout(remote_col, 1)
+
+        browser_outer.addLayout(browser_h, 1)
+
+        # Status bar inside browser group
+        self._ft_status_label = QLabel("Not connected")
+        self._ft_status_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        browser_outer.addWidget(self._ft_status_label)
+
+        browser_group.setLayout(browser_outer)
+
+        browser_shadow = QGraphicsDropShadowEffect()
+        browser_shadow.setBlurRadius(15)
+        browser_shadow.setXOffset(0)
+        browser_shadow.setYOffset(2)
+        browser_shadow.setColor(QColor(0, 0, 0, 30))
+        browser_group.setGraphicsEffect(browser_shadow)
+
+        client_layout.addWidget(browser_group, 1)
+        client_panel.setLayout(client_layout)
+
+        # Add panels to main stack
+        self._ft_stack.addWidget(server_panel)   # index 0: Server
+        self._ft_stack.addWidget(client_panel)   # index 1: Client
+        self._ft_stack.setCurrentIndex(0)
+
+        main_layout.addWidget(self._ft_stack, 1)
+
+        # ── Action button (full-width at bottom) ────────────────────────
         self.tftp_btn = QPushButton("START TFTP")
         self.tftp_btn.setMinimumHeight(45)
         self.tftp_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
         self.tftp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.tftp_btn.clicked.connect(self.toggle_tftp_server)
+        self.tftp_btn.clicked.connect(self._ft_action_btn_clicked)
         self.tftp_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9C27B0;
@@ -9167,7 +9575,16 @@ class SerialTerminalGUI(QMainWindow):
         """)
         main_layout.addWidget(self.tftp_btn)
 
+        # ── Status/duration timer ────────────────────────────────────────
+        self._ft_status_timer = QTimer(self)
+        self._ft_status_timer.timeout.connect(self._ft_update_duration)
+
         page.setLayout(main_layout)
+
+        # Load initial local file list and TFTP file list
+        self._ft_refresh_local()
+        self.refresh_tftp_files()
+
         return page
 
     def create_ipscan_page(self):
@@ -15642,6 +16059,250 @@ class SerialTerminalGUI(QMainWindow):
             self.tftp_interface.setEnabled(False)
             self.tftp_directory.setEnabled(False)
             self.tftp_browse_btn.setEnabled(False)
+
+    def _ft_proto_changed(self, proto):
+        self._ft_protocol = proto
+        # Uncheck all, check selected
+        for p, btn in self._ft_proto_btns.items():
+            btn.setChecked(p == proto)
+        # Update default port
+        ports = {'SSH': '22', 'FTP': '21', 'TFTP': '69', 'SMB': '445'}
+        self._ft_port_input.setText(ports.get(proto, '22'))
+        # Show correct server panel
+        proto_idx = {'TFTP': 0, 'FTP': 1, 'SSH': 2, 'SMB': 3}
+        self._ft_server_stack.setCurrentIndex(proto_idx.get(proto, 0))
+        # Update bottom button label if in server mode
+        if self._ft_mode == 'Server':
+            is_running = proto == 'TFTP' and self.tftp_process is not None
+            self.tftp_btn.setText(f"STOP {proto}" if is_running else f"START {proto}")
+
+    def _ft_mode_changed(self, mode):
+        self._ft_mode = mode
+        # Uncheck all, check selected
+        for m, btn in self._ft_mode_btns.items():
+            btn.setChecked(m == mode)
+        self._ft_stack.setCurrentIndex(0 if mode == 'Server' else 1)
+        if mode == 'Server':
+            is_running = self._ft_protocol == 'TFTP' and self.tftp_process is not None
+            self.tftp_btn.setText(f"STOP {self._ft_protocol}" if is_running else f"START {self._ft_protocol}")
+        else:
+            connected = self._ft_conn is not None
+            self.tftp_btn.setText("DISCONNECT" if connected else f"CONNECT {self._ft_protocol}")
+
+    def _ft_action_btn_clicked(self):
+        if self._ft_mode == 'Server':
+            if self._ft_protocol == 'TFTP':
+                self.toggle_tftp_server()
+            else:
+                QMessageBox.information(self, "Info", f"{self._ft_protocol} server mode is not yet available.")
+        else:
+            if self._ft_conn is not None:
+                self._ft_client_disconnect()
+            else:
+                self._ft_client_connect()
+
+    def _ft_client_connect(self):
+        host = self._ft_host_input.text().strip()
+        if not host:
+            QMessageBox.warning(self, "Warning", "Please enter a host address.")
+            return
+        try:
+            port = int(self._ft_port_input.text().strip())
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Invalid port number.")
+            return
+        user = self._ft_user_input.text().strip()
+        pw = self._ft_pass_input.text()
+        self.tftp_btn.setEnabled(False)
+        self.tftp_btn.setText("Connecting...")
+        self._ft_status_label.setText("Connecting...")
+        self._ft_connect_worker = FileConnectWorker(self._ft_protocol, host, port, user, pw)
+        self._ft_connect_worker.connected.connect(self._ft_on_connected)
+        self._ft_connect_worker.error.connect(self._ft_on_connect_error)
+        self._ft_connect_worker.start()
+
+    def _ft_on_connected(self, conn_data):
+        self._ft_conn = conn_data
+        import datetime
+        self._ft_connect_time = datetime.datetime.now()
+        host = self._ft_host_input.text().strip()
+        self._ft_status_label.setText(f"● Connected to {host}")
+        self._ft_status_label.setStyleSheet("color: #4CAF50; font-size: 9pt; font-weight: bold;")
+        self.tftp_btn.setEnabled(True)
+        self.tftp_btn.setText("DISCONNECT")
+        self._ft_remote_path = '/'
+        self._ft_remote_path_label.setText('/')
+        self._ft_refresh_remote('/')
+        self._ft_refresh_local()
+        self._ft_status_timer.start(1000)
+
+    def _ft_on_connect_error(self, msg):
+        self._ft_conn = None
+        self._ft_status_label.setText(f"✗ Connection failed: {msg}")
+        self._ft_status_label.setStyleSheet("color: #f44336; font-size: 9pt;")
+        self.tftp_btn.setEnabled(True)
+        self.tftp_btn.setText(f"CONNECT {self._ft_protocol}")
+
+    def _ft_client_disconnect(self):
+        self._ft_status_timer.stop()
+        if self._ft_conn:
+            try:
+                if 'sftp' in self._ft_conn:
+                    self._ft_conn['sftp'].close()
+                if 'ssh' in self._ft_conn:
+                    self._ft_conn['ssh'].close()
+                if 'ftp' in self._ft_conn:
+                    self._ft_conn['ftp'].quit()
+            except Exception:
+                pass
+        self._ft_conn = None
+        self._ft_connect_time = None
+        self._ft_remote_tree.clear()
+        self._ft_status_label.setText("Not connected")
+        self._ft_status_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        self.tftp_btn.setText(f"CONNECT {self._ft_protocol}")
+
+    def _ft_update_duration(self):
+        if self._ft_conn and self._ft_connect_time:
+            import datetime
+            delta = datetime.datetime.now() - self._ft_connect_time
+            total_secs = int(delta.total_seconds())
+            h, rem = divmod(total_secs, 3600)
+            m, s = divmod(rem, 60)
+            host = self._ft_host_input.text().strip()
+            dur = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+            self._ft_status_label.setText(f"● Connected to {host} — {dur}")
+
+    def _ft_refresh_local(self, path=None):
+        if path is None:
+            path = getattr(self, '_ft_local_path', os.path.expanduser('~'))
+        if not os.path.isdir(path):
+            return
+        self._ft_local_path = path
+        self._ft_local_path_label.setText(path)
+        self._ft_local_tree.clear()
+        try:
+            from datetime import datetime
+            entries = sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower()))
+            if os.path.dirname(path) != path:
+                item = QTreeWidgetItem(['..', '', ''])
+                item.setData(0, Qt.ItemDataRole.UserRole, os.path.dirname(path))
+                item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+                self._ft_local_tree.addTopLevelItem(item)
+            for e in entries:
+                try:
+                    stat = e.stat()
+                    if e.is_dir():
+                        size_str = '<DIR>'
+                    else:
+                        sz = stat.st_size
+                        size_str = f"{sz/1024:.1f} KB" if sz >= 1024 else f"{sz} B"
+                    date_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
+                    name = e.name + ('/' if e.is_dir() else '')
+                    item = QTreeWidgetItem([name, size_str, date_str])
+                    item.setData(0, Qt.ItemDataRole.UserRole, e.path)
+                    item.setData(0, Qt.ItemDataRole.UserRole + 1, e.is_dir())
+                    self._ft_local_tree.addTopLevelItem(item)
+                except PermissionError:
+                    pass
+        except PermissionError:
+            pass
+
+    def _ft_refresh_remote(self, path=None):
+        if path is None:
+            path = getattr(self, '_ft_remote_path', '/')
+        if not self._ft_conn:
+            return
+        self._ft_remote_tree.clear()
+        self._ft_remote_path_label.setText(path)
+        self._ft_list_worker = FileListWorker(self._ft_protocol, self._ft_conn, path)
+        self._ft_list_worker.result.connect(lambda entries: self._ft_on_remote_list(entries, path))
+        self._ft_list_worker.error.connect(lambda e: self._ft_status_label.setText(f"List error: {e}"))
+        self._ft_list_worker.start()
+
+    def _ft_on_remote_list(self, entries, path):
+        self._ft_remote_path = path
+        self._ft_remote_path_label.setText(path)
+        self._ft_remote_tree.clear()
+        from datetime import datetime
+        if path not in ('/', ''):
+            item = QTreeWidgetItem(['..', '', ''])
+            parent_path = path.rstrip('/').rsplit('/', 1)[0] or '/'
+            item.setData(0, Qt.ItemDataRole.UserRole, parent_path)
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+            self._ft_remote_tree.addTopLevelItem(item)
+        for name, size, is_dir, mtime in entries:
+            size_str = '<DIR>' if is_dir else (f"{size/1024:.1f} KB" if size >= 1024 else f"{size} B")
+            date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M') if mtime else ''
+            display = name + ('/' if is_dir else '')
+            item = QTreeWidgetItem([display, size_str, date_str])
+            remote_full = path.rstrip('/') + '/' + name
+            item.setData(0, Qt.ItemDataRole.UserRole, remote_full)
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, is_dir)
+            self._ft_remote_tree.addTopLevelItem(item)
+
+    def _ft_local_double_clicked(self, item, col):
+        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if is_dir and path:
+            self._ft_refresh_local(path)
+
+    def _ft_remote_double_clicked(self, item, col):
+        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if is_dir and path and self._ft_conn:
+            self._ft_refresh_remote(path)
+
+    def _ft_upload(self):
+        if not self._ft_conn:
+            return
+        items = self._ft_local_tree.selectedItems()
+        if not items:
+            return
+        item = items[0]
+        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if is_dir:
+            QMessageBox.information(self, "Info", "Directory upload not supported. Select a file.")
+            return
+        local_path = item.data(0, Qt.ItemDataRole.UserRole)
+        filename = os.path.basename(local_path)
+        remote_path = self._ft_remote_path.rstrip('/') + '/' + filename
+        self.tftp_btn.setEnabled(False)
+        self._ft_status_label.setText(f"Uploading {filename}...")
+        self._ft_transfer_worker = FileTransferWorker('upload', self._ft_protocol, self._ft_conn, local_path, remote_path)
+        self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
+        self._ft_transfer_worker.start()
+
+    def _ft_download(self):
+        if not self._ft_conn:
+            return
+        items = self._ft_remote_tree.selectedItems()
+        if not items:
+            return
+        item = items[0]
+        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if is_dir:
+            QMessageBox.information(self, "Info", "Directory download not supported. Select a file.")
+            return
+        remote_path = item.data(0, Qt.ItemDataRole.UserRole)
+        filename = os.path.basename(remote_path)
+        local_path = os.path.join(self._ft_local_path, filename)
+        self.tftp_btn.setEnabled(False)
+        self._ft_status_label.setText(f"Downloading {filename}...")
+        self._ft_transfer_worker = FileTransferWorker('download', self._ft_protocol, self._ft_conn, local_path, remote_path)
+        self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
+        self._ft_transfer_worker.start()
+
+    def _ft_on_transfer_done(self, success, msg):
+        self.tftp_btn.setEnabled(True)
+        if success:
+            self._ft_refresh_local()
+            self._ft_refresh_remote()
+            host = self._ft_host_input.text().strip()
+            self._ft_status_label.setText(f"● Connected to {host} — {msg}")
+        else:
+            self._ft_status_label.setText(f"✗ Transfer failed: {msg}")
+            self._ft_status_label.setStyleSheet("color: #f44336; font-size: 9pt;")
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
