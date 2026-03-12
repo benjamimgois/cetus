@@ -34,7 +34,8 @@
 
 Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner, SNMP, Speed Test and Wi-Fi Survey.
 
-<img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
+<img width="716" height="896" alt="image" src="https://github.com/user-attachments/assets/fe1d4bc5-b92d-4094-bd90-189f70b06466" />
+
 
 ## Features
 
