@@ -2,11 +2,12 @@
 pkgname=omnicom-git
 pkgver=r1.g0000000
 pkgrel=1
-pkgdesc="Modern graphical interface for network device management with Serial, SSH, Telnet, IP Scanner, SNMP and Traceroute support"
+pkgdesc="Modern graphical interface for network management with Serial, SSH, TFTP, IP Scanner, SNMP, Traceroute, VulnScan and Speed Test (iPerf3 / fast.com)"
 arch=('any')
 url="https://github.com/benjamimgois/omnicom"
 license=('MIT')
-depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo')
+depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo' 'iperf3' 'nmap')
+optdepends=('nodejs: required for fast-cli (npm install -g fast-cli) — Speed Test via fast.com')
 makedepends=('git' 'imagemagick')
 provides=('omnicom')
 conflicts=('omnicom')
