@@ -1,10 +1,38 @@
-# Omnicom
+<p align="center">
+  <img width="512" height="512" alt="Omnicom" src="assets/icons/omnicom_icon.svg" />
+</p>
 
-[![GitHub](https://img.shields.io/badge/GitHub-benjamimgois%2Fomnicom-blue?logo=github)](https://github.com/benjamimgois/omnicom)
-[![Version](https://img.shields.io/badge/version-1.6-green)](https://github.com/benjamimgois/omnicom/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+<p align="center">
+  <a href="https://github.com/benjamimgois/omnicom/releases">
+    <img
+      src="https://img.shields.io/github/v/release/benjamimgois/omnicom?color=4CAF50&label=Latest%20release&style=for-the-badge"
+      alt="Latest release">
+  </a>
 
-Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner, SNMP, Vulnerability Scanner, Speed Test and Wi-Fi Survey.
+  <a href="https://github.com/benjamimgois/omnicom/releases">
+    <img src="https://img.shields.io/badge/Flatpak-Stable-blue?style=for-the-badge&logo=flatpak" alt="Flatpak">
+  </a>
+
+  <a href="https://aur.archlinux.org/packages/omnicom-git">
+    <img
+      src="https://img.shields.io/aur/version/omnicom-git?color=1793d1&label=AUR&style=for-the-badge"
+      alt="AUR version">
+  </a>
+
+  <a href="https://github.com/benjamimgois/omnicom/releases">
+    <img
+      src="https://img.shields.io/badge/Debian-Stable-A81D33?style=for-the-badge&logo=debian"
+      alt="Debian package">
+  </a>
+
+  <a href="https://github.com/benjamimgois/omnicom/blob/main/LICENSE">
+    <img
+      src="https://img.shields.io/github/license/benjamimgois/omnicom?color=2196f3&label=License&style=for-the-badge"
+      alt="License">
+  </a>
+</p>
+
+Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner, SNMP, Speed Test and Wi-Fi Survey.
 
 <img width="3609" height="1625" alt="image" src="https://github.com/user-attachments/assets/a0cc6cd0-1954-49ba-a481-6b4779b64ff7" />
 
