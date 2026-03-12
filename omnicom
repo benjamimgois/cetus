@@ -8455,6 +8455,8 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_connect_time = None
         self._ft_local_path = os.path.expanduser('~')
         self._ft_remote_path = '/'
+        self._ftp_srv_process = None
+        self._smb_srv_service = 'smb'
         self._pending_profile_name = None
         self._pending_vendor = None
         self.config = ConfigManager()
@@ -9405,23 +9407,170 @@ class SerialTerminalGUI(QMainWindow):
         tftp_server_widget.setLayout(tftp_server_vbox)
         self._ft_server_stack.addWidget(tftp_server_widget)   # index 0: TFTP
 
-        # Indexes 1-3: placeholder pages for FTP, SSH, SMB
-        for proto_name in ('FTP', 'SSH', 'SMB'):
-            placeholder = QGroupBox("Service Configuration")
-            ph_layout = QVBoxLayout()
-            ph_layout.setContentsMargins(12, 12, 12, 12)
-            ph_lbl = QLabel(f"Server mode not available for {proto_name}")
-            ph_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            ph_lbl.setStyleSheet("color: #888888; font-size: 10pt;")
-            ph_layout.addWidget(ph_lbl)
-            ph_layout.addStretch()
-            placeholder.setLayout(ph_layout)
-            wrap = QWidget()
-            wrap_vbox = QVBoxLayout()
-            wrap_vbox.setContentsMargins(0, 0, 0, 0)
-            wrap_vbox.addWidget(placeholder, 1)
-            wrap.setLayout(wrap_vbox)
-            self._ft_server_stack.addWidget(wrap)
+        # ── Index 1: FTP Server page ────────────────────────────────────
+        ftp_srv_widget = QWidget()
+        ftp_srv_vbox = QVBoxLayout()
+        ftp_srv_vbox.setContentsMargins(0, 0, 0, 0)
+        ftp_srv_vbox.setSpacing(6)
+
+        ftp_srv_group = QGroupBox("Server")
+        ftp_srv_form = QFormLayout()
+        ftp_srv_form.setVerticalSpacing(4)
+        ftp_srv_form.setContentsMargins(8, 5, 8, 8)
+        ftp_srv_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self._ftp_srv_dir = QLineEdit(os.path.expanduser('~'))
+        self._ftp_srv_dir.setFixedWidth(combo_width)
+        self._ftp_srv_dir.setReadOnly(True)
+        self._ftp_srv_dir.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        ftp_browse_btn = QPushButton()
+        ftp_browse_btn.setFixedSize(28, 28)
+        ftp_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
+        ftp_browse_btn.setStyleSheet("""QPushButton{background:#e0e0e0;border:1px solid #bdbdbd;border-radius:6px;}
+            QPushButton:hover{background:#d0d0d0;}""")
+        ftp_browse_btn.clicked.connect(lambda: (
+            d := QFileDialog.getExistingDirectory(self, "FTP Root Directory", self._ftp_srv_dir.text()),
+            self._ftp_srv_dir.setText(d) if d else None
+        ))
+        ftp_dir_row = QHBoxLayout()
+        ftp_dir_row.setContentsMargins(0, 0, 0, 0)
+        ftp_dir_row.setSpacing(4)
+        ftp_dir_row.addWidget(self._ftp_srv_dir)
+        ftp_dir_row.addWidget(ftp_browse_btn)
+        ftp_dir_row.addStretch()
+        ftp_dir_w = QWidget(); ftp_dir_w.setContentsMargins(0,0,0,0); ftp_dir_w.setLayout(ftp_dir_row)
+        ftp_srv_form.addRow("Directory:", ftp_dir_w)
+
+        self._ftp_srv_port = QLineEdit("21")
+        self._ftp_srv_port.setFixedWidth(80)
+        self._ftp_srv_port.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        ftp_srv_form.addRow("Port:", self._ftp_srv_port)
+
+        self._ftp_srv_user = QLineEdit("anonymous")
+        self._ftp_srv_user.setFixedWidth(combo_width)
+        self._ftp_srv_user.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        ftp_srv_form.addRow("Username:", self._ftp_srv_user)
+
+        self._ftp_srv_pass = QLineEdit()
+        self._ftp_srv_pass.setFixedWidth(combo_width)
+        self._ftp_srv_pass.setEchoMode(QLineEdit.EchoMode.Password)
+        self._ftp_srv_pass.setPlaceholderText("Leave blank for anonymous")
+        self._ftp_srv_pass.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        ftp_srv_form.addRow("Password:", self._ftp_srv_pass)
+
+        ftp_srv_group.setLayout(ftp_srv_form)
+        ftp_shadow = QGraphicsDropShadowEffect()
+        ftp_shadow.setBlurRadius(15); ftp_shadow.setXOffset(0); ftp_shadow.setYOffset(2)
+        ftp_shadow.setColor(QColor(0, 0, 0, 30))
+        ftp_srv_group.setGraphicsEffect(ftp_shadow)
+        ftp_srv_vbox.addWidget(ftp_srv_group)
+
+        ftp_note = QLabel("Requires: <b>pyftpdlib</b>  —  <code>pip install pyftpdlib</code>")
+        ftp_note.setStyleSheet("font-size: 8pt; color: #777777; padding: 2px 4px;")
+        ftp_srv_vbox.addWidget(ftp_note)
+        ftp_srv_vbox.addStretch()
+        ftp_srv_widget.setLayout(ftp_srv_vbox)
+        self._ft_server_stack.addWidget(ftp_srv_widget)   # index 1: FTP
+
+        # ── Index 2: SSH Server page ─────────────────────────────────────
+        ssh_srv_widget = QWidget()
+        ssh_srv_vbox = QVBoxLayout()
+        ssh_srv_vbox.setContentsMargins(0, 0, 0, 0)
+        ssh_srv_vbox.setSpacing(6)
+
+        ssh_srv_group = QGroupBox("Server")
+        ssh_srv_inner = QVBoxLayout()
+        ssh_srv_inner.setContentsMargins(12, 10, 12, 12)
+        ssh_srv_inner.setSpacing(8)
+
+        ssh_info = QLabel(
+            "<b>SSH Server (sshd)</b><br><br>"
+            "The SSH server is managed by your system's OpenSSH service.<br>"
+            "Omnicom can show its status and start/stop it via systemctl."
+        )
+        ssh_info.setWordWrap(True)
+        ssh_info.setStyleSheet("font-size: 9pt; color: #333333;")
+        ssh_srv_inner.addWidget(ssh_info)
+
+        self._ssh_srv_status_lbl = QLabel("Status: unknown")
+        self._ssh_srv_status_lbl.setStyleSheet("font-size: 9pt; color: #555555; padding: 4px 0;")
+        ssh_srv_inner.addWidget(self._ssh_srv_status_lbl)
+
+        ssh_btn_row = QHBoxLayout()
+        ssh_check_btn = QPushButton("Check Status")
+        ssh_check_btn.setFixedWidth(120)
+        ssh_check_btn.setStyleSheet("""QPushButton{background:#78909c;color:white;border:none;
+            border-radius:6px;padding:5px 10px;font-weight:bold;}
+            QPushButton:hover{background:#607d8b;}""")
+        ssh_check_btn.clicked.connect(self._ft_ssh_srv_check_status)
+        ssh_btn_row.addWidget(ssh_check_btn)
+        ssh_btn_row.addStretch()
+        ssh_srv_inner.addLayout(ssh_btn_row)
+        ssh_srv_inner.addStretch()
+        ssh_srv_group.setLayout(ssh_srv_inner)
+
+        ssh_shadow = QGraphicsDropShadowEffect()
+        ssh_shadow.setBlurRadius(15); ssh_shadow.setXOffset(0); ssh_shadow.setYOffset(2)
+        ssh_shadow.setColor(QColor(0, 0, 0, 30))
+        ssh_srv_group.setGraphicsEffect(ssh_shadow)
+        ssh_srv_vbox.addWidget(ssh_srv_group)
+        ssh_srv_vbox.addStretch()
+        ssh_srv_widget.setLayout(ssh_srv_vbox)
+        self._ft_server_stack.addWidget(ssh_srv_widget)   # index 2: SSH
+
+        # ── Index 3: SMB Server page ─────────────────────────────────────
+        smb_srv_widget = QWidget()
+        smb_srv_vbox = QVBoxLayout()
+        smb_srv_vbox.setContentsMargins(0, 0, 0, 0)
+        smb_srv_vbox.setSpacing(6)
+
+        smb_srv_group = QGroupBox("Server")
+        smb_srv_inner = QVBoxLayout()
+        smb_srv_inner.setContentsMargins(12, 10, 12, 12)
+        smb_srv_inner.setSpacing(8)
+
+        smb_info = QLabel(
+            "<b>SMB Server (Samba)</b><br><br>"
+            "The SMB server is managed by your system's Samba service.<br>"
+            "Omnicom can show its status and start/stop it via systemctl."
+        )
+        smb_info.setWordWrap(True)
+        smb_info.setStyleSheet("font-size: 9pt; color: #333333;")
+        smb_srv_inner.addWidget(smb_info)
+
+        self._smb_srv_status_lbl = QLabel("Status: unknown")
+        self._smb_srv_status_lbl.setStyleSheet("font-size: 9pt; color: #555555; padding: 4px 0;")
+        smb_srv_inner.addWidget(self._smb_srv_status_lbl)
+
+        smb_btn_row = QHBoxLayout()
+        smb_check_btn = QPushButton("Check Status")
+        smb_check_btn.setFixedWidth(120)
+        smb_check_btn.setStyleSheet("""QPushButton{background:#78909c;color:white;border:none;
+            border-radius:6px;padding:5px 10px;font-weight:bold;}
+            QPushButton:hover{background:#607d8b;}""")
+        smb_check_btn.clicked.connect(self._ft_smb_srv_check_status)
+        smb_btn_row.addWidget(smb_check_btn)
+        smb_btn_row.addStretch()
+        smb_srv_inner.addLayout(smb_btn_row)
+        smb_srv_inner.addStretch()
+        smb_srv_group.setLayout(smb_srv_inner)
+
+        smb_shadow = QGraphicsDropShadowEffect()
+        smb_shadow.setBlurRadius(15); smb_shadow.setXOffset(0); smb_shadow.setYOffset(2)
+        smb_shadow.setColor(QColor(0, 0, 0, 30))
+        smb_srv_group.setGraphicsEffect(smb_shadow)
+        smb_srv_vbox.addWidget(smb_srv_group)
+        smb_srv_vbox.addStretch()
+        smb_srv_widget.setLayout(smb_srv_vbox)
+        self._ft_server_stack.addWidget(smb_srv_widget)   # index 3: SMB
 
         server_layout.addWidget(self._ft_server_stack, 1)
         server_panel.setLayout(server_layout)
@@ -16221,13 +16370,147 @@ class SerialTerminalGUI(QMainWindow):
         if self._ft_mode == 'Server':
             if self._ft_protocol == 'TFTP':
                 self.toggle_tftp_server()
-            else:
-                QMessageBox.information(self, "Info", f"{self._ft_protocol} server mode is not yet available.")
+            elif self._ft_protocol == 'FTP':
+                self._ft_ftp_srv_toggle()
+            elif self._ft_protocol == 'SSH':
+                self._ft_ssh_srv_toggle()
+            elif self._ft_protocol == 'SMB':
+                self._ft_smb_srv_toggle()
         else:
             if self._ft_conn is not None:
                 self._ft_client_disconnect()
             else:
                 self._ft_client_connect()
+
+    # ── FTP Server ────────────────────────────────────────────────────────
+    def _ft_ftp_srv_toggle(self):
+        if getattr(self, '_ftp_srv_process', None) is not None:
+            self._ftp_srv_process.terminate()
+            try:
+                self._ftp_srv_process.wait(timeout=3)
+            except Exception:
+                self._ftp_srv_process.kill()
+            self._ftp_srv_process = None
+            self.tftp_btn.setText("START FTP")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton { background-color: #9C27B0; color: white; border: none;
+                    border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
+                QPushButton:hover { background-color: #7B1FA2; }""")
+            self._ftp_srv_dir.setEnabled(True)
+            self._ftp_srv_port.setEnabled(True)
+            self._ftp_srv_user.setEnabled(True)
+            self._ftp_srv_pass.setEnabled(True)
+            return
+        try:
+            port = int(self._ftp_srv_port.text().strip())
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Invalid port number."); return
+        directory = self._ftp_srv_dir.text().strip()
+        if not os.path.isdir(directory):
+            QMessageBox.warning(self, "Warning", "Invalid directory."); return
+        user = self._ftp_srv_user.text().strip() or 'anonymous'
+        pw   = self._ftp_srv_pass.text()
+        try:
+            import pyftpdlib  # noqa: F401 — just check it's installed
+        except ImportError:
+            QMessageBox.critical(self, "Missing dependency",
+                "pyftpdlib is required for FTP server.\n\nInstall with:\n  pip install pyftpdlib")
+            return
+        script = (
+            "import sys, os\n"
+            "from pyftpdlib.handlers import FTPHandler\n"
+            "from pyftpdlib.servers import FTPServer\n"
+            "from pyftpdlib.authorizers import DummyAuthorizer\n"
+            f"auth = DummyAuthorizer()\n"
+            f"auth.add_user({user!r}, {pw!r}, {directory!r}, perm='elradfmwMT')\n"
+            f"auth.add_anonymous({directory!r})\n"
+            "h = FTPHandler\n"
+            "h.authorizer = auth\n"
+            f"srv = FTPServer(('0.0.0.0', {port}), h)\n"
+            "srv.serve_forever()\n"
+        )
+        import tempfile
+        tf = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
+        tf.write(script); tf.close()
+        try:
+            import subprocess
+            self._ftp_srv_process = subprocess.Popen(
+                [sys.executable, tf.name],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            import time; time.sleep(1.0)
+            if self._ftp_srv_process.poll() is not None:
+                QMessageBox.critical(self, "Error", f"FTP server failed to start on port {port}.")
+                self._ftp_srv_process = None; return
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e)); return
+        self.tftp_btn.setText("STOP FTP")
+        self.tftp_btn.setStyleSheet("""
+            QPushButton { background-color: #f44336; color: white; border: none;
+                border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
+            QPushButton:hover { background-color: #d32f2f; }""")
+        self._ftp_srv_dir.setEnabled(False)
+        self._ftp_srv_port.setEnabled(False)
+        self._ftp_srv_user.setEnabled(False)
+        self._ftp_srv_pass.setEnabled(False)
+
+    # ── SSH Server (systemctl) ────────────────────────────────────────────
+    def _ft_ssh_srv_check_status(self):
+        import subprocess
+        try:
+            r = subprocess.run(['systemctl', 'is-active', 'sshd'], capture_output=True, text=True, timeout=5)
+            status = r.stdout.strip()
+            color = '#4CAF50' if status == 'active' else '#f44336'
+            self._ssh_srv_status_lbl.setText(f"Status: <span style='color:{color};font-weight:bold'>{status}</span>")
+        except Exception as e:
+            self._ssh_srv_status_lbl.setText(f"Status: error — {e}")
+
+    def _ft_ssh_srv_toggle(self):
+        import subprocess
+        try:
+            r = subprocess.run(['systemctl', 'is-active', 'sshd'], capture_output=True, text=True, timeout=5)
+            if r.stdout.strip() == 'active':
+                subprocess.run(['pkexec', 'systemctl', 'stop', 'sshd'], timeout=10)
+                self.tftp_btn.setText("START SSH")
+            else:
+                subprocess.run(['pkexec', 'systemctl', 'start', 'sshd'], timeout=10)
+                self.tftp_btn.setText("STOP SSH")
+            self._ft_ssh_srv_check_status()
+        except Exception as e:
+            QMessageBox.warning(self, "SSH Server", str(e))
+
+    # ── SMB Server (systemctl) ────────────────────────────────────────────
+    def _ft_smb_srv_check_status(self):
+        import subprocess
+        # Try both smb and smbd service names
+        for svc in ('smb', 'smbd', 'samba'):
+            try:
+                r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True, timeout=5)
+                status = r.stdout.strip()
+                if status in ('active', 'inactive', 'failed'):
+                    color = '#4CAF50' if status == 'active' else '#f44336'
+                    self._smb_srv_status_lbl.setText(
+                        f"Service <b>{svc}</b>: <span style='color:{color};font-weight:bold'>{status}</span>")
+                    self._smb_srv_service = svc
+                    return
+            except Exception:
+                continue
+        self._smb_srv_status_lbl.setText("Status: Samba service not found")
+
+    def _ft_smb_srv_toggle(self):
+        import subprocess
+        svc = getattr(self, '_smb_srv_service', 'smb')
+        try:
+            r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True, timeout=5)
+            if r.stdout.strip() == 'active':
+                subprocess.run(['pkexec', 'systemctl', 'stop', svc], timeout=10)
+                self.tftp_btn.setText("START SMB")
+            else:
+                subprocess.run(['pkexec', 'systemctl', 'start', svc], timeout=10)
+                self.tftp_btn.setText("STOP SMB")
+            self._ft_smb_srv_check_status()
+        except Exception as e:
+            QMessageBox.warning(self, "SMB Server", str(e))
 
     def _ft_client_connect(self):
         host = self._ft_host_input.text().strip()
