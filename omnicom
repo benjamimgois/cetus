@@ -8523,7 +8523,7 @@ class SerialTerminalGUI(QMainWindow):
         # TFTP tab button
         self.tftp_tab_btn = QPushButton()
         self.tftp_tab_btn.setFixedSize(62, 52)
-        tftp_icon_path = self.get_tab_icon_path('TFTP.svg')
+        tftp_icon_path = self.get_tab_icon_path('filetransfer.svg')
         tftp_icon = load_svg_icon(tftp_icon_path, icon_size) if tftp_icon_path else None
         if tftp_icon:
             self.tftp_tab_btn.setIcon(tftp_icon)
@@ -8531,7 +8531,7 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.tftp_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_DriveNetIcon))
-        self.tftp_tab_btn.setToolTip("TFTP Server")
+        self.tftp_tab_btn.setToolTip("File Transfer")
         self.tftp_tab_btn.setCheckable(True)
         self.tftp_tab_btn.clicked.connect(lambda: self.switch_tab(7))
         self.tftp_tab_btn.setStyleSheet(tab_btn_style.format(color='#9C27B0'))
@@ -9443,6 +9443,9 @@ class SerialTerminalGUI(QMainWindow):
         # LEFT: local tree
         local_col = QVBoxLayout()
         local_col.setSpacing(2)
+        local_header = QLabel("Local Computer")
+        local_header.setStyleSheet("font-size: 9pt; font-weight: bold; color: #333333;")
+        local_col.addWidget(local_header)
         self._ft_local_path_label = QLabel(self._ft_local_path)
         self._ft_local_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
         self._ft_local_path_label.setWordWrap(True)
@@ -9507,6 +9510,9 @@ class SerialTerminalGUI(QMainWindow):
         # RIGHT: remote tree
         remote_col = QVBoxLayout()
         remote_col.setSpacing(2)
+        remote_header = QLabel("Remote Computer")
+        remote_header.setStyleSheet("font-size: 9pt; font-weight: bold; color: #333333;")
+        remote_col.addWidget(remote_header)
         self._ft_remote_path_label = QLabel("/")
         self._ft_remote_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
         self._ft_remote_path_label.setWordWrap(True)
