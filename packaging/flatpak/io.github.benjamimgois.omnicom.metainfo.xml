@@ -3,7 +3,7 @@
   <id>io.github.benjamimgois.omnicom</id>
 
   <name>Omnicom</name>
-  <summary>Modern graphical interface for serial communication via picocom</summary>
+  <summary>Network management GUI with Serial, SSH, SNMP, VulnScan and Speed Test</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -14,17 +14,20 @@
 
   <description>
     <p>
-      Omnicom is a modern and elegant graphical interface for serial communication.
-      It provides an intuitive way to configure and establish serial connections using picocom as the backend.
+      Omnicom is a modern and elegant graphical interface for network device management.
+      It combines multiple essential network tools into a single, unified PyQt6 application.
     </p>
     <p>Features:</p>
     <ul>
-      <li>Modern graphical interface with PyQt6</li>
-      <li>Automatic serial port detection</li>
-      <li>Support for serial ports (/dev/ttyS*) and USB adapters (/dev/ttyUSB*)</li>
-      <li>Complete serial parameter configuration (baud rate, data bits, parity, stop bits, flow control)</li>
-      <li>Baud rates from 300 to 921600 bps</li>
-      <li>Opens connection in system default terminal</li>
+      <li>Serial communication via picocom with automatic port detection</li>
+      <li>SSH and Telnet remote connections with connection profile management</li>
+      <li>Built-in TFTP server for firmware transfers</li>
+      <li>IP Scanner with ARP scanning and hostname resolution</li>
+      <li>SNMP browser for device monitoring</li>
+      <li>Traceroute / MTR with graphical route and latency visualization</li>
+      <li>Vulnerability Scanner using Nmap service detection and NVD CVE database</li>
+      <li>Speed Test via iPerf3 (LAN/WAN) or fast.com (Netflix CDN)</li>
+      <li>Wi-Fi network scanner</li>
     </ul>
   </description>
 
@@ -49,6 +52,19 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.5" date="2026-03-11">
+      <description>
+        <p>Speed Test tab with iPerf3 and fast.com, Vulnerability Scanner improvements</p>
+        <ul>
+          <li>Add Speed Test tab combining iPerf3 and fast.com (Netflix CDN) modes</li>
+          <li>Real-time throughput graph with bitrate and cumulative transfer visualization</li>
+          <li>Post-test latency measurement via ping</li>
+          <li>iPerf3 public server list with country flags and quick-select dropdown</li>
+          <li>Vulnerability Scanner: Nmap integration for OS and service detection</li>
+          <li>CVE search via NVD API with CVSS severity badges and CSV export</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.4" date="2026-02-21">
       <description>
         <p>Traceroute / MTR visualization and network improvements</p>

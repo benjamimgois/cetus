@@ -108,6 +108,10 @@ modules:
       - install -Dm644 assets/icons/ssh_icon.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ssh_icon.svg
       - install -Dm644 assets/icons/ipscan.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/ipscan.svg
       - install -Dm644 assets/icons/snmp.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/snmp.svg
+      - install -Dm644 assets/icons/traceroute.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/traceroute.svg
+      - install -Dm644 assets/icons/vuln.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/vuln.svg
+      - install -Dm644 assets/icons/speed.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/speed.svg
+      - install -Dm644 assets/icons/wifi.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/wifi.svg
       - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg
       - install -Dm644 assets/vendors/huawei.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/huawei.svg
