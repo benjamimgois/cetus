@@ -9128,13 +9128,15 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.setSpacing(6)
         main_layout.setContentsMargins(10, 8, 10, 8)
 
-        # ── Top controls row: Protocol toggles + Mode toggles ──────────
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
+        # ── Transfer Options group ───────────────────────────────────────
+        options_group = QGroupBox("Transfer Options")
+        options_layout = QHBoxLayout()
+        options_layout.setContentsMargins(8, 6, 8, 6)
+        options_layout.setSpacing(10)
 
         proto_lbl = QLabel("Protocol:")
         proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
-        top_row.addWidget(proto_lbl)
+        options_layout.addWidget(proto_lbl)
 
         self._ft_proto_btns = {}
         for proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
@@ -9145,14 +9147,14 @@ class SerialTerminalGUI(QMainWindow):
             btn.setStyleSheet(_toggle_style(PURPLE))
             btn.clicked.connect(lambda _c, p=proto: self._ft_proto_changed(p))
             self._ft_proto_btns[proto] = btn
-            top_row.addWidget(btn)
+            options_layout.addWidget(btn)
         self._ft_proto_btns['TFTP'].setChecked(True)
 
-        top_row.addSpacing(16)
+        options_layout.addSpacing(16)
 
         mode_lbl = QLabel("Mode:")
         mode_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
-        top_row.addWidget(mode_lbl)
+        options_layout.addWidget(mode_lbl)
 
         self._ft_mode_btns = {}
         for mode in ('Server', 'Client'):
@@ -9163,11 +9165,20 @@ class SerialTerminalGUI(QMainWindow):
             btn.setStyleSheet(_toggle_style(PURPLE))
             btn.clicked.connect(lambda _c, m=mode: self._ft_mode_changed(m))
             self._ft_mode_btns[mode] = btn
-            top_row.addWidget(btn)
+            options_layout.addWidget(btn)
         self._ft_mode_btns['Server'].setChecked(True)
 
-        top_row.addStretch()
-        main_layout.addLayout(top_row)
+        options_layout.addStretch()
+        options_group.setLayout(options_layout)
+
+        options_shadow = QGraphicsDropShadowEffect()
+        options_shadow.setBlurRadius(15)
+        options_shadow.setXOffset(0)
+        options_shadow.setYOffset(2)
+        options_shadow.setColor(QColor(0, 0, 0, 30))
+        options_group.setGraphicsEffect(options_shadow)
+
+        main_layout.addWidget(options_group)
 
         # ── Main stacked widget: Server panel (0) / Client panel (1) ───
         self._ft_stack = QStackedWidget()
@@ -9189,7 +9200,7 @@ class SerialTerminalGUI(QMainWindow):
 
         combo_width = 200
 
-        tftp_group = QGroupBox("TFTP Server")
+        tftp_group = QGroupBox("Server")
         tftp_layout = QFormLayout()
         tftp_layout.setVerticalSpacing(4)
         tftp_layout.setContentsMargins(8, 5, 8, 6)
