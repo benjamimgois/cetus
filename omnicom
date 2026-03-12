@@ -17199,6 +17199,14 @@ def main():
     app.setFont(font)
 
     window = SerialTerminalGUI()
+
+    # Set application window icon
+    icon_path = window.get_icon_path('omnicom_icon.svg')
+    if icon_path:
+        icon_pixmap = load_svg_pixmap(icon_path, 256)
+        if icon_pixmap:
+            app.setWindowIcon(QIcon(icon_pixmap))
+
     window.show()
 
     sys.exit(app.exec())

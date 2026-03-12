@@ -25,7 +25,8 @@ package() {
     # Install main script
     install -Dm755 omnicom "${pkgdir}/usr/bin/omnicom"
 
-    # Install icon in hicolor theme (FreeDesktop.org standard) - multiple sizes
+    # Install icon in hicolor theme (FreeDesktop.org standard)
+    install -Dm644 assets/icons/omnicom_icon.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/omnicom.svg"
     install -Dm644 assets/omnicom.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/omnicom.png"
 
     # Create scaled versions for better compatibility
@@ -34,7 +35,7 @@ package() {
         magick assets/omnicom.png -resize ${size}x${size} "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/omnicom.png"
     done
 
-    # Install UI icons (sidebar and misc) — instala todos os SVGs da pasta
+    # Install UI icons (sidebar and misc) — all SVGs
     for icon in assets/icons/*.svg; do
         install -Dm644 "${icon}" "${pkgdir}/usr/share/omnicom/icons/$(basename ${icon})"
     done
