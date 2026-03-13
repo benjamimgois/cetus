@@ -52,19 +52,22 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="1.6" date="2026-03-12">
+    <release version="1.6" date="2026-03-13">
       <description>
-        <p>UI polish, new official icon, and Speed tab improvements</p>
+        <p>File Transfer tab, Serial quick connect overhaul, tab reorder, and About dialog</p>
         <ul>
+          <li>New File Transfer tab: SSH/SFTP, SMB, FTP and TFTP protocols with server and client modes</li>
+          <li>SMB server configuration: Share Name, Comment, Workgroup, Valid Users, Guest access and Read-only fields</li>
+          <li>FTP server via pyftpdlib with pkexec support for privileged port 21</li>
+          <li>Transfer tab: collapsible log panel with timestamps and unified START/STOP button per protocol</li>
+          <li>Serial quick connect redesigned with grouped tree, drag-and-drop reordering, context menu and rename group — matching SSH quick connect</li>
+          <li>Vertical tab order reorganised: SSH, Serial, IP Scan, Traceroute, SNMP, WiFi Survey, Speed, Transfer</li>
+          <li>New About dialog accessible from sidebar with app description, author info, GitHub link and photo support</li>
           <li>New official app icon: gradient O with C cutout (omnicom_icon.svg)</li>
           <li>Scalable SVG icon installed in hicolor theme for all packaging formats</li>
           <li>Serial tab: port type selector replaced with toggle buttons (USB / Serial)</li>
           <li>Standardized button widths across all tabs (90px / 110px)</li>
-          <li>Traceroute: renamed ICMP (MTR) button to ICMP</li>
-          <li>Renamed Save Current to Save and Delete Selected to Delete throughout</li>
-          <li>TFTP tab: removed redundant Copy Name button</li>
-          <li>Speed tab: larger font for ISP, Country and Server labels</li>
-          <li>Speed tab: removed ISP Rating field; Country now populated via ip-api.com</li>
+          <li>Speed tab: larger font for ISP, Country and Server labels; Country auto-populated via ip-api.com</li>
           <li>All UI strings and code comments translated to English</li>
         </ul>
       </description>
