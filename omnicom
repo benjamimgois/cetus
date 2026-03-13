@@ -9168,52 +9168,58 @@ class SerialTerminalGUI(QMainWindow):
         main_layout.setContentsMargins(10, 8, 10, 8)
 
         # ── Transfer Options group ───────────────────────────────────────
-        options_group = QGroupBox("Transfer Options")
+        options_group = QGroupBox("Mode")
         options_layout = QVBoxLayout()
         options_layout.setContentsMargins(8, 6, 8, 8)
         options_layout.setSpacing(6)
 
-        lbl_w = 62  # fixed label width for alignment
+        # Segmented Server | Client selector (same style as Speed Test / iPerf3)
+        _mode_btn_style = f"""
+            QPushButton {{
+                background-color: #e8e8e8;
+                border: none;
+                color: #555555;
+                font-size: 10pt;
+                font-weight: bold;
+                padding: 4px 24px;
+                min-height: 32px;
+                min-width: 110px;
+            }}
+            QPushButton:checked     {{ background-color: {PURPLE}; color: white; }}
+            QPushButton:hover:!checked {{ background-color: #d8d8d8; }}
+        """
+        self._ft_mode_server_btn = QPushButton("Server")
+        self._ft_mode_server_btn.setCheckable(True)
+        self._ft_mode_server_btn.setChecked(True)
+        self._ft_mode_server_btn.setStyleSheet(
+            _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
+        )
+        self._ft_mode_client_btn = QPushButton("Client")
+        self._ft_mode_client_btn.setCheckable(True)
+        self._ft_mode_client_btn.setStyleSheet(
+            _mode_btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
+        )
+        _mode_sep = QFrame()
+        _mode_sep.setFixedWidth(1)
+        _mode_sep.setStyleSheet("background-color: #b0b0b0; border: none;")
+        _mode_wrap = QFrame()
+        _mode_wrap.setStyleSheet(
+            "QFrame { border: 1px solid #b0b0b0; border-radius: 6px; background: transparent; }"
+        )
+        _mode_inner = QHBoxLayout(_mode_wrap)
+        _mode_inner.setContentsMargins(0, 0, 0, 0)
+        _mode_inner.setSpacing(0)
+        _mode_inner.addWidget(self._ft_mode_server_btn)
+        _mode_inner.addWidget(_mode_sep)
+        _mode_inner.addWidget(self._ft_mode_client_btn)
+        self._ft_mode_server_btn.clicked.connect(lambda: self._ft_mode_changed('Server'))
+        self._ft_mode_client_btn.clicked.connect(lambda: self._ft_mode_changed('Client'))
 
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(6)
-        mode_lbl = QLabel("Mode:")
-        mode_lbl.setFixedWidth(lbl_w)
-        mode_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
-        mode_row.addWidget(mode_lbl)
-        self._ft_mode_btns = {}
-        for mode in ('Server', 'Client'):
-            btn = QPushButton(mode)
-            btn.setCheckable(True)
-            btn.setFixedWidth(90)
-            btn.setFixedHeight(24)
-            btn.setStyleSheet(_toggle_style(PURPLE))
-            btn.clicked.connect(lambda _c, m=mode: self._ft_mode_changed(m))
-            self._ft_mode_btns[mode] = btn
-            mode_row.addWidget(btn)
-        self._ft_mode_btns['Server'].setChecked(True)
-        mode_row.addStretch()
-        options_layout.addLayout(mode_row)
-
-        proto_row = QHBoxLayout()
-        proto_row.setSpacing(6)
-        proto_lbl = QLabel("Protocol:")
-        proto_lbl.setFixedWidth(lbl_w)
-        proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
-        proto_row.addWidget(proto_lbl)
-        self._ft_proto_btns = {}
-        for proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
-            btn = QPushButton(proto)
-            btn.setCheckable(True)
-            btn.setFixedWidth(90)
-            btn.setFixedHeight(24)
-            btn.setStyleSheet(_toggle_style(PURPLE))
-            btn.clicked.connect(lambda _c, p=proto: self._ft_proto_changed(p))
-            self._ft_proto_btns[proto] = btn
-            proto_row.addWidget(btn)
-        self._ft_proto_btns['TFTP'].setChecked(True)
-        proto_row.addStretch()
-        options_layout.addLayout(proto_row)
+        mode_sel_row = QHBoxLayout()
+        mode_sel_row.addStretch()
+        mode_sel_row.addWidget(_mode_wrap)
+        mode_sel_row.addStretch()
+        options_layout.addLayout(mode_sel_row)
 
         options_group.setLayout(options_layout)
 
@@ -9235,6 +9241,31 @@ class SerialTerminalGUI(QMainWindow):
         server_layout.setContentsMargins(0, 0, 0, 0)
         server_layout.setSpacing(6)
 
+        # "Server" group wraps Protocol selector + per-protocol stack
+        srv_group = QGroupBox("Server")
+        srv_group_layout = QVBoxLayout()
+        srv_group_layout.setContentsMargins(8, 6, 8, 8)
+        srv_group_layout.setSpacing(6)
+
+        srv_proto_row = QHBoxLayout()
+        srv_proto_row.setSpacing(4)
+        srv_proto_lbl = QLabel("Protocol:")
+        srv_proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
+        srv_proto_row.addWidget(srv_proto_lbl)
+        self._ft_srv_proto_btns = {}
+        for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
+            _pb = QPushButton(_proto)
+            _pb.setCheckable(True)
+            _pb.setFixedWidth(90)
+            _pb.setFixedHeight(24)
+            _pb.setStyleSheet(_toggle_style(PURPLE))
+            _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
+            self._ft_srv_proto_btns[_proto] = _pb
+            srv_proto_row.addWidget(_pb)
+        self._ft_srv_proto_btns['TFTP'].setChecked(True)
+        srv_proto_row.addStretch()
+        srv_group_layout.addLayout(srv_proto_row)
+
         # Inner stack per-protocol server UI
         self._ft_server_stack = QStackedWidget()
 
@@ -9246,7 +9277,7 @@ class SerialTerminalGUI(QMainWindow):
 
         combo_width = 200
 
-        tftp_group = QGroupBox("Server")
+        tftp_group = QGroupBox()
         tftp_layout = QFormLayout()
         tftp_layout.setVerticalSpacing(4)
         tftp_layout.setContentsMargins(8, 5, 8, 6)
@@ -9413,7 +9444,7 @@ class SerialTerminalGUI(QMainWindow):
         ftp_srv_vbox.setContentsMargins(0, 0, 0, 0)
         ftp_srv_vbox.setSpacing(6)
 
-        ftp_srv_group = QGroupBox("Server")
+        ftp_srv_group = QGroupBox()
         ftp_srv_form = QFormLayout()
         ftp_srv_form.setVerticalSpacing(4)
         ftp_srv_form.setContentsMargins(8, 5, 8, 8)
@@ -9486,7 +9517,7 @@ class SerialTerminalGUI(QMainWindow):
         ssh_srv_vbox.setContentsMargins(0, 0, 0, 0)
         ssh_srv_vbox.setSpacing(6)
 
-        ssh_srv_group = QGroupBox("Server")
+        ssh_srv_group = QGroupBox()
         ssh_srv_inner = QVBoxLayout()
         ssh_srv_inner.setContentsMargins(12, 10, 12, 12)
         ssh_srv_inner.setSpacing(8)
@@ -9532,7 +9563,7 @@ class SerialTerminalGUI(QMainWindow):
         smb_srv_vbox.setContentsMargins(0, 0, 0, 0)
         smb_srv_vbox.setSpacing(6)
 
-        smb_srv_group = QGroupBox("Server")
+        smb_srv_group = QGroupBox()
         smb_srv_inner = QVBoxLayout()
         smb_srv_inner.setContentsMargins(12, 10, 12, 12)
         smb_srv_inner.setSpacing(8)
@@ -9572,7 +9603,17 @@ class SerialTerminalGUI(QMainWindow):
         smb_srv_widget.setLayout(smb_srv_vbox)
         self._ft_server_stack.addWidget(smb_srv_widget)   # index 3: SMB
 
-        server_layout.addWidget(self._ft_server_stack, 1)
+        srv_group_layout.addWidget(self._ft_server_stack, 1)
+        srv_group.setLayout(srv_group_layout)
+
+        srv_group_shadow = QGraphicsDropShadowEffect()
+        srv_group_shadow.setBlurRadius(15)
+        srv_group_shadow.setXOffset(0)
+        srv_group_shadow.setYOffset(2)
+        srv_group_shadow.setColor(QColor(0, 0, 0, 30))
+        srv_group.setGraphicsEffect(srv_group_shadow)
+
+        server_layout.addWidget(srv_group, 1)
         server_panel.setLayout(server_layout)
 
         # ── CLIENT PANEL ─────────────────────────────────────────────────
@@ -9657,12 +9698,31 @@ class SerialTerminalGUI(QMainWindow):
                 if user:
                     self._ft_user_input.setText(user)
                 # Switch protocol toggle to match profile
-                if proto in self._ft_proto_btns:
+                if proto in self._ft_cli_proto_btns:
                     self._ft_proto_changed(proto)
-                    for p, b in self._ft_proto_btns.items():
-                        b.setChecked(p == proto)
 
         _ft_quick_btn.clicked.connect(_ft_show_hosts_menu)
+
+        # Protocol selector inside Connection group
+        cli_proto_row = QHBoxLayout()
+        cli_proto_row.setContentsMargins(0, 0, 0, 0)
+        cli_proto_row.setSpacing(4)
+        self._ft_cli_proto_btns = {}
+        for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
+            _pb = QPushButton(_proto)
+            _pb.setCheckable(True)
+            _pb.setFixedWidth(90)
+            _pb.setFixedHeight(24)
+            _pb.setStyleSheet(_toggle_style(PURPLE))
+            _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
+            self._ft_cli_proto_btns[_proto] = _pb
+            cli_proto_row.addWidget(_pb)
+        self._ft_cli_proto_btns['TFTP'].setChecked(True)
+        cli_proto_row.addStretch()
+        cli_proto_widget = QWidget()
+        cli_proto_widget.setContentsMargins(0, 0, 0, 0)
+        cli_proto_widget.setLayout(cli_proto_row)
+        conn_form.addRow("Protocol:", cli_proto_widget)
 
         host_row = QHBoxLayout()
         host_row.setContentsMargins(0, 0, 0, 0)
@@ -16339,8 +16399,10 @@ class SerialTerminalGUI(QMainWindow):
 
     def _ft_proto_changed(self, proto):
         self._ft_protocol = proto
-        # Uncheck all, check selected
-        for p, btn in self._ft_proto_btns.items():
+        # Sync both button sets
+        for p, btn in self._ft_srv_proto_btns.items():
+            btn.setChecked(p == proto)
+        for p, btn in self._ft_cli_proto_btns.items():
             btn.setChecked(p == proto)
         # Update default port
         ports = {'SSH': '22', 'FTP': '21', 'TFTP': '69', 'SMB': '445'}
@@ -16355,9 +16417,9 @@ class SerialTerminalGUI(QMainWindow):
 
     def _ft_mode_changed(self, mode):
         self._ft_mode = mode
-        # Uncheck all, check selected
-        for m, btn in self._ft_mode_btns.items():
-            btn.setChecked(m == mode)
+        # Update segmented buttons
+        self._ft_mode_server_btn.setChecked(mode == 'Server')
+        self._ft_mode_client_btn.setChecked(mode == 'Client')
         self._ft_stack.setCurrentIndex(0 if mode == 'Server' else 1)
         if mode == 'Server':
             is_running = self._ft_protocol == 'TFTP' and self.tftp_process is not None
