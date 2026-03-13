@@ -9649,8 +9649,13 @@ class SerialTerminalGUI(QMainWindow):
         ftp_srv_group.setGraphicsEffect(ftp_shadow)
         ftp_srv_vbox.addWidget(ftp_srv_group)
 
-        ftp_note = QLabel("Requires: <b>pyftpdlib</b>  —  <code>pip install pyftpdlib</code>")
-        ftp_note.setStyleSheet("font-size: 8pt; color: #777777; padding: 2px 4px;")
+        try:
+            import pyftpdlib  # noqa: F401
+            ftp_note = QLabel("pyftpdlib \u2713 installed")
+            ftp_note.setStyleSheet("font-size: 8pt; color: #4CAF50; padding: 2px 4px;")
+        except ImportError:
+            ftp_note = QLabel("Requires: <b>pyftpdlib</b>  —  <code>pip install pyftpdlib</code>")
+            ftp_note.setStyleSheet("font-size: 8pt; color: #f44336; padding: 2px 4px;")
         ftp_srv_vbox.addWidget(ftp_note)
         ftp_srv_vbox.addStretch()
         ftp_srv_widget.setLayout(ftp_srv_vbox)
@@ -9754,26 +9759,27 @@ class SerialTerminalGUI(QMainWindow):
         smb_srv_vbox.setContentsMargins(0, 0, 0, 0)
         smb_srv_vbox.setSpacing(6)
 
-        # SMB config group (Interface + Directory)
-        smb_cfg_group = QGroupBox()
+        _smb_le = """QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                                  background:#f5f5f5; color:#333333; font-size:9pt; }"""
+
+        # ── Share config ──
+        smb_cfg_group = QGroupBox("Share Configuration")
         smb_cfg_form = QFormLayout()
-        smb_cfg_form.setVerticalSpacing(4)
-        smb_cfg_form.setContentsMargins(8, 5, 8, 6)
+        smb_cfg_form.setVerticalSpacing(5)
+        smb_cfg_form.setContentsMargins(10, 8, 10, 10)
         smb_cfg_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         smb_cfg_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self._smb_srv_interface = QComboBox()
         self._smb_srv_interface.setFixedWidth(combo_width)
-        self._smb_srv_interface.setToolTip("Select network interface for SMB server")
         self._smb_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
         smb_cfg_form.addRow("Interface:", self._smb_srv_interface)
 
+        # Directory + browse
         self._smb_srv_dir = QLineEdit(os.path.expanduser('~'))
         self._smb_srv_dir.setFixedWidth(combo_width)
         self._smb_srv_dir.setReadOnly(True)
-        self._smb_srv_dir.setStyleSheet("""
-            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
-                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        self._smb_srv_dir.setStyleSheet(_smb_le)
         smb_browse_btn = QPushButton()
         smb_browse_btn.setFixedSize(28, 28)
         smb_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
@@ -9784,13 +9790,63 @@ class SerialTerminalGUI(QMainWindow):
             self._smb_srv_dir.setText(d) if d else None
         ))
         smb_dir_row = QHBoxLayout()
-        smb_dir_row.setContentsMargins(0, 0, 0, 0)
-        smb_dir_row.setSpacing(4)
-        smb_dir_row.addWidget(self._smb_srv_dir)
-        smb_dir_row.addWidget(smb_browse_btn)
-        smb_dir_row.addStretch()
-        smb_dir_w = QWidget(); smb_dir_w.setContentsMargins(0, 0, 0, 0); smb_dir_w.setLayout(smb_dir_row)
+        smb_dir_row.setContentsMargins(0, 0, 0, 0); smb_dir_row.setSpacing(4)
+        smb_dir_row.addWidget(self._smb_srv_dir); smb_dir_row.addWidget(smb_browse_btn); smb_dir_row.addStretch()
+        smb_dir_w = QWidget(); smb_dir_w.setContentsMargins(0,0,0,0); smb_dir_w.setLayout(smb_dir_row)
         smb_cfg_form.addRow("Directory:", smb_dir_w)
+
+        self._smb_share_name = QLineEdit("omnicom-share")
+        self._smb_share_name.setFixedWidth(combo_width)
+        self._smb_share_name.setStyleSheet(_smb_le)
+        self._smb_share_name.setToolTip("Name visible on the network (no spaces)")
+        smb_cfg_form.addRow("Share Name:", self._smb_share_name)
+
+        self._smb_comment = QLineEdit("Omnicom shared folder")
+        self._smb_comment.setFixedWidth(combo_width)
+        self._smb_comment.setStyleSheet(_smb_le)
+        smb_cfg_form.addRow("Comment:", self._smb_comment)
+
+        self._smb_workgroup = QLineEdit("WORKGROUP")
+        self._smb_workgroup.setFixedWidth(120)
+        self._smb_workgroup.setStyleSheet(_smb_le)
+        self._smb_workgroup.setToolTip("Windows workgroup name (default: WORKGROUP)")
+        smb_cfg_form.addRow("Workgroup:", self._smb_workgroup)
+
+        self._smb_valid_users = QLineEdit()
+        self._smb_valid_users.setFixedWidth(combo_width)
+        self._smb_valid_users.setPlaceholderText("Leave blank to allow all users")
+        self._smb_valid_users.setStyleSheet(_smb_le)
+        self._smb_valid_users.setToolTip("Space-separated list of allowed users")
+        smb_cfg_form.addRow("Valid Users:", self._smb_valid_users)
+
+        _smb_chk_style = """
+            QCheckBox { font-size: 9pt; color: #333333; background: transparent; }
+            QCheckBox::indicator {
+                width: 15px; height: 15px;
+                border: 1px solid #b0b0b0;
+                border-radius: 3px;
+                background: #f5f5f5;
+            }
+            QCheckBox::indicator:checked {
+                background: #9C27B0;
+                border-color: #7B1FA2;
+                image: none;
+            }
+            QCheckBox::indicator:hover { border-color: #9C27B0; }
+        """
+        smb_flags_row = QHBoxLayout()
+        smb_flags_row.setContentsMargins(0, 0, 0, 0); smb_flags_row.setSpacing(18)
+        self._smb_guest_ok = QCheckBox("Guest access")
+        self._smb_guest_ok.setChecked(True)
+        self._smb_guest_ok.setStyleSheet(_smb_chk_style)
+        self._smb_read_only = QCheckBox("Read only")
+        self._smb_read_only.setChecked(False)
+        self._smb_read_only.setStyleSheet(_smb_chk_style)
+        smb_flags_row.addWidget(self._smb_guest_ok)
+        smb_flags_row.addWidget(self._smb_read_only)
+        smb_flags_row.addStretch()
+        smb_flags_w = QWidget(); smb_flags_w.setContentsMargins(0,0,0,0); smb_flags_w.setLayout(smb_flags_row)
+        smb_cfg_form.addRow("Options:", smb_flags_w)
 
         smb_cfg_group.setLayout(smb_cfg_form)
         smb_cfg_shadow = QGraphicsDropShadowEffect()
@@ -9799,22 +9855,14 @@ class SerialTerminalGUI(QMainWindow):
         smb_cfg_group.setGraphicsEffect(smb_cfg_shadow)
         smb_srv_vbox.addWidget(smb_cfg_group)
 
+        # ── Status ──
         smb_srv_group = QGroupBox()
         smb_srv_inner = QVBoxLayout()
-        smb_srv_inner.setContentsMargins(12, 10, 12, 12)
-        smb_srv_inner.setSpacing(8)
-
-        smb_info = QLabel(
-            "<b>SMB Server (Samba)</b><br><br>"
-            "The SMB server is managed by your system's Samba service.<br>"
-            "Omnicom can show its status and start/stop it via systemctl."
-        )
-        smb_info.setWordWrap(True)
-        smb_info.setStyleSheet("font-size: 9pt; color: #333333;")
-        smb_srv_inner.addWidget(smb_info)
+        smb_srv_inner.setContentsMargins(12, 8, 12, 10)
+        smb_srv_inner.setSpacing(6)
 
         self._smb_srv_status_lbl = QLabel("Status: unknown")
-        self._smb_srv_status_lbl.setStyleSheet("font-size: 9pt; color: #555555; padding: 4px 0;")
+        self._smb_srv_status_lbl.setStyleSheet("font-size: 9pt; color: #555555; padding: 2px 0;")
         smb_srv_inner.addWidget(self._smb_srv_status_lbl)
 
         smb_btn_row = QHBoxLayout()
@@ -9827,7 +9875,6 @@ class SerialTerminalGUI(QMainWindow):
         smb_btn_row.addWidget(smb_check_btn)
         smb_btn_row.addStretch()
         smb_srv_inner.addLayout(smb_btn_row)
-        smb_srv_inner.addStretch()
         smb_srv_group.setLayout(smb_srv_inner)
 
         smb_shadow = QGraphicsDropShadowEffect()
@@ -10036,39 +10083,33 @@ class SerialTerminalGUI(QMainWindow):
         arrow_col = QVBoxLayout()
         arrow_col.setSpacing(8)
         arrow_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self._ft_upload_btn = QPushButton("→")
+        _arrow_btn_style = """
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 11pt;
+                font-weight: bold;
+                padding: 0px 0px 0px 0px;
+                text-align: center;
+                qproperty-flat: false;
+            }
+            QPushButton:hover { background-color: #7B1FA2; }
+            QPushButton:pressed { background-color: #4A148C; }
+            QPushButton:disabled { background-color: #cccccc; color: #888888; }
+        """
+        self._ft_upload_btn = QPushButton("▶")
         self._ft_upload_btn.setToolTip("Upload to remote")
         self._ft_upload_btn.setFixedSize(36, 36)
-        self._ft_upload_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14pt;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #7B1FA2; }
-            QPushButton:pressed { background-color: #4A148C; }
-            QPushButton:disabled { background-color: #cccccc; color: #888888; }
-        """)
+        self._ft_upload_btn.setStyleSheet(_arrow_btn_style)
+        self._ft_upload_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._ft_upload_btn.clicked.connect(self._ft_upload)
-        self._ft_download_btn = QPushButton("←")
+        self._ft_download_btn = QPushButton("◀")
         self._ft_download_btn.setToolTip("Download from remote")
         self._ft_download_btn.setFixedSize(36, 36)
-        self._ft_download_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14pt;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #7B1FA2; }
-            QPushButton:pressed { background-color: #4A148C; }
-            QPushButton:disabled { background-color: #cccccc; color: #888888; }
-        """)
+        self._ft_download_btn.setStyleSheet(_arrow_btn_style)
+        self._ft_download_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._ft_download_btn.clicked.connect(self._ft_download)
         arrow_col.addStretch()
         arrow_col.addWidget(self._ft_upload_btn)
@@ -10125,6 +10166,56 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_stack.setCurrentIndex(0)
 
         main_layout.addWidget(self._ft_stack, 1)
+
+        # ── Collapsible log ─────────────────────────────────────────────
+        self._ft_log_toggle_btn = QPushButton("▶  Log")
+        self._ft_log_toggle_btn.setCheckable(True)
+        self._ft_log_toggle_btn.setChecked(False)
+        self._ft_log_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ft_log_toggle_btn.setToolTip("Click to expand / collapse the log")
+        self._ft_log_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #252535;
+                border: 1px solid #333345;
+                border-radius: 4px;
+                color: #78909C;
+                font-size: 8pt;
+                font-weight: bold;
+                padding: 4px 10px;
+                text-align: left;
+            }
+            QPushButton:checked {
+                background-color: #1a2030;
+                border-color: #7B1FA2;
+                color: #ce93d8;
+                border-radius: 4px 4px 0px 0px;
+            }
+            QPushButton:hover { border-color: #9C27B0; color: #ce93d8; }
+        """)
+        self._ft_log = QPlainTextEdit()
+        self._ft_log.setReadOnly(True)
+        self._ft_log.setMaximumBlockCount(2000)
+        self._ft_log.setFixedHeight(110)
+        self._ft_log.setFont(QFont("Monospace", 8))
+        self._ft_log.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1a1a2e;
+                color: #c8c8c8;
+                border: 1px solid #7B1FA2;
+                border-top: none;
+                border-radius: 0px 0px 4px 4px;
+            }
+        """)
+        self._ft_log.setVisible(False)
+
+        def _ft_toggle_log():
+            open_ = self._ft_log_toggle_btn.isChecked()
+            self._ft_log.setVisible(open_)
+            self._ft_log_toggle_btn.setText("▼  Log" if open_ else "▶  Log")
+
+        self._ft_log_toggle_btn.clicked.connect(_ft_toggle_log)
+        main_layout.addWidget(self._ft_log_toggle_btn)
+        main_layout.addWidget(self._ft_log)
 
         # ── Action button (full-width at bottom) ────────────────────────
         self.tftp_btn = QPushButton("START TFTP")
@@ -16657,8 +16748,17 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_server_stack.setCurrentIndex(proto_idx.get(proto, 0))
         # Update bottom button label
         if self._ft_mode == 'Server':
-            is_running = proto == 'TFTP' and self.tftp_process is not None
+            if proto == 'TFTP':
+                is_running = self.tftp_process is not None
+            elif proto == 'FTP':
+                is_running = getattr(self, '_ftp_srv_process', None) is not None
+            else:
+                is_running = False
             self.tftp_btn.setText(f"STOP {proto}" if is_running else f"START {proto}")
+            if proto == 'SSH':
+                self._ft_ssh_srv_check_status()
+            elif proto == 'SMB':
+                self._ft_smb_srv_check_status()
         else:
             connected = self._ft_conn is not None
             self.tftp_btn.setText("DISCONNECT" if connected else f"CONNECT {proto}")
@@ -16670,8 +16770,17 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn.setChecked(mode == 'Client')
         self._ft_stack.setCurrentIndex(0 if mode == 'Server' else 1)
         if mode == 'Server':
-            is_running = self._ft_protocol == 'TFTP' and self.tftp_process is not None
+            if self._ft_protocol == 'TFTP':
+                is_running = self.tftp_process is not None
+            elif self._ft_protocol == 'FTP':
+                is_running = getattr(self, '_ftp_srv_process', None) is not None
+            else:
+                is_running = False
             self.tftp_btn.setText(f"STOP {self._ft_protocol}" if is_running else f"START {self._ft_protocol}")
+            if self._ft_protocol == 'SSH':
+                self._ft_ssh_srv_check_status()
+            elif self._ft_protocol == 'SMB':
+                self._ft_smb_srv_check_status()
         else:
             connected = self._ft_conn is not None
             self.tftp_btn.setText("DISCONNECT" if connected else f"CONNECT {self._ft_protocol}")
@@ -16739,18 +16848,23 @@ class SerialTerminalGUI(QMainWindow):
             f"srv = FTPServer(('0.0.0.0', {port}), h)\n"
             "srv.serve_forever()\n"
         )
-        import tempfile
+        import tempfile, subprocess
         tf = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
         tf.write(script); tf.close()
+        if port < 1024:
+            cmd = ['pkexec', sys.executable, tf.name]
+        else:
+            cmd = [sys.executable, tf.name]
         try:
-            import subprocess
             self._ftp_srv_process = subprocess.Popen(
-                [sys.executable, tf.name],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            import time; time.sleep(1.0)
+            import time; time.sleep(1.2)
             if self._ftp_srv_process.poll() is not None:
-                QMessageBox.critical(self, "Error", f"FTP server failed to start on port {port}.")
+                QMessageBox.critical(self, "Error",
+                    f"FTP server failed to start on port {port}.\n\n"
+                    "Tip: ports below 1024 require administrator privileges (pkexec).\n"
+                    "You can also use port 2121 to avoid this requirement.")
                 self._ftp_srv_process = None; return
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e)); return
@@ -16764,6 +16878,12 @@ class SerialTerminalGUI(QMainWindow):
         self._ftp_srv_user.setEnabled(False)
         self._ftp_srv_pass.setEnabled(False)
 
+    def _ft_log_append(self, text):
+        import datetime
+        ts = datetime.datetime.now().strftime('%H:%M:%S')
+        self._ft_log.appendPlainText(f"[{ts}] {text}")
+        self._ft_log.verticalScrollBar().setValue(self._ft_log.verticalScrollBar().maximum())
+
     # ── SSH Server (systemctl) ────────────────────────────────────────────
     def _ft_ssh_srv_check_status(self):
         import subprocess
@@ -16776,50 +16896,192 @@ class SerialTerminalGUI(QMainWindow):
             self._ssh_srv_status_lbl.setText(f"Status: error — {e}")
 
     def _ft_ssh_srv_toggle(self):
-        import subprocess
+        import subprocess, time
         try:
             r = subprocess.run(['systemctl', 'is-active', 'sshd'], capture_output=True, text=True, timeout=5)
             if r.stdout.strip() == 'active':
-                subprocess.run(['pkexec', 'systemctl', 'stop', 'sshd'], timeout=10)
+                self._ft_log_append("Stopping sshd via pkexec...")
+                res = subprocess.run(['pkexec', 'systemctl', 'stop', 'sshd'],
+                                     capture_output=True, text=True, timeout=15)
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "pkexec returned error").strip()
+                    self._ft_log_append(f"ERROR stop sshd: {err}")
+                    QMessageBox.warning(self, "SSH Server", f"Failed to stop SSH service:\n{err}"); return
                 self.tftp_btn.setText("START SSH")
+                self._ft_log_append("sshd stopped.")
             else:
-                subprocess.run(['pkexec', 'systemctl', 'start', 'sshd'], timeout=10)
+                self._ft_log_append("Starting sshd via pkexec...")
+                res = subprocess.run(['pkexec', 'systemctl', 'start', 'sshd'],
+                                     capture_output=True, text=True, timeout=15)
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "pkexec returned error").strip()
+                    self._ft_log_append(f"ERROR start sshd: {err}")
+                    QMessageBox.warning(self, "SSH Server", f"Failed to start SSH service:\n{err}"); return
                 self.tftp_btn.setText("STOP SSH")
+                self._ft_log_append("sshd started.")
+            time.sleep(1.0)
             self._ft_ssh_srv_check_status()
         except Exception as e:
+            self._ft_log_append(f"EXCEPTION: {e}")
             QMessageBox.warning(self, "SSH Server", str(e))
 
     # ── SMB Server (systemctl) ────────────────────────────────────────────
     def _ft_smb_srv_check_status(self):
         import subprocess
-        # Try both smb and smbd service names
-        for svc in ('smb', 'smbd', 'samba'):
+        self._smb_srv_service = None
+        for svc in ('smb', 'smbd', 'samba', 'nmb'):
             try:
-                r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True, timeout=5)
-                status = r.stdout.strip()
-                if status in ('active', 'inactive', 'failed'):
-                    color = '#4CAF50' if status == 'active' else '#f44336'
-                    self._smb_srv_status_lbl.setText(
-                        f"Service <b>{svc}</b>: <span style='color:{color};font-weight:bold'>{status}</span>")
-                    self._smb_srv_service = svc
-                    return
+                # is-enabled returns 'not-found' for non-existent units
+                enabled = subprocess.run(['systemctl', 'is-enabled', svc],
+                                         capture_output=True, text=True, timeout=5).stdout.strip()
+                if enabled == 'not-found':
+                    continue
+                active = subprocess.run(['systemctl', 'is-active', svc],
+                                        capture_output=True, text=True, timeout=5).stdout.strip()
+                color = '#4CAF50' if active == 'active' else '#f44336'
+                self._smb_srv_status_lbl.setText(
+                    f"Service <b>{svc}</b>: <span style='color:{color};font-weight:bold'>{active}</span>")
+                self._smb_srv_service = svc
+                return
             except Exception:
                 continue
         self._smb_srv_status_lbl.setText("Status: Samba service not found")
+        self._ft_log_append("SMB: service not found (tried smb, smbd, samba, nmb)")
+
+    def _ft_smb_apply_config(self):
+        """Write share block + workgroup to /etc/samba/smb.conf via pkexec."""
+        import subprocess, tempfile, os, getpass
+        share      = self._smb_share_name.text().strip().replace(' ', '-') or 'omnicom-share'
+        path       = self._smb_srv_dir.text().strip()
+        comment    = self._smb_comment.text().strip()
+        wg         = self._smb_workgroup.text().strip() or 'WORKGROUP'
+        users      = self._smb_valid_users.text().strip()
+        guest      = 'yes' if self._smb_guest_ok.isChecked() else 'no'
+        ro         = 'yes' if self._smb_read_only.isChecked() else 'no'
+        force_user = getpass.getuser()   # run file access as the current user
+
+        # Build the share block
+        block_lines = [
+            f'[{share}]',
+            f'\tpath = {path}',
+            f'\tcomment = {comment}',
+            f'\tbrowseable = yes',
+            f'\tread only = {ro}',
+            f'\tguest ok = {guest}',
+            f'\tforce user = {force_user}',
+            f'\tcreate mask = 0664',
+            f'\tdirectory mask = 0775',
+        ]
+        if users:
+            block_lines.append(f'\tvalid users = {users}')
+        block_text = '\n'.join(block_lines)
+
+        # Global settings required for guest access
+        guest_globals = [
+            ('map to guest',   'bad user'),
+            ('guest account',  'nobody'),
+        ]
+
+        script = (
+            "import re\n"
+            "CONF = '/etc/samba/smb.conf'\n"
+            f"SHARE  = {share!r}\n"
+            f"WG     = {wg!r}\n"
+            f"GUEST  = {guest!r}\n"
+            f"BLOCK  = {block_text!r}\n"
+            f"GUEST_GLOBALS = {guest_globals!r}\n"
+            "try:\n"
+            "    text = open(CONF).read()\n"
+            "except FileNotFoundError:\n"
+            "    text = '[global]\\n'\n"
+            # workgroup
+            "if re.search(r'^\\s*workgroup\\s*=', text, re.MULTILINE):\n"
+            "    text = re.sub(r'^(\\s*workgroup\\s*=).*', '\\\\g<1> ' + WG, text, flags=re.MULTILINE)\n"
+            "else:\n"
+            "    text = re.sub(r'(\\[global\\][^\\[]*?)(?=\\[|$)',\n"
+            "                  lambda m: m.group(0) + '\\tworkgroup = ' + WG + '\\n',\n"
+            "                  text, count=1, flags=re.DOTALL)\n"
+            # guest globals
+            "if GUEST == 'yes':\n"
+            "    for key, val in GUEST_GLOBALS:\n"
+            "        pattern = r'^(\\s*' + re.escape(key) + r'\\s*=).*'\n"
+            "        if re.search(pattern, text, re.MULTILINE):\n"
+            "            text = re.sub(pattern, '\\\\g<1> ' + val, text, flags=re.MULTILINE)\n"
+            "        else:\n"
+            "            text = re.sub(r'(\\[global\\][^\\[]*?)(?=\\[|$)',\n"
+            "                          lambda m, k=key, v=val: m.group(0) + '\\t' + k + ' = ' + v + '\\n',\n"
+            "                          text, count=1, flags=re.DOTALL)\n"
+            # remove old share, append new
+            "text = re.sub(r'\\[' + re.escape(SHARE) + r'\\][^\\[]*', '', text, flags=re.DOTALL)\n"
+            "text = text.rstrip() + '\\n\\n' + BLOCK + '\\n'\n"
+            "open(CONF, 'w').write(text)\n"
+            "print('smb.conf updated')\n"
+        )
+
+        tf = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
+        tf.write(script); tf.close()
+        try:
+            res = subprocess.run(['pkexec', 'python3', tf.name],
+                                 capture_output=True, text=True, timeout=15)
+            os.unlink(tf.name)
+            if res.returncode != 0:
+                err = (res.stderr or res.stdout or 'pkexec error').strip()
+                self._ft_log_append(f"ERROR writing smb.conf: {err}")
+                QMessageBox.warning(self, "SMB Config", f"Failed to write smb.conf:\n{err}")
+                return False
+            self._ft_log_append(f"smb.conf updated — share=[{share}] path={path} workgroup={wg} "
+                                 f"guest={guest} readonly={ro} force_user={force_user}")
+            if guest == 'yes':
+                self._ft_log_append("Guest access enabled — connect without credentials or leave username blank.")
+            else:
+                self._ft_log_append(f"User auth required — add users with:  sudo smbpasswd -a <username>")
+            return True
+        except Exception as e:
+            self._ft_log_append(f"EXCEPTION writing smb.conf: {e}")
+            QMessageBox.warning(self, "SMB Config", str(e))
+            return False
 
     def _ft_smb_srv_toggle(self):
-        import subprocess
-        svc = getattr(self, '_smb_srv_service', 'smb')
+        import subprocess, time
+        # Detect service name if not yet cached
+        if not getattr(self, '_smb_srv_service', None):
+            self._ft_smb_srv_check_status()
+        svc = getattr(self, '_smb_srv_service', None)
+        if not svc:
+            self._ft_log_append("ERROR: No Samba service found (tried smb, smbd, samba).")
+            QMessageBox.warning(self, "SMB Server",
+                "Samba service not found.\nMake sure samba is installed:\n  pacman -S samba"); return
         try:
             r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True, timeout=5)
-            if r.stdout.strip() == 'active':
-                subprocess.run(['pkexec', 'systemctl', 'stop', svc], timeout=10)
+            current = r.stdout.strip()
+            self._ft_log_append(f"Service '{svc}' current state: {current}")
+            if current == 'active':
+                self._ft_log_append(f"Stopping {svc} via pkexec...")
+                res = subprocess.run(['pkexec', 'systemctl', 'stop', svc],
+                                     capture_output=True, text=True, timeout=15)
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "pkexec returned error").strip()
+                    self._ft_log_append(f"ERROR stop {svc}: {err}")
+                    QMessageBox.warning(self, "SMB Server", f"Failed to stop SMB service:\n{err}"); return
                 self.tftp_btn.setText("START SMB")
+                self._ft_log_append(f"{svc} stopped.")
             else:
-                subprocess.run(['pkexec', 'systemctl', 'start', svc], timeout=10)
+                # Apply config before starting
+                if not self._ft_smb_apply_config():
+                    return
+                self._ft_log_append(f"Starting {svc} via pkexec...")
+                res = subprocess.run(['pkexec', 'systemctl', 'start', svc],
+                                     capture_output=True, text=True, timeout=15)
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "pkexec returned error").strip()
+                    self._ft_log_append(f"ERROR start {svc}: {err}")
+                    QMessageBox.warning(self, "SMB Server", f"Failed to start SMB service:\n{err}"); return
                 self.tftp_btn.setText("STOP SMB")
+                self._ft_log_append(f"{svc} started.")
+            time.sleep(1.0)
             self._ft_smb_srv_check_status()
         except Exception as e:
+            self._ft_log_append(f"EXCEPTION: {e}")
             QMessageBox.warning(self, "SMB Server", str(e))
 
     def _ft_client_connect(self):
