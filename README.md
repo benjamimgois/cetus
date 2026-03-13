@@ -27,8 +27,8 @@
 
   <a href="https://github.com/benjamimgois/omnicom/blob/main/LICENSE">
     <img
-      src="https://img.shields.io/github/license/benjamimgois/omnicom?color=2196f3&label=License&style=for-the-badge"
-      alt="License">
+      src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge"
+      alt="License: GPL-3.0">
   </a>
 </p>
 
