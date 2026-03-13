@@ -97,10 +97,13 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - Walk progress indicator on the execute button
 - Limit of 1000 entries per walk to prevent UI overload
 
-### TFTP Server
-- Built-in TFTP server for firmware transfers
-- Network interface auto-detection
-- Configurable root directory
+### File Transfer
+- **SSH/SFTP** client and server mode with file browser
+- **SMB** server with full configuration: Share Name, Comment, Workgroup, Valid Users, Guest access, Read-only
+- **FTP** server via pyftpdlib with automatic `pkexec` elevation for port 21
+- **TFTP** server for firmware transfers with network interface auto-detection
+- Collapsible log panel with timestamps for all protocols
+- Unified START (purple) / STOP (red) action button per protocol
 
 ### Vulnerability Scanner
 - **Nmap integration** for OS and service version detection
@@ -132,20 +135,32 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - PyQt6
 - Qt6 SerialPort (optional, for advanced port detection)
 - picocom (for serial connections)
-- sudo configured
+- sudo / pkexec configured
 
-### Optional System Tools
-- **iperf3** — Speed Test (LAN/WAN)
-- **nmap** — Vulnerability Scanner
-- **mtr** / **mtr-tiny** — MTR traceroute
-- **iw**, **network-manager** — Wi-Fi scanning
-- **nodejs** + **fast-cli** (`npm install -g fast-cli`) — Speed Test via fast.com
+### External Tools
+| Tool | Feature | Required |
+|------|---------|----------|
+| **openssh** / `ssh` | SSH connections and SFTP file transfer | Yes |
+| **samba** / `smbd` | SMB file server | Yes |
+| **iperf3** | Speed Test LAN/WAN | Yes |
+| **traceroute** | Traceroute hop discovery | Yes |
+| **mtr** / **mtr-tiny** | MTR continuous traceroute | Yes |
+| **nmcli** / **network-manager** | Wi-Fi scanning | Yes |
+| **nmap** | Vulnerability Scanner | Yes |
+| **iw** | Wi-Fi interface info | Yes |
+| **fast** / **fast-cli** | Speed Test via fast.com (Netflix CDN) | Optional |
+| **python3-pyftpdlib** | Built-in FTP server | Optional |
+
+Install fast-cli via npm:
+```bash
+npm install -g fast-cli
+```
 
 ### Python Dependencies
-- **pyte** - Terminal emulator (VT100/ANSI)
-- **paramiko** - SSH protocol support (optional, for SSH connections)
-- **pysnmp** - SNMP protocol support (optional, for SNMP queries)
-- **standard-telnetlib** - Telnet protocol support (Python 3.13+)
+- **pyte** — Terminal emulator (VT100/ANSI)
+- **paramiko** — SSH/SFTP protocol support
+- **pysnmp** — SNMP protocol support
+- **standard-telnetlib** — Telnet protocol support (Python 3.13+)
 
 > **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information.
 > Use SSH whenever possible for remote connections. Telnet should only be used in trusted, isolated networks
@@ -228,15 +243,15 @@ flatpak run io.github.benjamimgois.omnicom
 1. Install dependencies (if not already installed):
 ```bash
 # Arch Linux / Manjaro
-sudo pacman -S python-pyqt6 qt6-serialport picocom iperf3 nmap mtr iw
+sudo pacman -S python-pyqt6 qt6-serialport picocom openssh samba iperf3 traceroute mtr networkmanager nmap iw
 pip install pyte paramiko pysnmp
 
 # Fedora / RHEL
-sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom iperf3 nmap mtr iw
+sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom openssh samba iperf3 traceroute mtr NetworkManager nmap iw
 pip3 install pyte paramiko pysnmp
 
 # Debian / Ubuntu (manual installation)
-sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom iperf3 nmap mtr iw network-manager
+sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom openssh-client samba samba-common-bin iperf3 traceroute mtr iw network-manager nmap
 pip3 install pyte paramiko pysnmp
 
 # Python 3.13+ users also need:
@@ -356,7 +371,9 @@ After this, logout and login again to apply changes.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ## Contributing
 
