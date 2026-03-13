@@ -8,8 +8,8 @@ Homepage: https://github.com/benjamimgois/omnicom
 
 Package: omnicom
 Architecture: all
-Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, mtr | mtr-tiny, snmp, iw, network-manager, traceroute, whois, iperf3, nmap, ${misc:Depends}
-Recommends: nodejs, npm
+Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, openssh-client, samba, samba-common-bin, mtr | mtr-tiny, snmp, iw, network-manager, traceroute, whois, iperf3, nmap, ${misc:Depends}
+Recommends: nodejs, npm, python3-pyftpdlib
 Description: Modern graphical interface for network management
  Omnicom is a modern and elegant graphical interface for network device
  management, supporting Serial, SSH, Telnet, TFTP, IP Scanner, SNMP,
