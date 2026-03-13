@@ -16749,19 +16749,23 @@ class SerialTerminalGUI(QMainWindow):
         # Update bottom button label
         if self._ft_mode == 'Server':
             if proto == 'TFTP':
-                is_running = self.tftp_process is not None
+                self._ft_set_action_btn(self.tftp_process is not None, 'TFTP')
             elif proto == 'FTP':
-                is_running = getattr(self, '_ftp_srv_process', None) is not None
-            else:
-                is_running = False
-            self.tftp_btn.setText(f"STOP {proto}" if is_running else f"START {proto}")
-            if proto == 'SSH':
+                self._ft_set_action_btn(getattr(self, '_ftp_srv_process', None) is not None, 'FTP')
+            elif proto == 'SSH':
+                self._ft_set_action_btn(False, 'SSH')   # check_status corrects this
                 self._ft_ssh_srv_check_status()
             elif proto == 'SMB':
+                self._ft_set_action_btn(False, 'SMB')   # check_status corrects this
                 self._ft_smb_srv_check_status()
         else:
             connected = self._ft_conn is not None
             self.tftp_btn.setText("DISCONNECT" if connected else f"CONNECT {proto}")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton { background-color: #9C27B0; color: white; border: none;
+                    border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
+                QPushButton:hover { background-color: #7B1FA2; }
+                QPushButton:pressed { background-color: #4A148C; }""")
 
     def _ft_mode_changed(self, mode):
         self._ft_mode = mode
@@ -16770,16 +16774,16 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn.setChecked(mode == 'Client')
         self._ft_stack.setCurrentIndex(0 if mode == 'Server' else 1)
         if mode == 'Server':
-            if self._ft_protocol == 'TFTP':
-                is_running = self.tftp_process is not None
-            elif self._ft_protocol == 'FTP':
-                is_running = getattr(self, '_ftp_srv_process', None) is not None
-            else:
-                is_running = False
-            self.tftp_btn.setText(f"STOP {self._ft_protocol}" if is_running else f"START {self._ft_protocol}")
-            if self._ft_protocol == 'SSH':
+            proto = self._ft_protocol
+            if proto == 'TFTP':
+                self._ft_set_action_btn(self.tftp_process is not None, 'TFTP')
+            elif proto == 'FTP':
+                self._ft_set_action_btn(getattr(self, '_ftp_srv_process', None) is not None, 'FTP')
+            elif proto == 'SSH':
+                self._ft_set_action_btn(False, 'SSH')
                 self._ft_ssh_srv_check_status()
-            elif self._ft_protocol == 'SMB':
+            elif proto == 'SMB':
+                self._ft_set_action_btn(False, 'SMB')
                 self._ft_smb_srv_check_status()
         else:
             connected = self._ft_conn is not None
@@ -16884,6 +16888,23 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_log.appendPlainText(f"[{ts}] {text}")
         self._ft_log.verticalScrollBar().setValue(self._ft_log.verticalScrollBar().maximum())
 
+    def _ft_set_action_btn(self, running: bool, proto: str):
+        """Update the action button text and colour to reflect running state."""
+        if running:
+            self.tftp_btn.setText(f"STOP {proto}")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton { background-color: #f44336; color: white; border: none;
+                    border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
+                QPushButton:hover { background-color: #d32f2f; }
+                QPushButton:pressed { background-color: #b71c1c; }""")
+        else:
+            self.tftp_btn.setText(f"START {proto}")
+            self.tftp_btn.setStyleSheet("""
+                QPushButton { background-color: #9C27B0; color: white; border: none;
+                    border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
+                QPushButton:hover { background-color: #7B1FA2; }
+                QPushButton:pressed { background-color: #4A148C; }""")
+
     # ── SSH Server (systemctl) ────────────────────────────────────────────
     def _ft_ssh_srv_check_status(self):
         import subprocess
@@ -16892,6 +16913,8 @@ class SerialTerminalGUI(QMainWindow):
             status = r.stdout.strip()
             color = '#4CAF50' if status == 'active' else '#f44336'
             self._ssh_srv_status_lbl.setText(f"Status: <span style='color:{color};font-weight:bold'>{status}</span>")
+            if self._ft_mode == 'Server' and self._ft_protocol == 'SSH':
+                self._ft_set_action_btn(status == 'active', 'SSH')
         except Exception as e:
             self._ssh_srv_status_lbl.setText(f"Status: error — {e}")
 
@@ -16907,7 +16930,7 @@ class SerialTerminalGUI(QMainWindow):
                     err = (res.stderr or res.stdout or "pkexec returned error").strip()
                     self._ft_log_append(f"ERROR stop sshd: {err}")
                     QMessageBox.warning(self, "SSH Server", f"Failed to stop SSH service:\n{err}"); return
-                self.tftp_btn.setText("START SSH")
+                self._ft_set_action_btn(False, 'SSH')
                 self._ft_log_append("sshd stopped.")
             else:
                 self._ft_log_append("Starting sshd via pkexec...")
@@ -16917,7 +16940,7 @@ class SerialTerminalGUI(QMainWindow):
                     err = (res.stderr or res.stdout or "pkexec returned error").strip()
                     self._ft_log_append(f"ERROR start sshd: {err}")
                     QMessageBox.warning(self, "SSH Server", f"Failed to start SSH service:\n{err}"); return
-                self.tftp_btn.setText("STOP SSH")
+                self._ft_set_action_btn(True, 'SSH')
                 self._ft_log_append("sshd started.")
             time.sleep(1.0)
             self._ft_ssh_srv_check_status()
@@ -16942,6 +16965,8 @@ class SerialTerminalGUI(QMainWindow):
                 self._smb_srv_status_lbl.setText(
                     f"Service <b>{svc}</b>: <span style='color:{color};font-weight:bold'>{active}</span>")
                 self._smb_srv_service = svc
+                if self._ft_mode == 'Server' and self._ft_protocol == 'SMB':
+                    self._ft_set_action_btn(active == 'active', 'SMB')
                 return
             except Exception:
                 continue
@@ -17063,7 +17088,7 @@ class SerialTerminalGUI(QMainWindow):
                     err = (res.stderr or res.stdout or "pkexec returned error").strip()
                     self._ft_log_append(f"ERROR stop {svc}: {err}")
                     QMessageBox.warning(self, "SMB Server", f"Failed to stop SMB service:\n{err}"); return
-                self.tftp_btn.setText("START SMB")
+                self._ft_set_action_btn(False, 'SMB')
                 self._ft_log_append(f"{svc} stopped.")
             else:
                 # Apply config before starting
@@ -17076,7 +17101,7 @@ class SerialTerminalGUI(QMainWindow):
                     err = (res.stderr or res.stdout or "pkexec returned error").strip()
                     self._ft_log_append(f"ERROR start {svc}: {err}")
                     QMessageBox.warning(self, "SMB Server", f"Failed to start SMB service:\n{err}"); return
-                self.tftp_btn.setText("STOP SMB")
+                self._ft_set_action_btn(True, 'SMB')
                 self._ft_log_append(f"{svc} started.")
             time.sleep(1.0)
             self._ft_smb_srv_check_status()
