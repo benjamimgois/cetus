@@ -18238,8 +18238,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ul_card.setVisible(False)   # always hidden — unified single-speed view
         # Reset stats
         for lbl in (self.stat_ping, self.stat_download, self.stat_upload,
-                    self._st_info_isp, self._st_info_rating,
-                    self._st_info_country, self._st_info_server):
+                    self._st_info_isp, self._st_info_country, self._st_info_server):
             lbl.setText("—")
         self.iperf_graph.clear()
         # Reconnect action button
