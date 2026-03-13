@@ -8852,6 +8852,34 @@ class SerialTerminalGUI(QMainWindow):
         tab_layout.addWidget(self.tftp_tab_btn)
 
         tab_layout.addStretch()
+
+        # About button (bottom of sidebar)
+        self.about_tab_btn = QPushButton()
+        self.about_tab_btn.setFixedSize(62, 52)
+        about_icon_path = self.get_tab_icon_path('about.svg')
+        about_icon = load_svg_icon(about_icon_path, icon_size) if about_icon_path else None
+        if about_icon:
+            self.about_tab_btn.setIcon(about_icon)
+            self.about_tab_btn.setIconSize(self.about_tab_btn.size() * 0.55)
+        self.about_tab_btn.setToolTip("About Omnicom")
+        self.about_tab_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                color: #aaaaaa;
+            }
+            QPushButton:hover {
+                background-color: rgba(255,255,255,0.08);
+                color: white;
+            }
+            QPushButton:pressed {
+                background-color: rgba(255,255,255,0.15);
+            }
+        """)
+        self.about_tab_btn.clicked.connect(self._show_about_dialog)
+        tab_layout.addWidget(self.about_tab_btn)
+
         self.tab_widget.setLayout(tab_layout)
 
         # === RIGHT SIDE: Stacked Widget for Content ===
@@ -8912,6 +8940,193 @@ class SerialTerminalGUI(QMainWindow):
         modes = {0: 'ssh', 1: 'serial', 2: 'ipscan', 3: 'snmp',
                  4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp'}
         self.config.set('connection_mode', modes.get(index, 'ssh'))
+
+    def _show_about_dialog(self):
+        """Show the About Omnicom dialog."""
+        import os
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+        from PyQt6.QtGui import QPixmap, QFont, QCursor
+        from PyQt6.QtCore import Qt, QSize
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About Omnicom")
+        dlg.setFixedWidth(420)
+        dlg.setStyleSheet("QDialog { background-color: #1e1e2e; }")
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Header banner ────────────────────────────────────────────────
+        header = QWidget()
+        header.setFixedHeight(90)
+        header.setStyleSheet("background-color: #12121f;")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(24, 0, 24, 0)
+
+        app_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     'assets', 'icons', 'omnicom_icon.svg')
+        app_pix = load_svg_pixmap(app_icon_path, 56) if os.path.exists(app_icon_path) else None
+        if app_pix and not app_pix.isNull():
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(app_pix)
+            icon_lbl.setFixedSize(60, 60)
+            h_lay.addWidget(icon_lbl)
+        h_lay.addSpacing(14)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        app_name = QLabel("Omnicom")
+        app_name.setStyleSheet("color: #ffffff; font-size: 20pt; font-weight: bold; background: transparent;")
+        version_lbl = QLabel("v1.6  ·  Network Management Toolkit")
+        version_lbl.setStyleSheet("color: #8888aa; font-size: 9pt; background: transparent;")
+        title_col.addStretch()
+        title_col.addWidget(app_name)
+        title_col.addWidget(version_lbl)
+        title_col.addStretch()
+        h_lay.addLayout(title_col)
+        h_lay.addStretch()
+        root.addWidget(header)
+
+        # ── Body ─────────────────────────────────────────────────────────
+        body = QWidget()
+        body.setStyleSheet("background-color: #1e1e2e;")
+        b_lay = QVBoxLayout(body)
+        b_lay.setContentsMargins(24, 20, 24, 20)
+        b_lay.setSpacing(16)
+
+        # Description
+        desc = QLabel(
+            "Omnicom is an open-source network management GUI built with PyQt6.\n"
+            "It integrates SSH, Serial, TFTP/FTP/SMB file transfer, IP scanning,\n"
+            "SNMP queries, Traceroute, WiFi survey and bandwidth testing\n"
+            "into a single, unified interface."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #ccccdd; font-size: 9.5pt; background: transparent; line-height: 1.5;")
+        b_lay.addWidget(desc)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.HLine)
+        div.setStyleSheet("color: #333355;")
+        b_lay.addWidget(div)
+
+        # Author row
+        author_row = QHBoxLayout()
+        author_row.setSpacing(16)
+
+        # Photo
+        photo_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'photo.png'),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'photo.jpg'),
+        ]
+        photo_pix = None
+        for p in photo_paths:
+            if os.path.exists(p):
+                photo_pix = QPixmap(p)
+                break
+
+        photo_lbl = QLabel()
+        photo_lbl.setFixedSize(72, 72)
+        photo_lbl.setStyleSheet("""
+            QLabel {
+                border-radius: 36px;
+                border: 2px solid #9C27B0;
+                background-color: #2a2a3e;
+            }
+        """)
+        if photo_pix and not photo_pix.isNull():
+            scaled = photo_pix.scaled(72, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                      Qt.TransformationMode.SmoothTransformation)
+            # Crop to circle via mask
+            from PyQt6.QtGui import QBitmap, QPainter
+            mask = QBitmap(72, 72)
+            mask.fill(Qt.GlobalColor.color0)
+            p = QPainter(mask)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.fillRect(0, 0, 72, 72, Qt.GlobalColor.color1)
+            p.end()
+            scaled.setMask(mask)
+            photo_lbl.setPixmap(scaled)
+        else:
+            # Placeholder initials
+            ph_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        'assets', 'icons', 'about.svg')
+            ph_pix = load_svg_pixmap(ph_icon_path, 40) if os.path.exists(ph_icon_path) else None
+            if ph_pix:
+                photo_lbl.setPixmap(ph_pix)
+            photo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        author_row.addWidget(photo_lbl)
+
+        author_col = QVBoxLayout()
+        author_col.setSpacing(4)
+        author_col.addStretch()
+
+        name_lbl = QLabel("Benjamim Gois")
+        name_lbl.setStyleSheet("color: #ffffff; font-size: 12pt; font-weight: bold; background: transparent;")
+        author_col.addWidget(name_lbl)
+
+        role_lbl = QLabel("Developer")
+        role_lbl.setStyleSheet("color: #8888aa; font-size: 9pt; background: transparent;")
+        author_col.addWidget(role_lbl)
+
+        gh_btn = QPushButton("  github.com/benjamimgois/omnicom")
+        _gh_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     'assets', 'icons', 'ssh_icon.svg')
+        gh_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #9C27B0;
+                font-size: 9pt;
+                text-align: left;
+                padding: 0;
+            }
+            QPushButton:hover { color: #ce93d8; text-decoration: underline; }
+        """)
+        gh_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        gh_btn.clicked.connect(lambda: (
+            __import__('PyQt6.QtGui', fromlist=['QDesktopServices']).QDesktopServices.openUrl(
+                __import__('PyQt6.QtCore', fromlist=['QUrl']).QUrl(
+                    'https://github.com/benjamimgois/omnicom'))
+        ))
+        author_col.addWidget(gh_btn)
+        author_col.addStretch()
+        author_row.addLayout(author_col)
+        author_row.addStretch()
+        b_lay.addLayout(author_row)
+
+        # Divider
+        div2 = QFrame()
+        div2.setFrameShape(QFrame.Shape.HLine)
+        div2.setStyleSheet("color: #333355;")
+        b_lay.addWidget(div2)
+
+        # License / tech row
+        tech_lbl = QLabel("Python 3  ·  PyQt6  ·  MIT License")
+        tech_lbl.setStyleSheet("color: #666688; font-size: 8.5pt; background: transparent;")
+        tech_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        b_lay.addWidget(tech_lbl)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.setStyleSheet("""
+            QPushButton { background-color: #9C27B0; color: white; border: none;
+                border-radius: 6px; padding: 8px 16px; font-weight: bold; font-size: 10pt; }
+            QPushButton:hover { background-color: #7B1FA2; }
+        """)
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.clicked.connect(dlg.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        btn_row.addStretch()
+        b_lay.addLayout(btn_row)
+
+        root.addWidget(body)
+        dlg.exec()
 
     def create_serial_page(self):
         """Create the serial connection configuration page"""
