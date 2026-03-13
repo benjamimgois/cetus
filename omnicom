@@ -8950,7 +8950,7 @@ class SerialTerminalGUI(QMainWindow):
 
         dlg = QDialog(self)
         dlg.setWindowTitle("About Omnicom")
-        dlg.setFixedWidth(420)
+        dlg.setFixedSize(500, 400)
         dlg.setStyleSheet("QDialog { background-color: #1e1e2e; }")
 
         root = QVBoxLayout(dlg)
@@ -8959,7 +8959,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # ── Header banner ────────────────────────────────────────────────
         header = QWidget()
-        header.setFixedHeight(90)
+        header.setFixedHeight(100)
         header.setStyleSheet("background-color: #12121f;")
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(24, 0, 24, 0)
