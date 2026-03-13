@@ -11,6 +11,7 @@ optdepends=('nodejs: required for fast-cli (npm install -g fast-cli) — Speed T
 makedepends=('git' 'imagemagick')
 provides=('omnicom')
 conflicts=('omnicom')
+install=omnicom.install
 source=("${pkgname}::git+https://github.com/benjamimgois/omnicom.git")
 sha256sums=('SKIP')
 
