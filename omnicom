@@ -531,25 +531,21 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_serial_profile(self, name, port, baudrate, databits, parity, stopbits, flow, vendor='Default'):
+    def save_serial_profile(self, name, port, baudrate, databits, parity, stopbits, flow, vendor='Default', group='Default'):
         """Save a serial connection profile"""
         profiles = self.get_serial_profiles()
+        entry = {
+            'name': name, 'port': port, 'baudrate': baudrate,
+            'databits': databits, 'parity': parity,
+            'stopbits': stopbits, 'flow': flow,
+            'vendor': vendor, 'group': group
+        }
         for i, p in enumerate(profiles):
             if p.get('name') == name:
-                profiles[i] = {
-                    'name': name, 'port': port, 'baudrate': baudrate,
-                    'databits': databits, 'parity': parity,
-                    'stopbits': stopbits, 'flow': flow,
-                    'vendor': vendor
-                }
+                profiles[i] = entry
                 break
         else:
-            profiles.append({
-                'name': name, 'port': port, 'baudrate': baudrate,
-                'databits': databits, 'parity': parity,
-                'stopbits': stopbits, 'flow': flow,
-                'vendor': vendor
-            })
+            profiles.append(entry)
         self.set('serial_profiles', json.dumps(profiles))
 
     def delete_serial_profile(self, name):
@@ -3449,6 +3445,61 @@ class SshProfilesTree(QTreeWidget):
         target_group.setExpanded(True)
         self.setCurrentItem(dragged)
 
+        event.accept()
+        self.reordered.emit()
+
+
+class SerialProfilesTree(QTreeWidget):
+    """QTreeWidget with internal drag-and-drop reordering of Serial profiles."""
+    reordered = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+
+    def dragEnterEvent(self, event):
+        item = self.currentItem()
+        if item is not None and item.parent() is not None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        item = self.currentItem()
+        if item is not None and item.parent() is not None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        dragged = self.currentItem()
+        if dragged is None or dragged.parent() is None:
+            event.ignore()
+            return
+        pos = event.position().toPoint()
+        target = self.itemAt(pos)
+        if target is None or target is dragged:
+            event.ignore()
+            return
+        indicator = self.dropIndicatorPosition()
+        if target.parent() is None:
+            target_group = target
+            insert_idx = target_group.childCount()
+        else:
+            target_group = target.parent()
+            idx = target_group.indexOfChild(target)
+            insert_idx = idx + 1 if indicator == QAbstractItemView.DropIndicatorPosition.BelowItem else idx
+        old_parent = dragged.parent()
+        old_idx = old_parent.indexOfChild(dragged)
+        old_parent.takeChild(old_idx)
+        if target_group is old_parent and old_idx < insert_idx:
+            insert_idx -= 1
+        target_group.insertChild(insert_idx, dragged)
+        target_group.setExpanded(True)
+        self.setCurrentItem(dragged)
         event.accept()
         self.reordered.emit()
 
@@ -9061,39 +9112,49 @@ class SerialTerminalGUI(QMainWindow):
         profiles_layout.setContentsMargins(10, 2, 10, 8)
         profiles_layout.setSpacing(6)
 
-        self.serial_profiles_table = QTableWidget()
-        self.serial_profiles_table.setColumnCount(5)
-        self.serial_profiles_table.setHorizontalHeaderLabels(["Name", "Port", "Baud Rate", "Config", "Vendor"])
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.serial_profiles_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.serial_profiles_table.setColumnWidth(1, 120)
-        self.serial_profiles_table.setColumnWidth(2, 80)
-        self.serial_profiles_table.setColumnWidth(3, 60)
-        self.serial_profiles_table.setColumnWidth(4, 56)
-        self.serial_profiles_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.serial_profiles_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.serial_profiles_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.serial_profiles_table.verticalHeader().setVisible(False)
-        self.serial_profiles_table.doubleClicked.connect(self.load_serial_profile_from_table)
-        self.serial_profiles_table.setStyleSheet("""
-            QTableWidget {
+        self.serial_profiles_tree = SerialProfilesTree()
+        self.serial_profiles_tree.setColumnCount(5)
+        self.serial_profiles_tree.setHeaderLabels(["Name", "Port", "Baud", "Config", "Vendor"])
+        self.serial_profiles_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.serial_profiles_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.serial_profiles_tree.setColumnWidth(1, 110)
+        self.serial_profiles_tree.setColumnWidth(2, 62)
+        self.serial_profiles_tree.setColumnWidth(3, 50)
+        self.serial_profiles_tree.setColumnWidth(4, 42)
+        for col in range(5):
+            self.serial_profiles_tree.headerItem().setTextAlignment(
+                col, Qt.AlignmentFlag.AlignCenter)
+        self.serial_profiles_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.serial_profiles_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.serial_profiles_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.serial_profiles_tree.setRootIsDecorated(False)
+        self.serial_profiles_tree.setIndentation(14)
+        self.serial_profiles_tree.itemDoubleClicked.connect(self.load_serial_profile_from_tree)
+        self.serial_profiles_tree.itemExpanded.connect(self._serial_group_expanded)
+        self.serial_profiles_tree.itemCollapsed.connect(self._serial_group_collapsed)
+        self.serial_profiles_tree.reordered.connect(self._serial_tree_save_order)
+        self.serial_profiles_tree.setStyleSheet("""
+            QTreeWidget {
                 background-color: #e8e8e8;
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 color: #333333;
                 font-size: 9pt;
-                gridline-color: #d0d0d0;
             }
-            QTableWidget::item {
-                padding: 4px;
-                background-color: #e8e8e8;
+            QTreeWidget::item {
+                padding: 2px 2px;
+                min-height: 36px;
             }
-            QTableWidget::item:selected {
+            QTreeWidget::item:selected {
                 background-color: #2196F3;
                 color: white;
+            }
+            QTreeWidget::branch {
+                image: none;
+                background: transparent;
             }
             QHeaderView::section {
                 background-color: #d0d0d0;
@@ -9102,10 +9163,12 @@ class SerialTerminalGUI(QMainWindow):
                 border: none;
                 font-weight: bold;
                 font-size: 9pt;
+                qproperty-alignment: AlignCenter;
             }
         """)
-        profiles_layout.addWidget(self.serial_profiles_table)
-        self._enable_table_tooltips(self.serial_profiles_table)
+        profiles_layout.addWidget(self.serial_profiles_tree)
+        self.serial_profiles_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.serial_profiles_tree.customContextMenuRequested.connect(self._serial_profile_context_menu)
 
         serial_btn_layout = QHBoxLayout()
         serial_btn_layout.setSpacing(8)
@@ -17521,17 +17584,18 @@ class SerialTerminalGUI(QMainWindow):
             btn.setProperty('vendor', new_vendor)
             # Save to config
             if table_type == 'serial':
-                item = self.serial_profiles_table.item(row, 0)
-                if item:
-                    profile = item.data(Qt.ItemDataRole.UserRole)
-                    if profile:
-                        profile['vendor'] = new_vendor
-                        self.config.save_serial_profile(
-                            profile['name'], profile.get('port', ''),
-                            profile.get('baudrate', '9600'), profile.get('databits', '8'),
-                            profile.get('parity', 'None'), profile.get('stopbits', '1'),
-                            profile.get('flow', 'None'), new_vendor
-                        )
+                tree_item = row  # row is a QTreeWidgetItem for the serial tree
+                profile = tree_item.data(0, Qt.ItemDataRole.UserRole)
+                if profile:
+                    profile['vendor'] = new_vendor
+                    self.config.save_serial_profile(
+                        profile['name'], profile.get('port', ''),
+                        profile.get('baudrate', '9600'), profile.get('databits', '8'),
+                        profile.get('parity', 'None'), profile.get('stopbits', '1'),
+                        profile.get('flow', 'None'), new_vendor,
+                        profile.get('group', 'Default')
+                    )
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, profile)
             else:
                 # row is a QTreeWidgetItem for the ssh tree
                 tree_item = row
@@ -17794,114 +17858,232 @@ class SerialTerminalGUI(QMainWindow):
         return f"{databits}{parity_char}{stopbits}"
 
     def refresh_serial_profiles(self):
-        """Refresh the serial profiles table"""
-        self.serial_profiles_table.setRowCount(0)
+        """Refresh the serial profiles tree, grouped by profile group."""
+        self.serial_profiles_tree.clear()
         profiles = self.config.get_serial_profiles()
+
+        groups = {}
         for profile in profiles:
-            row = self.serial_profiles_table.rowCount()
-            self.serial_profiles_table.insertRow(row)
-            self.serial_profiles_table.setItem(row, 0, QTableWidgetItem(profile.get('name', '')))
-            self.serial_profiles_table.setItem(row, 1, QTableWidgetItem(profile.get('port', '')))
-            self.serial_profiles_table.setItem(row, 2, QTableWidgetItem(profile.get('baudrate', '9600')))
-            # Config column: e.g. "8N1"
-            databits = profile.get('databits', '8')
-            parity = profile.get('parity', 'None')[0]  # N, E, O
-            stopbits = profile.get('stopbits', '1')
-            self.serial_profiles_table.setItem(row, 3, QTableWidgetItem(f"{databits}{parity}{stopbits}"))
+            group = profile.get('group', 'Default') or 'Default'
+            groups.setdefault(group, []).append(profile)
 
-            # Vendor icon widget
-            vendor = profile.get('vendor', 'Default')
-            vendor_widget = self._create_vendor_icon_widget(vendor, row, table='serial')
-            self.serial_profiles_table.setCellWidget(row, 4, vendor_widget)
-            self.serial_profiles_table.setRowHeight(row, 42)
+        group_header_bg = QColor('#37474f')
+        group_header_fg = QColor('#ffffff')
 
-            self.serial_profiles_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, profile)
+        for group_name, group_profiles in groups.items():
+            group_item = QTreeWidgetItem(self.serial_profiles_tree)
+            group_item.setText(0, f"  ▼   {group_name.upper()}")
+            group_item.setData(0, Qt.ItemDataRole.UserRole, None)
+            group_item.setData(0, Qt.ItemDataRole.UserRole + 1, group_name)
+            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsDropEnabled)
+            font = group_item.font(0)
+            font.setBold(True)
+            font.setPointSize(font.pointSize() + 1)
+            group_item.setFont(0, font)
+            group_item.setSizeHint(0, QSize(0, 34))
+            for col in range(5):
+                group_item.setBackground(col, group_header_bg)
+                group_item.setForeground(col, group_header_fg)
+            group_item_row = self.serial_profiles_tree.indexOfTopLevelItem(group_item)
+            self.serial_profiles_tree.setFirstColumnSpanned(
+                group_item_row, self.serial_profiles_tree.rootIndex(), True)
 
-    def load_serial_profile_from_table(self):
-        """Load selected serial profile from table and initiate connection"""
-        row = self.serial_profiles_table.currentRow()
-        if row < 0:
+            for profile in group_profiles:
+                child = QTreeWidgetItem(group_item)
+                child.setText(0, profile.get('name', ''))
+                child.setText(1, profile.get('port', ''))
+                child.setText(2, profile.get('baudrate', '9600'))
+                databits = profile.get('databits', '8')
+                parity   = profile.get('parity', 'None')[0]
+                stopbits = profile.get('stopbits', '1')
+                child.setText(3, f"{databits}{parity}{stopbits}")
+                child.setData(0, Qt.ItemDataRole.UserRole, profile)
+                child.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
+                               Qt.ItemFlag.ItemIsDragEnabled)
+                vendor = profile.get('vendor', 'Default')
+                vendor_widget = self._create_vendor_icon_widget(vendor, child, table='serial')
+                self.serial_profiles_tree.setItemWidget(child, 4, vendor_widget)
+
+            group_item.setExpanded(True)
+
+    def load_serial_profile_from_tree(self, item, column):
+        """Load selected serial profile from tree and initiate connection."""
+        if item is None:
             return
-        item = self.serial_profiles_table.item(row, 0)
-        if item:
-            profile = item.data(Qt.ItemDataRole.UserRole)
-            if profile:
-                # Load profile data into form fields
-                idx = self.port.findText(profile.get('port', ''))
-                if idx >= 0:
-                    self.port.setCurrentIndex(idx)
-                self.baudrate.setCurrentText(profile.get('baudrate', '9600'))
-                config_text = self._build_serial_config_text(
-                    profile.get('databits', '8'),
-                    profile.get('parity', 'None'),
-                    profile.get('stopbits', '1'),
-                )
-                idx = self.serial_config.findText(config_text)
-                if idx >= 0:
-                    self.serial_config.setCurrentIndex(idx)
-                self.flow.setCurrentText(profile.get('flow', 'None'))
-                # Read vendor from the icon button in the table
-                cell_widget = self.serial_profiles_table.cellWidget(row, 4)
-                if cell_widget:
-                    btn = cell_widget.findChild(QPushButton)
-                    self._pending_vendor = btn.property('vendor') if btn else 'Default'
-                else:
-                    self._pending_vendor = 'Default'
-                QApplication.processEvents()
-                QTimer.singleShot(100, self.connect)
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+        if not profile:  # group header clicked
+            return
+        idx = self.port.findText(profile.get('port', ''))
+        if idx >= 0:
+            self.port.setCurrentIndex(idx)
+        self.baudrate.setCurrentText(profile.get('baudrate', '9600'))
+        config_text = self._build_serial_config_text(
+            profile.get('databits', '8'),
+            profile.get('parity', 'None'),
+            profile.get('stopbits', '1'),
+        )
+        idx = self.serial_config.findText(config_text)
+        if idx >= 0:
+            self.serial_config.setCurrentIndex(idx)
+        self.flow.setCurrentText(profile.get('flow', 'None'))
+        vendor_widget = self.serial_profiles_tree.itemWidget(item, 4)
+        if vendor_widget:
+            btn = vendor_widget.findChild(QPushButton)
+            self._pending_vendor = btn.property('vendor') if btn else 'Default'
+        else:
+            self._pending_vendor = 'Default'
+        QApplication.processEvents()
+        QTimer.singleShot(100, self.connect)
 
     def save_current_serial_profile(self):
-        """Save current serial settings as a profile"""
+        """Save current serial settings as a profile."""
         port = self.port.currentText()
         if not port or 'No ports found' in port:
             QMessageBox.warning(self, "Warning", "Select a valid port before saving")
             return
 
+        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        # Collect existing groups for autocomplete
+        existing_groups = []
+        root = self.serial_profiles_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            grp_item = root.child(i)
+            grp_name = (grp_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                        or grp_item.text(0).lstrip('▼▶ ').strip())
+            existing_groups.append(grp_name)
+        if not existing_groups:
+            existing_groups = ['Default']
+
+        group, ok = QInputDialog.getItem(
+            self, "Profile Group", "Group:", existing_groups, 0, True)
+        if not ok:
+            return
+        group = group.strip() or 'Default'
+
+        db, par, sb = self._parse_serial_config()
+        self.config.save_serial_profile(
+            name, port, self.baudrate.currentText(),
+            db, par, sb, self.flow.currentText(), group=group
+        )
+        self.refresh_serial_profiles()
+        QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
+
+    def delete_serial_profile(self):
+        """Delete selected serial profile from tree."""
+        item = self.serial_profiles_tree.currentItem()
+        if item is None or item.data(0, Qt.ItemDataRole.UserRole) is None:
+            QMessageBox.warning(self, "Warning", "Select a profile to delete")
+            return
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+        reply = QMessageBox.question(
+            self, "Delete Profile",
+            f"Delete profile '{profile['name']}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.config.delete_serial_profile(profile['name'])
+            self.refresh_serial_profiles()
+
+    def _serial_group_expanded(self, item):
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            return
+        item.setText(0, item.text(0).replace('▶', '▼', 1))
+
+    def _serial_group_collapsed(self, item):
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            return
+        item.setText(0, item.text(0).replace('▼', '▶', 1))
+
+    def _rename_serial_group(self, group_item):
+        """Rename a serial group and update all its profiles."""
+        old_name = group_item.text(0).lstrip('▼▶ ').strip()
         dialog = QInputDialog(self)
-        dialog.setWindowTitle("Save Profile")
-        dialog.setLabelText("Profile name:")
+        dialog.setWindowTitle("Rename Group")
+        dialog.setLabelText("New group name:")
+        dialog.setTextValue(old_name)
         dialog.setStyleSheet("""
             QInputDialog { background-color: #2b2b2b; }
             QLabel { color: #e0e0e0; font-size: 10pt; }
-            QLineEdit {
-                background-color: #3a3a3a; color: #e0e0e0;
-                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px;
-            }
-            QPushButton {
-                background-color: #4caf50; color: #ffffff;
-                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px;
-            }
-            QPushButton:hover { background-color: #43a047; }
+            QLineEdit { background-color: #3a3a3a; color: #e0e0e0;
+                border: 1px solid #5a5a5a; border-radius: 4px; padding: 6px; }
+            QPushButton { background-color: #2196F3; color: #ffffff;
+                border: none; border-radius: 6px; padding: 8px 16px; min-width: 80px; }
+            QPushButton:hover { background-color: #1976D2; }
         """)
-        ok = dialog.exec()
-        name = dialog.textValue()
-        if ok and name:
-            db, par, sb = self._parse_serial_config()
-            self.config.save_serial_profile(
-                name, port, self.baudrate.currentText(),
-                db, par, sb, self.flow.currentText()
-            )
-            self.refresh_serial_profiles()
-            QMessageBox.information(self, "Saved", f"Profile '{name}' saved")
-
-    def delete_serial_profile(self):
-        """Delete selected serial profile from table"""
-        row = self.serial_profiles_table.currentRow()
-        if row < 0:
-            QMessageBox.warning(self, "Warning", "Select a profile to delete")
+        if not dialog.exec():
             return
-        item = self.serial_profiles_table.item(row, 0)
-        if item:
-            profile = item.data(Qt.ItemDataRole.UserRole)
+        new_name = dialog.textValue().strip()
+        if not new_name or new_name == old_name:
+            return
+        for i in range(group_item.childCount()):
+            child = group_item.child(i)
+            profile = child.data(0, Qt.ItemDataRole.UserRole)
             if profile:
-                reply = QMessageBox.question(
-                    self, "Delete Profile",
-                    f"Delete profile '{profile['name']}'?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                profile['group'] = new_name
+                self.config.save_serial_profile(
+                    profile['name'], profile.get('port', ''),
+                    profile.get('baudrate', '9600'), profile.get('databits', '8'),
+                    profile.get('parity', 'None'), profile.get('stopbits', '1'),
+                    profile.get('flow', 'None'), profile.get('vendor', 'Default'), new_name
                 )
-                if reply == QMessageBox.StandardButton.Yes:
-                    self.config.delete_serial_profile(profile['name'])
-                    self.refresh_serial_profiles()
+        arrow = '▼' if group_item.isExpanded() else '▶'
+        group_item.setText(0, f"  {arrow}   {new_name.upper()}")
+        group_item.setData(0, Qt.ItemDataRole.UserRole + 1, new_name)
+
+    def _serial_tree_save_order(self):
+        """Persist current tree order to config."""
+        profiles = []
+        root = self.serial_profiles_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            group_item = root.child(i)
+            group_name = (group_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                          or group_item.text(0).lstrip('▼▶ ').strip())
+            for j in range(group_item.childCount()):
+                child = group_item.child(j)
+                profile = child.data(0, Qt.ItemDataRole.UserRole)
+                if profile:
+                    profile = dict(profile)
+                    profile['group'] = group_name
+                    profiles.append(profile)
+        self.config.set('serial_profiles', json.dumps(profiles))
+        self.refresh_serial_profiles()
+
+    def _serial_profile_context_menu(self, pos):
+        """Context menu for Serial Quick Connect tree."""
+        item = self.serial_profiles_tree.itemAt(pos)
+        if not item:
+            return
+        profile = item.data(0, Qt.ItemDataRole.UserRole)
+        _menu_style = """
+            QMenu { background-color: #ffffff; color: #333333;
+                border: 1px solid #d0d0d0; border-radius: 4px; padding: 4px; }
+            QMenu::item { padding: 6px 20px; border-radius: 3px; }
+            QMenu::item:selected { background-color: #e8e8e8; }
+            QMenu::separator { height: 1px; background-color: #d0d0d0; margin: 4px 8px; }
+        """
+        if not profile:
+            menu = QMenu(self)
+            menu.setStyleSheet(_menu_style)
+            rename_action = menu.addAction("Rename Group")
+            action = menu.exec(self.serial_profiles_tree.viewport().mapToGlobal(pos))
+            if action == rename_action:
+                self._rename_serial_group(item)
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(_menu_style)
+        copy_port_action = menu.addAction("Copy Port Name")
+        copy_baud_action = menu.addAction("Copy Baud Rate")
+        menu.addSeparator()
+        action = menu.exec(self.serial_profiles_tree.viewport().mapToGlobal(pos))
+        if action == copy_port_action:
+            QApplication.clipboard().setText(profile.get('port', ''))
+        elif action == copy_baud_action:
+            QApplication.clipboard().setText(profile.get('baudrate', ''))
 
     def connect_ssh(self):
         """Connect via SSH or Telnet"""
