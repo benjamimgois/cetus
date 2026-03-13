@@ -1,20 +1,21 @@
 omnicom (1.6-1) jammy; urgency=medium
 
+  * New File Transfer tab: SSH/SFTP, SMB, FTP and TFTP protocols (client + server modes)
+  * SMB server configuration: Share Name, Comment, Workgroup, Valid Users, Guest access, Read-only
+  * FTP server via pyftpdlib with pkexec elevation for privileged port 21
+  * Transfer tab: collapsible log panel with timestamps; unified START/STOP button per protocol
+  * Serial quick connect redesigned: grouped tree, drag-and-drop reordering, context menu, rename group
+  * Vertical tab order: SSH, Serial, IP Scan, Traceroute, SNMP, WiFi Survey, Speed, Transfer
+  * New About dialog in sidebar with description, author info, photo and GitHub link
   * New official app icon: gradient O with C cutout (omnicom_icon.svg)
-  * Set window icon in main() using new SVG via setWindowIcon()
-  * Install scalable SVG icon to hicolor/scalable/apps/ in all packaging
+  * Scalable SVG icon installed in hicolor theme for all packaging formats
   * Serial tab: replace port-type QComboBox with toggle buttons (USB / Serial)
-  * Standardize button widths: 90px for toggle/action buttons, 110px for Save/Delete/Clear/Export CSV
-  * Rename "ICMP (MTR)" to "ICMP" in Traceroute tab
-  * Rename "Save Current" to "Save" and "Delete Selected" to "Delete" throughout
-  * TFTP tab: remove "Copy Name" button
-  * Speed tab: increase font size of ISP, Country and Server labels
-  * Speed tab: remove ISP Rating field
-  * Speed tab: populate Country field via ip-api.com geolocation after test
-  * Translate all remaining UI strings and code comments to English
-  * Update .desktop Comment field to English
+  * Standardize button widths: 90px for toggle/action, 110px for Save/Delete/Clear/Export CSV
+  * Speed tab: larger font for ISP, Country and Server; Country auto-populated via ip-api.com
+  * Add openssh-client, samba, samba-common-bin as dependencies
+  * Add python3-pyftpdlib as recommended dependency
 
- -- Benjamim Gois <benjamimgois@example.com>  Thu, 12 Mar 2026 09:00:00 -0300
+ -- Benjamim Gois <benjamimgois@example.com>  Fri, 13 Mar 2026 10:00:00 -0300
 
 omnicom (1.5-3) jammy; urgency=low
 
