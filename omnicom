@@ -264,7 +264,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QSpinBox, QSplitter
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter
 
 try:
     from PyQt6.QtSvg import QSvgRenderer
@@ -8440,6 +8440,145 @@ Router#_\r
             event.accept()
 
 
+_TEXT_EXTENSIONS = {
+    '.txt', '.cfg', '.conf', '.log', '.ini', '.py', '.sh', '.bash', '.zsh',
+    '.json', '.yaml', '.yml', '.xml', '.html', '.htm', '.css', '.js', '.ts',
+    '.md', '.rst', '.csv', '.env', '.toml', '.service', '.rules', '.list',
+    '.repo', '.bat', '.ps1', '.c', '.h', '.cpp', '.java', '.go', '.rb',
+    '.php', '.sql', '.diff', '.patch', '.gitignore', '.gitconfig',
+}
+
+
+class FileEditorHighlighter(QSyntaxHighlighter):
+    """Dark-theme syntax highlighter for the text file editor."""
+
+    def __init__(self, document):
+        super().__init__(document)
+
+        def fmt(color, bold=False, italic=False):
+            f = QTextCharFormat()
+            f.setForeground(QColor(color))
+            if bold:
+                f.setFontWeight(QFont.Weight.Bold)
+            if italic:
+                f.setFontItalic(True)
+            return f
+
+        # Order matters: more specific patterns first
+        self._rules = []
+
+        # IP addresses (before plain numbers)
+        self._rules.append((
+            re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?\b'),
+            fmt('#4ec9b0', bold=True)   # teal
+        ))
+
+        # Section headers  [section]
+        self._rules.append((
+            re.compile(r'^\s*\[.*\]\s*$'),
+            fmt('#c586c0', bold=True)   # purple
+        ))
+
+        # Keywords — Python / shell / network config
+        _kw = (
+            'if', 'else', 'elif', 'for', 'while', 'def', 'class', 'return',
+            'import', 'from', 'as', 'in', 'not', 'and', 'or', 'True', 'False',
+            'None', 'pass', 'break', 'continue', 'try', 'except', 'finally',
+            'with', 'lambda', 'yield', 'global', 'del', 'raise', 'assert',
+            'echo', 'export', 'source', 'alias', 'function',
+            'interface', 'router', 'ip', 'no', 'shutdown', 'description',
+            'vlan', 'switchport', 'access', 'trunk', 'permit', 'deny',
+        )
+        self._rules.append((
+            re.compile(r'\b(' + '|'.join(_kw) + r')\b'),
+            fmt('#569cd6', bold=True)   # blue
+        ))
+
+        # Double-quoted strings
+        self._rules.append((re.compile(r'"[^"\n\\]*(?:\\.[^"\n\\]*)*"'), fmt('#ce9178')))
+        # Single-quoted strings
+        self._rules.append((re.compile(r"'[^'\n\\]*(?:\\.[^'\n\\]*)*'"), fmt('#ce9178')))
+
+        # Numbers (standalone, not part of IP)
+        self._rules.append((re.compile(r'(?<!\d)\b\d+(?:\.\d+)?\b(?!\.)'), fmt('#b5cea8')))
+
+        # Comments — hash, double-slash, semicolon
+        _comment_fmt = fmt('#6a9955', italic=True)
+        self._rules.append((re.compile(r'#[^\n]*'),  _comment_fmt))
+        self._rules.append((re.compile(r'//[^\n]*'), _comment_fmt))
+        self._rules.append((re.compile(r';[^\n]*'),  _comment_fmt))
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+
+
+class FileTextEditor(QDialog):
+    """Simple dark text editor with syntax highlighting."""
+
+    def __init__(self, filename, content, parent=None, save_callback=None):
+        super().__init__(parent)
+        self._filename = filename
+        self._save_callback = save_callback   # callable(str) or None for read-only
+
+        self.setWindowTitle(f"Edit — {filename}")
+        self.resize(900, 650)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        self._editor = QPlainTextEdit()
+        self._editor.setFont(QFont("Monospace", 10))
+        self._editor.setPlainText(content)
+        self._editor.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                selection-background-color: #264f78;
+            }
+        """)
+        self._editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._highlighter = FileEditorHighlighter(self._editor.document())
+        layout.addWidget(self._editor, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        if save_callback:
+            save_btn = QPushButton("Save")
+            save_btn.setFixedWidth(90)
+            save_btn.setStyleSheet("""
+                QPushButton { background-color: #9C27B0; color: white; border: none;
+                    border-radius: 6px; padding: 6px 12px; font-weight: bold; }
+                QPushButton:hover { background-color: #7B1FA2; }
+            """)
+            save_btn.clicked.connect(self._save)
+            btn_row.addWidget(save_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedWidth(90)
+        close_btn.setStyleSheet("""
+            QPushButton { background-color: #555555; color: white; border: none;
+                border-radius: 6px; padding: 6px 12px; font-weight: bold; }
+            QPushButton:hover { background-color: #444444; }
+        """)
+        close_btn.clicked.connect(self.close)
+        btn_row.addWidget(close_btn)
+
+        layout.addLayout(btn_row)
+
+    def _save(self):
+        try:
+            self._save_callback(self._editor.toPlainText())
+            self.setWindowTitle(f"Edit — {self._filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", str(e))
+
+
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -9099,38 +9238,7 @@ class SerialTerminalGUI(QMainWindow):
                 }}
             """
 
-        local_tree_style = """
-            QTreeWidget {
-                background-color: #eaf3fb;
-                border: 1px solid #b3d4e8;
-                border-radius: 6px;
-                color: #1a3a4a;
-                font-size: 9pt;
-            }
-            QTreeWidget::item {
-                padding: 3px 4px;
-                background-color: transparent;
-            }
-            QTreeWidget::item:alternate {
-                background-color: #ddeef8;
-            }
-            QTreeWidget::item:selected {
-                background-color: #1976D2;
-                color: white;
-            }
-            QTreeWidget::item:hover:!selected {
-                background-color: #cce4f7;
-            }
-            QHeaderView::section {
-                background-color: #b3d4e8;
-                color: #1a3a4a;
-                padding: 4px 6px;
-                border: none;
-                font-weight: bold;
-                font-size: 9pt;
-            }
-        """
-        remote_tree_style = """
+        _tree_style = """
             QTreeWidget {
                 background-color: #f3e8fb;
                 border: 1px solid #cba8e0;
@@ -9155,6 +9263,38 @@ class SerialTerminalGUI(QMainWindow):
             QHeaderView::section {
                 background-color: #cba8e0;
                 color: #2a1a3a;
+                padding: 4px 6px;
+                border: none;
+                font-weight: bold;
+                font-size: 9pt;
+            }
+        """
+        local_tree_style = _tree_style
+        remote_tree_style = """
+            QTreeWidget {
+                background-color: #f0f0f0;
+                border: 1px solid #c0c0c0;
+                border-radius: 6px;
+                color: #2a2a2a;
+                font-size: 9pt;
+            }
+            QTreeWidget::item {
+                padding: 3px 4px;
+                background-color: transparent;
+            }
+            QTreeWidget::item:alternate {
+                background-color: #e4e4e4;
+            }
+            QTreeWidget::item:selected {
+                background-color: #757575;
+                color: white;
+            }
+            QTreeWidget::item:hover:!selected {
+                background-color: #dcdcdc;
+            }
+            QHeaderView::section {
+                background-color: #c8c8c8;
+                color: #2a2a2a;
                 padding: 4px 6px;
                 border: none;
                 font-weight: bold;
@@ -9288,7 +9428,6 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_interface.setFixedWidth(combo_width)
         self.tftp_interface.setToolTip("Select network interface for TFTP server")
         self.tftp_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
-        self.update_network_interfaces()
         tftp_layout.addRow("Interface:", self.tftp_interface)
 
         tftp_dir_layout = QHBoxLayout()
@@ -9472,6 +9611,12 @@ class SerialTerminalGUI(QMainWindow):
         ftp_dir_row.addWidget(ftp_browse_btn)
         ftp_dir_row.addStretch()
         ftp_dir_w = QWidget(); ftp_dir_w.setContentsMargins(0,0,0,0); ftp_dir_w.setLayout(ftp_dir_row)
+        self._ftp_srv_interface = QComboBox()
+        self._ftp_srv_interface.setFixedWidth(combo_width)
+        self._ftp_srv_interface.setToolTip("Select network interface for FTP server")
+        self._ftp_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
+        ftp_srv_form.addRow("Interface:", self._ftp_srv_interface)
+
         ftp_srv_form.addRow("Directory:", ftp_dir_w)
 
         self._ftp_srv_port = QLineEdit("21")
@@ -9517,14 +9662,60 @@ class SerialTerminalGUI(QMainWindow):
         ssh_srv_vbox.setContentsMargins(0, 0, 0, 0)
         ssh_srv_vbox.setSpacing(6)
 
+        # SSH config group (Interface + Directory)
+        ssh_cfg_group = QGroupBox()
+        ssh_cfg_form = QFormLayout()
+        ssh_cfg_form.setVerticalSpacing(4)
+        ssh_cfg_form.setContentsMargins(8, 5, 8, 6)
+        ssh_cfg_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        ssh_cfg_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self._ssh_srv_interface = QComboBox()
+        self._ssh_srv_interface.setFixedWidth(combo_width)
+        self._ssh_srv_interface.setToolTip("Select network interface for SSH/SFTP server")
+        self._ssh_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
+        ssh_cfg_form.addRow("Interface:", self._ssh_srv_interface)
+
+        self._ssh_srv_dir = QLineEdit(os.path.expanduser('~'))
+        self._ssh_srv_dir.setFixedWidth(combo_width)
+        self._ssh_srv_dir.setReadOnly(True)
+        self._ssh_srv_dir.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        ssh_browse_btn = QPushButton()
+        ssh_browse_btn.setFixedSize(28, 28)
+        ssh_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
+        ssh_browse_btn.setStyleSheet("""QPushButton{background:#e0e0e0;border:1px solid #bdbdbd;border-radius:6px;}
+            QPushButton:hover{background:#d0d0d0;}""")
+        ssh_browse_btn.clicked.connect(lambda: (
+            d := QFileDialog.getExistingDirectory(self, "SSH/SFTP Root Directory", self._ssh_srv_dir.text()),
+            self._ssh_srv_dir.setText(d) if d else None
+        ))
+        ssh_dir_row = QHBoxLayout()
+        ssh_dir_row.setContentsMargins(0, 0, 0, 0)
+        ssh_dir_row.setSpacing(4)
+        ssh_dir_row.addWidget(self._ssh_srv_dir)
+        ssh_dir_row.addWidget(ssh_browse_btn)
+        ssh_dir_row.addStretch()
+        ssh_dir_w = QWidget(); ssh_dir_w.setContentsMargins(0, 0, 0, 0); ssh_dir_w.setLayout(ssh_dir_row)
+        ssh_cfg_form.addRow("Directory:", ssh_dir_w)
+
+        ssh_cfg_group.setLayout(ssh_cfg_form)
+        ssh_cfg_shadow = QGraphicsDropShadowEffect()
+        ssh_cfg_shadow.setBlurRadius(15); ssh_cfg_shadow.setXOffset(0); ssh_cfg_shadow.setYOffset(2)
+        ssh_cfg_shadow.setColor(QColor(0, 0, 0, 30))
+        ssh_cfg_group.setGraphicsEffect(ssh_cfg_shadow)
+        ssh_srv_vbox.addWidget(ssh_cfg_group)
+
         ssh_srv_group = QGroupBox()
         ssh_srv_inner = QVBoxLayout()
         ssh_srv_inner.setContentsMargins(12, 10, 12, 12)
         ssh_srv_inner.setSpacing(8)
 
         ssh_info = QLabel(
-            "<b>SSH Server (sshd)</b><br><br>"
+            "<b>SSH Server (sshd) — File transfer via SFTP</b><br><br>"
             "The SSH server is managed by your system's OpenSSH service.<br>"
+            "File transfers use the <b>SFTP</b> subsystem (SSH File Transfer Protocol).<br>"
             "Omnicom can show its status and start/stop it via systemctl."
         )
         ssh_info.setWordWrap(True)
@@ -9562,6 +9753,51 @@ class SerialTerminalGUI(QMainWindow):
         smb_srv_vbox = QVBoxLayout()
         smb_srv_vbox.setContentsMargins(0, 0, 0, 0)
         smb_srv_vbox.setSpacing(6)
+
+        # SMB config group (Interface + Directory)
+        smb_cfg_group = QGroupBox()
+        smb_cfg_form = QFormLayout()
+        smb_cfg_form.setVerticalSpacing(4)
+        smb_cfg_form.setContentsMargins(8, 5, 8, 6)
+        smb_cfg_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        smb_cfg_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self._smb_srv_interface = QComboBox()
+        self._smb_srv_interface.setFixedWidth(combo_width)
+        self._smb_srv_interface.setToolTip("Select network interface for SMB server")
+        self._smb_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
+        smb_cfg_form.addRow("Interface:", self._smb_srv_interface)
+
+        self._smb_srv_dir = QLineEdit(os.path.expanduser('~'))
+        self._smb_srv_dir.setFixedWidth(combo_width)
+        self._smb_srv_dir.setReadOnly(True)
+        self._smb_srv_dir.setStyleSheet("""
+            QLineEdit { border:1px solid #d0d0d0; border-radius:6px; padding:2px 8px;
+                        background:#f5f5f5; color:#333333; font-size:9pt; }""")
+        smb_browse_btn = QPushButton()
+        smb_browse_btn.setFixedSize(28, 28)
+        smb_browse_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
+        smb_browse_btn.setStyleSheet("""QPushButton{background:#e0e0e0;border:1px solid #bdbdbd;border-radius:6px;}
+            QPushButton:hover{background:#d0d0d0;}""")
+        smb_browse_btn.clicked.connect(lambda: (
+            d := QFileDialog.getExistingDirectory(self, "SMB Share Directory", self._smb_srv_dir.text()),
+            self._smb_srv_dir.setText(d) if d else None
+        ))
+        smb_dir_row = QHBoxLayout()
+        smb_dir_row.setContentsMargins(0, 0, 0, 0)
+        smb_dir_row.setSpacing(4)
+        smb_dir_row.addWidget(self._smb_srv_dir)
+        smb_dir_row.addWidget(smb_browse_btn)
+        smb_dir_row.addStretch()
+        smb_dir_w = QWidget(); smb_dir_w.setContentsMargins(0, 0, 0, 0); smb_dir_w.setLayout(smb_dir_row)
+        smb_cfg_form.addRow("Directory:", smb_dir_w)
+
+        smb_cfg_group.setLayout(smb_cfg_form)
+        smb_cfg_shadow = QGraphicsDropShadowEffect()
+        smb_cfg_shadow.setBlurRadius(15); smb_cfg_shadow.setXOffset(0); smb_cfg_shadow.setYOffset(2)
+        smb_cfg_shadow.setColor(QColor(0, 0, 0, 30))
+        smb_cfg_group.setGraphicsEffect(smb_cfg_shadow)
+        smb_srv_vbox.addWidget(smb_cfg_group)
 
         smb_srv_group = QGroupBox()
         smb_srv_inner = QVBoxLayout()
@@ -9602,6 +9838,9 @@ class SerialTerminalGUI(QMainWindow):
         smb_srv_vbox.addStretch()
         smb_srv_widget.setLayout(smb_srv_vbox)
         self._ft_server_stack.addWidget(smb_srv_widget)   # index 3: SMB
+
+        # Populate all interface combos now that all four have been created
+        self.update_network_interfaces()
 
         srv_group_layout.addWidget(self._ft_server_stack, 1)
         srv_group.setLayout(srv_group_layout)
@@ -16178,14 +16417,20 @@ class SerialTerminalGUI(QMainWindow):
 
     def update_network_interfaces(self):
         """Update the list of network interfaces"""
-        self.tftp_interface.clear()
         interfaces = get_network_interfaces()
-
-        if interfaces:
-            for iface, ip, *_ in interfaces:
-                self.tftp_interface.addItem(f"{iface} ({ip})", ip)
-        else:
-            self.tftp_interface.addItem("No interfaces found", "")
+        combos = [
+            self.tftp_interface,
+            self._ftp_srv_interface,
+            self._ssh_srv_interface,
+            self._smb_srv_interface,
+        ]
+        for combo in combos:
+            combo.clear()
+            if interfaces:
+                for iface, ip, *_ in interfaces:
+                    combo.addItem(f"{iface} ({ip})", ip)
+            else:
+                combo.addItem("No interfaces found", "")
 
     def browse_tftp_directory(self):
         """Open dialog to select TFTP directory"""
@@ -16410,10 +16655,13 @@ class SerialTerminalGUI(QMainWindow):
         # Show correct server panel
         proto_idx = {'TFTP': 0, 'FTP': 1, 'SSH': 2, 'SMB': 3}
         self._ft_server_stack.setCurrentIndex(proto_idx.get(proto, 0))
-        # Update bottom button label if in server mode
+        # Update bottom button label
         if self._ft_mode == 'Server':
             is_running = proto == 'TFTP' and self.tftp_process is not None
             self.tftp_btn.setText(f"STOP {proto}" if is_running else f"START {proto}")
+        else:
+            connected = self._ft_conn is not None
+            self.tftp_btn.setText("DISCONNECT" if connected else f"CONNECT {proto}")
 
     def _ft_mode_changed(self, mode):
         self._ft_mode = mode
@@ -16727,12 +16975,51 @@ class SerialTerminalGUI(QMainWindow):
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if is_dir and path:
             self._ft_refresh_local(path)
+        elif path and os.path.splitext(path)[1].lower() in _TEXT_EXTENSIONS:
+            try:
+                with open(path, 'r', errors='replace') as f:
+                    content = f.read()
+            except Exception as e:
+                QMessageBox.warning(self, "Open Error", str(e))
+                return
+
+            def _save_local(text):
+                with open(path, 'w') as f:
+                    f.write(text)
+
+            dlg = FileTextEditor(os.path.basename(path), content, self, _save_local)
+            dlg.exec()
 
     def _ft_remote_double_clicked(self, item, col):
         is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if is_dir and path and self._ft_conn:
             self._ft_refresh_remote(path)
+        elif path and self._ft_conn and os.path.splitext(path)[1].lower() in _TEXT_EXTENSIONS:
+            try:
+                import io
+                buf = io.BytesIO()
+                if 'sftp' in self._ft_conn:
+                    self._ft_conn['sftp'].getfo(path, buf)
+                elif 'ftp' in self._ft_conn:
+                    self._ft_conn['ftp'].retrbinary(f'RETR {path}', buf.write)
+                else:
+                    return
+                content = buf.getvalue().decode('utf-8', errors='replace')
+            except Exception as e:
+                QMessageBox.warning(self, "Open Error", str(e))
+                return
+
+            def _save_remote(text):
+                import io
+                data = text.encode('utf-8')
+                if 'sftp' in self._ft_conn:
+                    self._ft_conn['sftp'].putfo(io.BytesIO(data), path)
+                elif 'ftp' in self._ft_conn:
+                    self._ft_conn['ftp'].storbinary(f'STOR {path}', io.BytesIO(data))
+
+            dlg = FileTextEditor(os.path.basename(path), content, self, _save_remote)
+            dlg.exec()
 
     def _ft_upload(self):
         if not self._ft_conn:
