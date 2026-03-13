@@ -9185,7 +9185,7 @@ class SerialTerminalGUI(QMainWindow):
         for mode in ('Server', 'Client'):
             btn = QPushButton(mode)
             btn.setCheckable(True)
-            btn.setFixedWidth(70)
+            btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setStyleSheet(_toggle_style(PURPLE))
             btn.clicked.connect(lambda _c, m=mode: self._ft_mode_changed(m))
@@ -9205,7 +9205,7 @@ class SerialTerminalGUI(QMainWindow):
         for proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
             btn = QPushButton(proto)
             btn.setCheckable(True)
-            btn.setFixedWidth(60)
+            btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setStyleSheet(_toggle_style(PURPLE))
             btn.clicked.connect(lambda _c, p=proto: self._ft_proto_changed(p))
