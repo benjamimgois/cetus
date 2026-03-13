@@ -9104,7 +9104,7 @@ class SerialTerminalGUI(QMainWindow):
         b_lay.addWidget(div2)
 
         # License / tech row
-        tech_lbl = QLabel("Python 3  ·  PyQt6  ·  MIT License")
+        tech_lbl = QLabel("Python 3  ·  PyQt6  ·  GPL-3.0")
         tech_lbl.setStyleSheet("color: #666688; font-size: 8.5pt; background: transparent;")
         tech_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         b_lay.addWidget(tech_lbl)

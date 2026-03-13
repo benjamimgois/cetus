@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Modern graphical interface for network management with Serial, SSH, TFTP, IP Scanner, SNMP, Traceroute, VulnScan and Speed Test (iPerf3 / fast.com)"
 arch=('any')
 url="https://github.com/benjamimgois/omnicom"
-license=('MIT')
+license=('GPL-3.0-or-later')
 depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo' 'openssh' 'samba' 'iperf3' 'traceroute' 'mtr' 'networkmanager' 'nmap')
 optdepends=('nodejs: required for fast-cli (npm install -g fast-cli) — Speed Test via fast.com'
             'python-pyftpdlib: built-in FTP server support')

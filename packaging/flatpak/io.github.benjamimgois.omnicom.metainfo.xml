@@ -6,7 +6,7 @@
   <summary>Network management GUI with Serial, SSH, SNMP, VulnScan and Speed Test</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
 
   <developer id="io.github.benjamimgois">
     <name>Benjamim Gois</name>
