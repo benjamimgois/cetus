@@ -17,6 +17,7 @@ import ipaddress
 import time
 import csv
 import re
+import math
 import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
@@ -2109,7 +2110,7 @@ class ConnectionWorker(QThread):
 class TracerouteWorker(QThread):
     """Worker thread for traceroute operations"""
 
-    hop_found = pyqtSignal(int, str, str, float)  # hop_num, ip, hostname, latency_ms
+    hop_found = pyqtSignal(int, str, str, float, float)  # hop_num, ip, hostname, latency_ms, stdev_ms
     route_progress = pyqtSignal(int)               # percentage (0-100)
     route_finished = pyqtSignal(int, str)          # total_hops, target_ip
     route_error = pyqtSignal(str)                  # error_message
@@ -2186,11 +2187,11 @@ class TracerouteWorker(QThread):
                 # Parse the line
                 hop_data = self._parse_traceroute_line(line, system)
                 if hop_data:
-                    hop_num, ip, hostname, latency = hop_data
+                    hop_num, ip, hostname, latency, stdev = hop_data
                     self._hops_count += 1
 
                     # Emit hop found signal
-                    self.hop_found.emit(hop_num, ip, hostname, latency)
+                    self.hop_found.emit(hop_num, ip, hostname, latency, stdev)
 
                     # Emit progress
                     progress = min(int((hop_num / self.max_hops) * 100), 99)
@@ -2255,7 +2256,7 @@ class TracerouteWorker(QThread):
 
                     # Check for timeout
                     if '*' in line or 'Request timed out' in line:
-                        return (hop_num, "*", "*", 0.0)
+                        return (hop_num, "*", "*", 0.0, 0.0)
 
                     # Parse latency
                     if latency_str:
@@ -2276,7 +2277,7 @@ class TracerouteWorker(QThread):
                         ip = target
                         hostname = target
 
-                    return (hop_num, ip, hostname, latency)
+                    return (hop_num, ip, hostname, latency, 0.0)
             else:
                 # Linux traceroute format:
                 # " 1  192.168.1.1 (192.168.1.1)  1.234 ms  1.456 ms  1.789 ms"
@@ -2299,18 +2300,24 @@ class TracerouteWorker(QThread):
                     ip = match.group(3) if match.group(3) else match.group(2)
                     latency_str = match.group(4)
 
-                    # Calculate average latency from all values in line
-                    latencies = re.findall(r'([\d.]+)\s+ms', line)
+                    # Calculate average and stdev from all probe values in line
+                    latencies = [float(l) for l in re.findall(r'([\d.]+)\s+ms', line)]
                     if latencies:
-                        latency = sum(float(l) for l in latencies) / len(latencies)
+                        latency = sum(latencies) / len(latencies)
+                        if len(latencies) >= 2:
+                            avg = latency
+                            stdev = math.sqrt(sum((v - avg) ** 2 for v in latencies) / len(latencies))
+                        else:
+                            stdev = 0.0
                     else:
                         latency = float(latency_str)
+                        stdev = 0.0
 
                     # If no hostname, use IP
                     if not hostname or hostname == ip:
                         hostname = ip
 
-                    return (hop_num, ip, hostname, latency)
+                    return (hop_num, ip, hostname, latency, stdev)
 
         except Exception as e:
             # Silently ignore parsing errors for individual lines
@@ -6304,10 +6311,11 @@ class LatencyGraphWidget(QWidget):
                    (100, "#FF6D00", "#FF9100"),
                    (float("inf"), "#FF1744", "#FF6E40")]
 
-    def __init__(self, hops, local_info=None, parent=None):
+    def __init__(self, hops, local_info=None, hop_stats=None, parent=None):
         super().__init__(parent)
         self.hops = hops
         self.local_info = local_info  # (hostname, ip) tuple or None
+        self.hop_stats = hop_stats or {}  # {hop_num: (loss_pct, stdev)}
         self.setMinimumSize(420, 300)
         self.setStyleSheet("background: transparent;")
         self.setMouseTracking(True)
@@ -6677,14 +6685,53 @@ class LatencyGraphWidget(QWidget):
             painter.setPen(QColor(glow_c))
             painter.drawText(bx, by, bw, bh, Qt.AlignmentFlag.AlignCenter, lat_str)
 
+            # stdev / loss badges when hovered
+            if is_hovered and hop_num in self.hop_stats:
+                loss_pct, sd = self.hop_stats[hop_num]
+                painter.setFont(QFont("Monospace", 8))
+                # stdev badge (below latency badge)
+                if sd > 0:
+                    sd_str = f"σ {sd:.1f}ms"
+                    sd_w = painter.fontMetrics().horizontalAdvance(sd_str) + 12
+                    sd_x = int(x_g) - sd_w // 2
+                    sd_y = by + bh + 3
+                    sd_bg = QColor("#263238"); sd_bg.setAlpha(180)
+                    painter.setBrush(sd_bg)
+                    painter.setPen(QPen(QColor("#546E7A"), 1))
+                    painter.drawRoundedRect(sd_x, sd_y, sd_w, 16, 8, 8)
+                    painter.setPen(QColor("#80CBC4"))
+                    painter.drawText(sd_x, sd_y, sd_w, 16, Qt.AlignmentFlag.AlignCenter, sd_str)
+                # loss badge
+                if loss_pct > 0:
+                    loss_str = f"⚠ {loss_pct:.1f}%"
+                    lw = painter.fontMetrics().horizontalAdvance(loss_str) + 12
+                    lx = int(x_g) - lw // 2
+                    ly = by + bh + (22 if sd > 0 else 3)
+                    loss_bg = QColor("#B71C1C"); loss_bg.setAlpha(160)
+                    painter.setBrush(loss_bg)
+                    painter.setPen(QPen(QColor("#EF9A9A"), 1))
+                    painter.drawRoundedRect(lx, ly, lw, 16, 8, 8)
+                    painter.setPen(QColor("#FFCDD2"))
+                    painter.drawText(lx, ly, lw, 16, Qt.AlignmentFlag.AlignCenter, loss_str)
+
         # ── footer ───────────────────────────────────────────────────────────
         painter.setPen(QColor("#4A6080"))
         painter.setFont(QFont("Sans Serif", 8))
         reached = len(valid)
         total_hops = len(self.hops)
         last_lat = valid[-1][3] if valid else 0.0
-        footer = (f"Avg to destination: {last_lat:.1f} ms  ·  "
-                  f"{reached}/{total_hops} hops reached")
+        footer_parts = [
+            f"Avg to destination: {last_lat:.1f} ms",
+            f"{reached}/{total_hops} hops reached",
+        ]
+        if self.hop_stats:
+            sd_vals = [sd for (_, sd) in self.hop_stats.values() if sd > 0]
+            loss_vals = [lp for (lp, _) in self.hop_stats.values() if lp > 0]
+            if sd_vals:
+                footer_parts.append(f"σ avg: {sum(sd_vals)/len(sd_vals):.1f} ms")
+            if loss_vals:
+                footer_parts.append(f"loss: {max(loss_vals):.1f}% (max)")
+        footer = "  ·  ".join(footer_parts)
         painter.drawText(L, T + H + 38, W, 14,
                          Qt.AlignmentFlag.AlignRight, footer)
 
@@ -11626,9 +11673,24 @@ class SerialTerminalGUI(QMainWindow):
         _target_layout = QHBoxLayout(_target_widget)
         _target_layout.setContentsMargins(0, 0, 0, 0)
         _target_layout.setSpacing(8)
+        # Auto-show graph checkbox — lives next to DNS Lookup
+        self.traceroute_autograph_checkbox = QCheckBox("Auto-show graph")
+        self.traceroute_autograph_checkbox.setChecked(True)
+        self.traceroute_autograph_checkbox.setToolTip(
+            "Automatically open the Latency Graph when traceroute starts and update it in real time"
+        )
+        self.traceroute_autograph_checkbox.setStyleSheet("""
+            QCheckBox { color: #333333; font-size: 9pt; spacing: 5px; }
+            QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px;
+                border: 1px solid #d0d0d0; background: #f5f5f5; }
+            QCheckBox::indicator:checked { background: #00BCD4; border-color: #00BCD4; }
+            QCheckBox::indicator:hover { border-color: #00BCD4; }
+        """)
+
         _target_layout.addWidget(self.traceroute_target_input)
         _target_layout.addWidget(_quick_btn)
         _target_layout.addWidget(self.traceroute_dns_checkbox)
+        _target_layout.addWidget(self.traceroute_autograph_checkbox)
         _target_layout.addStretch()
         config_layout.addRow("Target:", _target_widget)
 
@@ -11881,6 +11943,9 @@ class SerialTerminalGUI(QMainWindow):
 
         # Hidden data store for hop visualization (not added to any layout)
         self.traceroute_viz_widget = RouteVisualizationWidget()
+        self._latency_graph_dialog = None
+        self._latency_graph_widget = None
+        self._traceroute_hop_stats = {}  # {hop_num: (loss_pct, stdev)}
 
         # === Results Group ===
         self.traceroute_results_group = QGroupBox("Results")
@@ -13508,6 +13573,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_results_table.setSortingEnabled(False)
         self.traceroute_results_table.setRowCount(0)
         self.traceroute_viz_widget.clear()
+        self._traceroute_hop_stats = {}
 
         # Store method and port for status updates
         self._current_traceroute_method = method
@@ -13536,6 +13602,10 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
+        # Open latency graph immediately if auto-show is enabled
+        if self.traceroute_autograph_checkbox.isChecked():
+            self._show_latency_graph_dialog()
+
         # Create and start worker
         self.traceroute_worker = TracerouteWorker(target, max_hops, timeout, dns_lookup, method, port)
         self.traceroute_worker.hop_found.connect(self._on_traceroute_hop)
@@ -13546,7 +13616,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_worker.route_error.connect(self._on_traceroute_error)
         self.traceroute_worker.start()
 
-    def _on_traceroute_hop(self, hop_num, ip, hostname, latency):
+    def _on_traceroute_hop(self, hop_num, ip, hostname, latency, stdev):
         """Handle new traceroute hop"""
         row = self.traceroute_results_table.rowCount()
         self.traceroute_results_table.insertRow(row)
@@ -13587,12 +13657,30 @@ class SerialTerminalGUI(QMainWindow):
                 latency_item.setForeground(QColor("#F44336"))  # Red
         latency_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.traceroute_results_table.setItem(row, 4, latency_item)
-        
+
+        # StDev column
+        if ip == "*" or stdev == 0.0:
+            stdev_item = QTableWidgetItem("—")
+            stdev_item.setForeground(QColor("#9E9E9E"))
+        else:
+            stdev_item = QTableWidgetItem(f"{stdev:.1f}")
+            stdev_item.setForeground(QColor("#80CBC4"))
+        stdev_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.traceroute_results_table.setItem(row, 5, stdev_item)
+
         # Trigger geoip lookup
         self._trigger_geo_lookup(ip, is_mtr=False, hop_num=None, row_idx=row)
 
+        # Save per-hop stats (loss N/A for single-pass traceroute)
+        self._traceroute_hop_stats[hop_num] = (0.0, stdev)
+
         # Update visualization
         self.traceroute_viz_widget.add_hop(hop_num, ip, hostname, latency)
+
+        # Refresh latency graph in real time if open
+        if self._latency_graph_widget is not None:
+            self._latency_graph_widget.hop_stats = self._traceroute_hop_stats
+            self._latency_graph_widget.update()
 
         # Update group title with method info
         method = getattr(self, '_current_traceroute_method', 'ICMP')
@@ -13620,8 +13708,11 @@ class SerialTerminalGUI(QMainWindow):
 
         self.traceroute_results_table.setSortingEnabled(True)
         self._reset_traceroute_button()
-        # Abre automaticamente o Latency Graph ao finalizar
-        self._show_latency_graph_dialog()
+        # Refresh final graph state; open only if not already visible
+        if self._latency_graph_widget is not None:
+            self._latency_graph_widget.update()
+        elif self.traceroute_autograph_checkbox.isChecked():
+            self._show_latency_graph_dialog()
 
     def _on_traceroute_error(self, error_msg):
         """Handle traceroute error"""
@@ -13695,6 +13786,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_results_table.setRowCount(0)
         self._switch_table_to_mtr_mode()
         self.traceroute_viz_widget.clear()
+        self._traceroute_hop_stats = {}
         self._mtr_hop_rows = {}      # hop_num (0-indexed) → row index
         self._mtr_target  = target
         self._mtr_cycle   = 0
@@ -13717,6 +13809,10 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:hover { background-color: #616161; }
             QPushButton:pressed { background-color: #424242; }
         """)
+
+        # Open latency graph immediately if auto-show is enabled
+        if self.traceroute_autograph_checkbox.isChecked():
+            self._show_latency_graph_dialog()
 
         self.mtr_worker = MtrWorker(target, max_hops, interval, dns_lookup, packets)
         self.mtr_worker.hop_discovered.connect(self._on_mtr_hop_discovered)
@@ -13813,6 +13909,14 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.traceroute_viz_widget.add_hop(display_hop, ip, hostname, avg)
 
+        # Save per-hop stats for graph
+        self._traceroute_hop_stats[display_hop] = (loss_pct, stdev)
+
+        # Refresh latency graph in real time if open
+        if self._latency_graph_widget is not None:
+            self._latency_graph_widget.hop_stats = self._traceroute_hop_stats
+            self._latency_graph_widget.update()
+
     def _on_mtr_cycle(self, cycle_num):
         """Update title with current cycle count"""
         self._mtr_cycle = cycle_num
@@ -13851,9 +13955,12 @@ class SerialTerminalGUI(QMainWindow):
         )
         self._reset_mtr_button()
 
-        # Automatically show latency graph when MTR finishes
+        # Refresh or open latency graph when MTR finishes
         if self.traceroute_viz_widget.hops:
-            self._show_latency_graph_dialog()
+            if self._latency_graph_widget is not None:
+                self._latency_graph_widget.update()
+            elif self.traceroute_autograph_checkbox.isChecked():
+                self._show_latency_graph_dialog()
 
     def _reset_mtr_button(self):
         """Reset button to 'TRACEROUTE' state after MTR (keeps MTR table columns)"""
@@ -13892,24 +13999,27 @@ class SerialTerminalGUI(QMainWindow):
             t.setColumnWidth(col, 72)
         t.setColumnWidth(0, 50)
         t.setColumnWidth(1, 40)
-        # Ocultar colunas Best, Worst e StDev
-        for col in (7, 8, 9):
+        # Ocultar colunas Best e Worst; StDev é visível
+        for col in (7, 8):
             t.setColumnHidden(col, True)
+        t.setColumnHidden(9, False)
 
     def _switch_table_to_traceroute_mode(self):
-        """Restore the results table to standard 5-column traceroute mode"""
+        """Restore the results table to standard 6-column traceroute mode"""
         t = self.traceroute_results_table
-        t.setColumnCount(5)
-        t.setHorizontalHeaderLabels(["Hop", "Cty", "IP Address", "Hostname", "Latency (ms)"])
+        t.setColumnCount(6)
+        t.setHorizontalHeaderLabels(["Hop", "Cty", "IP Address", "Hostname", "Latency (ms)", "StDev (ms)"])
         hdr = t.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         t.setColumnWidth(0, 60)
         t.setColumnWidth(1, 40)
         t.setColumnWidth(4, 100)
+        t.setColumnWidth(5, 90)
 
     def _switch_table_to_ping_mode(self):
         """Switch the results table to 4-column ping mode"""
@@ -14180,7 +14290,13 @@ class SerialTerminalGUI(QMainWindow):
         dialog.exec()
 
     def _show_latency_graph_dialog(self):
-        """Open a dialog showing hop latencies as a smooth line chart"""
+        """Open (or raise) a non-modal dialog showing hop latencies as a smooth line chart"""
+        # Reuse existing dialog if still open
+        if self._latency_graph_dialog is not None and self._latency_graph_dialog.isVisible():
+            self._latency_graph_dialog.raise_()
+            self._latency_graph_dialog.activateWindow()
+            return
+
         dialog = QDialog(self)
         target = self.traceroute_target_input.text().strip()
         dialog.setWindowTitle(f"Latency Graph — {target}" if target else "Latency Graph")
@@ -14191,30 +14307,38 @@ class SerialTerminalGUI(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(0)
 
-        hops = self.traceroute_viz_widget.hops
-        if hops:
-            # Resolve local hostname and outbound IP
-            try:
-                local_hostname = socket.gethostname()
-            except Exception:
-                local_hostname = "localhost"
-            try:
-                _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                _s.connect(("8.8.8.8", 80))
-                local_ip = _s.getsockname()[0]
-                _s.close()
-            except Exception:
-                local_ip = "127.0.0.1"
-            graph = LatencyGraphWidget(hops, local_info=(local_hostname, local_ip))
-            layout.addWidget(graph, 1)
-        else:
-            empty_label = QLabel("No route data yet — run a traceroute first.")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #888888; font-size: 10pt;")
-            layout.addWidget(empty_label)
+        # Resolve local hostname and outbound IP once
+        try:
+            local_hostname = socket.gethostname()
+        except Exception:
+            local_hostname = "localhost"
+        try:
+            _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            _s.connect(("8.8.8.8", 80))
+            local_ip = _s.getsockname()[0]
+            _s.close()
+        except Exception:
+            local_ip = "127.0.0.1"
+
+        graph = LatencyGraphWidget(
+            self.traceroute_viz_widget.hops,
+            local_info=(local_hostname, local_ip),
+            hop_stats=self._traceroute_hop_stats
+        )
+        layout.addWidget(graph, 1)
 
         dialog.setLayout(layout)
-        dialog.exec()
+
+        def _on_closed():
+            self._latency_graph_dialog = None
+            self._latency_graph_widget = None
+
+        dialog.finished.connect(_on_closed)
+
+        self._latency_graph_dialog = dialog
+        self._latency_graph_widget = graph
+
+        dialog.show()
 
     def _traceroute_context_menu(self, pos):
         """Show context menu for traceroute results table"""
