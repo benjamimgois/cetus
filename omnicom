@@ -811,7 +811,6 @@ class TerminalWidget(QTextEdit):
                     dialog.search_input.clear()
                     dialog.search_status.clear()
                     dialog._search_matches = []
-            print(f"[DEBUG] Key pressed, sending: {repr(sequence)}")
             self.send_input.emit(sequence)
 
     # Regex to match complete DCS/SOS/PM/APC sequences (not handled by pyte 0.8.x)
@@ -8374,44 +8373,41 @@ Router#_\r
     def _ssh_read_loop(self):
         """Background thread to read SSH output"""
         import time
-        print("[DEBUG] SSH read thread started")
+        buf = []
+        last_emit = time.monotonic()
+        BATCH_INTERVAL = 0.05  # emit at most 20x/s
+
         while self.ssh_running and self.ssh_channel:
             try:
                 if self.ssh_channel.recv_ready():
-                    data = self.ssh_channel.recv(4096)
+                    data = self.ssh_channel.recv(16384)
                     if data:
-                        text = data.decode('utf-8', errors='replace')
-                        print(f"[DEBUG] Received {len(data)} bytes")
-                        # Use signal for thread-safe UI update
-                        self.ssh_output_received.emit(text)
-                else:
-                    # Small sleep to prevent CPU spinning
-                    time.sleep(0.05)
+                        buf.append(data.decode('utf-8', errors='replace'))
+                now = time.monotonic()
+                if buf and (now - last_emit >= BATCH_INTERVAL or not self.ssh_channel.recv_ready()):
+                    self.ssh_output_received.emit(''.join(buf))
+                    buf.clear()
+                    last_emit = now
+                elif not buf:
+                    time.sleep(0.01)
             except socket.timeout:
                 continue
             except Exception as e:
-                print(f"[DEBUG] SSH read error: {e}")
                 if self.ssh_running:
                     self.ssh_output_received.emit(f"\n[SSH Error: {e}]\n")
                 break
-        print("[DEBUG] SSH read thread ended")
 
     def _on_ssh_output(self, text):
         """Slot to handle SSH output in main thread"""
-        print(f"[DEBUG] _on_ssh_output called with {len(text)} chars")
         self.terminal.append_output(text)
 
     def send_to_ssh(self, text):
         """Send input to SSH channel"""
         if self.ssh_channel and self.ssh_running:
             try:
-                print(f"[DEBUG] Sending: {repr(text)}")
                 self.ssh_channel.send(text.encode('utf-8'))
             except Exception as e:
-                print(f"[DEBUG] Send error: {e}")
                 self.terminal.append_output(f"\n[Send error: {e}]\n")
-        else:
-            print(f"[DEBUG] Cannot send - channel: {self.ssh_channel}, running: {self.ssh_running}")
 
     def _on_terminal_resized(self, cols, rows):
         """Notify the remote PTY about the new terminal size"""
@@ -8477,41 +8473,38 @@ Router#_\r
     def _telnet_read_loop(self):
         """Background thread to read Telnet output"""
         import time
-        print("[DEBUG] Telnet read thread started")
+        buf = []
+        last_emit = time.monotonic()
+        BATCH_INTERVAL = 0.05
+
         while self.telnet_running and self.telnet_client:
             try:
                 data = self.telnet_client.read_very_eager()
                 if data:
-                    text = data.decode('utf-8', errors='replace')
-                    print(f"[DEBUG] Received {len(data)} bytes")
-                    # Use signal for thread-safe UI update
-                    self.ssh_output_received.emit(text)
-                else:
-                    # Small sleep to prevent CPU spinning
-                    time.sleep(0.05)
+                    buf.append(data.decode('utf-8', errors='replace'))
+                now = time.monotonic()
+                if buf and (now - last_emit >= BATCH_INTERVAL or not data):
+                    self.ssh_output_received.emit(''.join(buf))
+                    buf.clear()
+                    last_emit = now
+                elif not buf:
+                    time.sleep(0.01)
             except EOFError:
-                print("[DEBUG] Telnet connection closed")
                 if self.telnet_running:
                     self.ssh_output_received.emit("\n[Connection closed by remote host]\n")
                 break
             except Exception as e:
-                print(f"[DEBUG] Telnet read error: {e}")
                 if self.telnet_running:
                     self.ssh_output_received.emit(f"\n[Telnet Error: {e}]\n")
                 break
-        print("[DEBUG] Telnet read thread ended")
 
     def send_to_telnet(self, text):
         """Send input to Telnet connection"""
         if self.telnet_client and self.telnet_running:
             try:
-                print(f"[DEBUG] Sending: {repr(text)}")
                 self.telnet_client.write(text.encode('utf-8'))
             except Exception as e:
-                print(f"[DEBUG] Send error: {e}")
                 self.terminal.append_output(f"\n[Send error: {e}]\n")
-        else:
-            print(f"[DEBUG] Cannot send - client: {self.telnet_client}, running: {self.telnet_running}")
 
     def disconnect_telnet(self):
         """Disconnect Telnet session"""
