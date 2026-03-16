@@ -601,7 +601,7 @@ class TerminalWidget(QTextEdit):
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.render_screen)
-        self.refresh_timer.start(50)  # Refresh every 50ms
+        self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
 
         # Apply terminal styling
         self.setStyleSheet("""
@@ -1348,21 +1348,26 @@ class TerminalWidget(QTextEdit):
         if self.textCursor().hasSelection() or self.mouse_pressed:
             return
 
-        # Always drain history lines into scrollback buffer (even in scrollback mode)
-        while self.screen.history.top:
+        # Drain history lines — cap per tick to avoid blocking the main thread
+        MAX_HISTORY_PER_TICK = 80
+        processed = 0
+        while self.screen.history.top and processed < MAX_HISTORY_PER_TICK:
             history_line = self.screen.history.top.popleft()
             rendered = self._render_line(history_line, self.screen.columns)
             self._scrollback_lines.append(rendered)
             self._scrollback_dirty = True
             self._render_needed = True
+            processed += 1
 
         # Trim scrollback if it exceeds max
         if len(self._scrollback_lines) > self._max_scrollback:
             self._scrollback_lines = self._scrollback_lines[-self._max_scrollback:]
             self._scrollback_dirty = True
 
-        # Rebuild scrollback cache if needed
-        if self._scrollback_dirty:
+        # Rebuild scrollback cache ONLY when the user is actually viewing it or searching.
+        # During normal streaming this join (up to 5000 HTML lines) was running every 50 ms
+        # and allocating megabytes of string data — the primary cause of UI freezes.
+        if self._scrollback_dirty and (self._in_scrollback_mode or self._search_active):
             self._scrollback_cache = '\n'.join(self._scrollback_lines)
             self._scrollback_dirty = False
 
