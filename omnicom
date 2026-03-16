@@ -6320,6 +6320,32 @@ class LatencyGraphWidget(QWidget):
         self.setStyleSheet("background: transparent;")
         self.setMouseTracking(True)
         self._hovered = None
+        self._zoom_stdev = False
+        self._zoom_btn = QPushButton(self)
+        self._zoom_btn.setFixedSize(30, 30)
+        self._zoom_btn.setCheckable(True)
+        self._zoom_btn.setToolTip("Expandir eixo Y para incluir desvio padrão")
+        self._zoom_btn.setStyleSheet(
+            "QPushButton{background:rgba(26,31,46,180);border:1px solid #2A3A50;"
+            "border-radius:6px;}"
+            "QPushButton:hover{background:rgba(38,50,80,200);border-color:#546E7A;}"
+            "QPushButton:checked{background:rgba(38,80,80,200);border-color:#80CBC4;}"
+        )
+        _sd_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "assets", "icons", "stdev_zoom.svg")
+        _sd_icon = load_svg_icon(_sd_icon_path, 18)
+        if _sd_icon:
+            self._zoom_btn.setIcon(_sd_icon)
+            self._zoom_btn.setIconSize(QSize(18, 18))
+        else:
+            self._zoom_btn.setText("±σ")
+        self._zoom_btn.clicked.connect(
+            lambda checked: (setattr(self, "_zoom_stdev", checked), self.update())
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._zoom_btn.move(self.width() - 20 - self._zoom_btn.width() - 4, 8)
 
     def _color(self, lat):
         for threshold, bar, glow in self._THRESHOLDS:
@@ -6388,6 +6414,12 @@ class LatencyGraphWidget(QWidget):
         total_lat = sum(all_lats)
         max_hop = max((hn for hn, _, _, _ in self.hops), default=1)
         max_lat = max(all_lats, default=100) * 1.18
+        if self._zoom_stdev and self.hop_stats:
+            for hn, _, _, lat in valid:
+                if hn in self.hop_stats:
+                    _, sd = self.hop_stats[hn]
+                    if sd > 0:
+                        max_lat = max(max_lat, (lat + sd) * 1.18)
         max_lat = max(max_lat, 10)
 
         def px(hn):
@@ -6645,6 +6677,26 @@ class LatencyGraphWidget(QWidget):
             painter.setBrush(pt_grad)
             painter.setPen(QPen(QColor("#FFFFFF"), 2 if is_hovered else 0))
             painter.drawEllipse(int(x_g) - r, int(y_g) - r, r * 2, r * 2)
+
+            # ── stdev range markers (subtle dots above/below mean) ───────────
+            if hop_num in self.hop_stats:
+                _, sd = self.hop_stats[hop_num]
+                if sd > 0:
+                    y_up = py(lat + sd)
+                    y_dn = py(max(lat - sd, 0.1))
+                    painter.save()
+                    sd_col = QColor("#80CBC4")
+                    sd_col.setAlpha(120)
+                    sd_pen = QPen(sd_col)
+                    sd_pen.setWidth(1)
+                    painter.setPen(sd_pen)
+                    painter.drawLine(int(x_g), int(y_up), int(x_g), int(y_dn))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(sd_col)
+                    r_sd = 3
+                    painter.drawEllipse(int(x_g) - r_sd, int(y_up) - r_sd, r_sd * 2, r_sd * 2)
+                    painter.drawEllipse(int(x_g) - r_sd, int(y_dn) - r_sd, r_sd * 2, r_sd * 2)
+                    painter.restore()
 
             # hostname (above point) — larger and brighter on hover
             display = hostname if hostname and hostname != ip else ip
