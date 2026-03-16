@@ -585,6 +585,11 @@ class TerminalWidget(QTextEdit):
         self.screen = pyte.HistoryScreen(columns, lines, history=5000)
         self.stream = pyte.Stream(self.screen)
 
+        # Lock protecting all pyte state (screen/stream) from concurrent access.
+        # The SSH/Telnet worker thread feeds pyte directly; the main thread renders.
+        import threading as _threading
+        self._pyte_lock = _threading.Lock()
+
         # Scrollback buffer: pre-rendered HTML lines that scrolled off the top
         self._scrollback_lines = []
         self._scrollback_cache = ""
@@ -631,12 +636,13 @@ class TerminalWidget(QTextEdit):
 
     def _enter_scrollback_mode(self):
         """Inject scrollback into document so user can browse history"""
-        cursor_x = self.screen.cursor.x
-        cursor_y = self.screen.cursor.y
-        screen_lines = []
-        for y in range(self.screen.lines):
-            cx = cursor_x if y == cursor_y else None
-            screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
+        with self._pyte_lock:
+            cursor_x = self.screen.cursor.x
+            cursor_y = self.screen.cursor.y
+            screen_lines = []
+            for y in range(self.screen.lines):
+                cx = cursor_x if y == cursor_y else None
+                screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
 
         pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
         if self._scrollback_cache:
@@ -864,11 +870,24 @@ class TerminalWidget(QTextEdit):
 
         return text
 
-    def append_output(self, text):
-        """Feed text to pyte terminal emulator"""
+    def feed_from_worker(self, text):
+        """Feed raw SSH/Telnet bytes to pyte — called from worker thread, NOT main thread.
+
+        Strips unhandled escape sequences, acquires the pyte lock, feeds the stream,
+        then marks render as needed.  No Qt calls are made here so it is thread-safe.
+        """
         text = self._strip_unhandled_sequences(text)
         if text:
-            self.stream.feed(text)
+            with self._pyte_lock:
+                self.stream.feed(text)
+            self._render_needed = True  # bool write is atomic under CPython GIL
+
+    def append_output(self, text):
+        """Feed text to pyte terminal emulator (main-thread path, e.g. local echo)."""
+        text = self._strip_unhandled_sequences(text)
+        if text:
+            with self._pyte_lock:
+                self.stream.feed(text)
             self._render_needed = True
 
     def set_vendor(self, vendor):
@@ -1348,54 +1367,55 @@ class TerminalWidget(QTextEdit):
         if self.textCursor().hasSelection() or self.mouse_pressed:
             return
 
-        # Drain history lines — cap per tick to avoid blocking the main thread
-        MAX_HISTORY_PER_TICK = 80
-        processed = 0
-        while self.screen.history.top and processed < MAX_HISTORY_PER_TICK:
-            history_line = self.screen.history.top.popleft()
-            rendered = self._render_line(history_line, self.screen.columns)
-            self._scrollback_lines.append(rendered)
-            self._scrollback_dirty = True
-            self._render_needed = True
-            processed += 1
-
-        # Trim scrollback if it exceeds max
-        if len(self._scrollback_lines) > self._max_scrollback:
-            self._scrollback_lines = self._scrollback_lines[-self._max_scrollback:]
-            self._scrollback_dirty = True
-
-        # Rebuild scrollback cache ONLY when the user is actually viewing it or searching.
-        # During normal streaming this join (up to 5000 HTML lines) was running every 50 ms
-        # and allocating megabytes of string data — the primary cause of UI freezes.
-        if self._scrollback_dirty and (self._in_scrollback_mode or self._search_active):
-            self._scrollback_cache = '\n'.join(self._scrollback_lines)
-            self._scrollback_dirty = False
-
-        # Freeze display while search is active
-        if self._search_active:
-            return
-
-        # In scrollback mode: check if user scrolled back to bottom to exit
-        if self._in_scrollback_mode:
-            scrollbar = self.verticalScrollBar()
-            if scrollbar.maximum() - scrollbar.value() <= 10:
-                self._in_scrollback_mode = False
+        # ── pyte state access under lock ──────────────────────────────────────
+        with self._pyte_lock:
+            # Drain history lines — cap per tick so we never block too long
+            MAX_HISTORY_PER_TICK = 80
+            processed = 0
+            while self.screen.history.top and processed < MAX_HISTORY_PER_TICK:
+                history_line = self.screen.history.top.popleft()
+                rendered = self._render_line(history_line, self.screen.columns)
+                self._scrollback_lines.append(rendered)
+                self._scrollback_dirty = True
                 self._render_needed = True
-            else:
-                return  # Frozen while browsing history
+                processed += 1
 
-        # Nothing changed since last render — skip setHtml entirely
-        if not self._render_needed:
-            return
-        self._render_needed = False
+            # Trim scrollback if it exceeds max
+            if len(self._scrollback_lines) > self._max_scrollback:
+                self._scrollback_lines = self._scrollback_lines[-self._max_scrollback:]
+                self._scrollback_dirty = True
 
-        # Render ONLY the current screen (no scrollback — keeps the HTML small and setHtml fast)
-        cursor_x = self.screen.cursor.x
-        cursor_y = self.screen.cursor.y
-        screen_lines = []
-        for y in range(self.screen.lines):
-            cx = cursor_x if y == cursor_y else None
-            screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
+            # Rebuild scrollback cache only when the user is viewing it or searching
+            if self._scrollback_dirty and (self._in_scrollback_mode or self._search_active):
+                self._scrollback_cache = '\n'.join(self._scrollback_lines)
+                self._scrollback_dirty = False
+
+            # Freeze display while search is active
+            if self._search_active:
+                return
+
+            # In scrollback mode: check if user scrolled back to bottom to exit
+            if self._in_scrollback_mode:
+                scrollbar = self.verticalScrollBar()
+                if scrollbar.maximum() - scrollbar.value() <= 10:
+                    self._in_scrollback_mode = False
+                    self._render_needed = True
+                else:
+                    return  # Frozen while browsing history
+
+            # Nothing changed since last render — skip setHtml entirely
+            if not self._render_needed:
+                return
+            self._render_needed = False
+
+            # Render current screen under lock
+            cursor_x = self.screen.cursor.x
+            cursor_y = self.screen.cursor.y
+            screen_lines = []
+            for y in range(self.screen.lines):
+                cx = cursor_x if y == cursor_y else None
+                screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
+        # ── lock released — Qt calls below are main-thread only ───────────────
 
         pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
         new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
@@ -1433,9 +1453,11 @@ class TerminalWidget(QTextEdit):
         # Match the HTML line-height: 1.2 used in render_screen
         line_height = char_height * 1.2
         rows = max(10, int(available_height / line_height))
-        if cols != self.screen.columns or rows != self.screen.lines:
-            self.screen.resize(rows, cols)
-            self._render_needed = True
+        with self._pyte_lock:
+            if cols != self.screen.columns or rows != self.screen.lines:
+                self.screen.resize(rows, cols)
+                self._render_needed = True
+        if self._render_needed:
             self.size_changed.emit(cols, rows)
 
     def increase_font_size(self):
@@ -8390,7 +8412,8 @@ Router#_\r
                         buf.append(data.decode('utf-8', errors='replace'))
                 now = time.monotonic()
                 if buf and (now - last_emit >= BATCH_INTERVAL or not self.ssh_channel.recv_ready()):
-                    self.ssh_output_received.emit(''.join(buf))
+                    # Feed pyte HERE in the worker thread — avoids blocking the main thread
+                    self.terminal.feed_from_worker(''.join(buf))
                     buf.clear()
                     last_emit = now
                 elif not buf:
@@ -8403,7 +8426,7 @@ Router#_\r
                 break
 
     def _on_ssh_output(self, text):
-        """Slot to handle SSH output in main thread"""
+        """Slot for error/status messages that need to appear in the terminal."""
         self.terminal.append_output(text)
 
     def send_to_ssh(self, text):
@@ -8489,7 +8512,7 @@ Router#_\r
                     buf.append(data.decode('utf-8', errors='replace'))
                 now = time.monotonic()
                 if buf and (now - last_emit >= BATCH_INTERVAL or not data):
-                    self.ssh_output_received.emit(''.join(buf))
+                    self.terminal.feed_from_worker(''.join(buf))
                     buf.clear()
                     last_emit = now
                 elif not buf:
