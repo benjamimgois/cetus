@@ -8633,6 +8633,12 @@ Router#_\r
 
         self.close()
     
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Clear transient parent so the WM treats this as a fully independent window
+        if self.windowHandle():
+            self.windowHandle().setTransientParent(None)
+
     def closeEvent(self, event):
         """Handle window close event"""
         is_connected = False
@@ -16762,6 +16768,15 @@ class SerialTerminalGUI(QMainWindow):
             if os.path.exists(path):
                 return path
         return None
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange and self.isMinimized():
+            QTimer.singleShot(50, self._restore_terminals)
+
+    def _restore_terminals(self):
+        for terminal in list(self.open_terminals):
+            terminal.show()
 
     def apply_styles(self):
         """Apply modern light theme to the application"""
