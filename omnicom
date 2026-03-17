@@ -608,6 +608,25 @@ class TerminalWidget(QTextEdit):
         self.refresh_timer.timeout.connect(self.render_screen)
         self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
 
+        # ── Performance debug instrumentation ─────────────────────────────────
+        # Set to True to print per-phase timing to stderr every 2 seconds.
+        self._DBG = True
+        import time as _time
+        self._dbg_t0 = _time.perf_counter()
+        # feed_from_worker stats
+        self._dbg_feed_calls = 0
+        self._dbg_feed_bytes = 0
+        self._dbg_feed_strip_ms = 0.0
+        self._dbg_feed_pyte_ms = 0.0
+        # render_screen stats
+        self._dbg_render_calls = 0
+        self._dbg_render_skipped = 0
+        self._dbg_render_history_ms = 0.0
+        self._dbg_render_lines_ms = 0.0
+        self._dbg_render_sethtml_ms = 0.0
+        self._dbg_render_total_ms = 0.0
+        # ──────────────────────────────────────────────────────────────────────
+
         # Apply terminal styling
         self.setStyleSheet("""
             QTextEdit {
@@ -876,11 +895,39 @@ class TerminalWidget(QTextEdit):
         Strips unhandled escape sequences, acquires the pyte lock, feeds the stream,
         then marks render as needed.  No Qt calls are made here so it is thread-safe.
         """
+        import time as _t
+        if self._DBG:
+            self._dbg_feed_calls += 1
+            self._dbg_feed_bytes += len(text)
+            t0 = _t.perf_counter()
+
         text = self._strip_unhandled_sequences(text)
+
+        if self._DBG:
+            t1 = _t.perf_counter()
+            self._dbg_feed_strip_ms += (t1 - t0) * 1000
+
         if text:
+            # Cap feed size: pyte is pure-Python (~460 KB/s). Batches larger than 64KB
+            # would hold the lock for 140ms+, freezing render_screen's lock acquisition.
+            # Content beyond the last 64KB scrolls off anyway (history cap = 5000 lines).
+            MAX_FEED_BYTES = 65536  # 64 KB
+            if len(text) > MAX_FEED_BYTES:
+                text = text[-MAX_FEED_BYTES:]
+                nl = text.find('\n')  # align to line boundary to avoid split escape seqs
+                if 0 < nl < 512:
+                    text = text[nl + 1:]
+
+            if self._DBG:
+                t2 = _t.perf_counter()
             with self._pyte_lock:
                 self.stream.feed(text)
+            if self._DBG:
+                self._dbg_feed_pyte_ms += (_t.perf_counter() - t2) * 1000
             self._render_needed = True  # bool write is atomic under CPython GIL
+
+        if self._DBG:
+            self._dbg_report_if_due(_t.perf_counter())
 
     def append_output(self, text):
         """Feed text to pyte terminal emulator (main-thread path, e.g. local echo)."""
@@ -1367,8 +1414,18 @@ class TerminalWidget(QTextEdit):
         if self.textCursor().hasSelection() or self.mouse_pressed:
             return
 
+        import time as _t
+        _t_render_start = _t.perf_counter() if self._DBG else 0
+
         # ── pyte state access under lock ──────────────────────────────────────
-        with self._pyte_lock:
+        # Non-blocking: if the worker is currently feeding pyte, skip this render
+        # cycle instead of blocking the Qt event loop. The timer fires again in 100ms.
+        if not self._pyte_lock.acquire(blocking=False):
+            return
+        screen_lines = None
+        try:
+            _t_locked = _t.perf_counter() if self._DBG else 0
+
             # Drain history lines — cap per tick so we never block too long
             MAX_HISTORY_PER_TICK = 80
             processed = 0
@@ -1379,6 +1436,8 @@ class TerminalWidget(QTextEdit):
                 self._scrollback_dirty = True
                 self._render_needed = True
                 processed += 1
+
+            _t_history_done = _t.perf_counter() if self._DBG else 0
 
             # Trim scrollback if it exceeds max
             if len(self._scrollback_lines) > self._max_scrollback:
@@ -1392,6 +1451,8 @@ class TerminalWidget(QTextEdit):
 
             # Freeze display while search is active
             if self._search_active:
+                if self._DBG:
+                    self._dbg_render_skipped += 1
                 return
 
             # In scrollback mode: check if user scrolled back to bottom to exit
@@ -1401,10 +1462,14 @@ class TerminalWidget(QTextEdit):
                     self._in_scrollback_mode = False
                     self._render_needed = True
                 else:
+                    if self._DBG:
+                        self._dbg_render_skipped += 1
                     return  # Frozen while browsing history
 
             # Nothing changed since last render — skip setHtml entirely
             if not self._render_needed:
+                if self._DBG:
+                    self._dbg_render_skipped += 1
                 return
             self._render_needed = False
 
@@ -1415,7 +1480,13 @@ class TerminalWidget(QTextEdit):
             for y in range(self.screen.lines):
                 cx = cursor_x if y == cursor_y else None
                 screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
+
+            _t_lines_done = _t.perf_counter() if self._DBG else 0
+        finally:
+            self._pyte_lock.release()
         # ── lock released — Qt calls below are main-thread only ───────────────
+        if screen_lines is None:
+            return
 
         pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
         new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
@@ -1428,6 +1499,15 @@ class TerminalWidget(QTextEdit):
         scrollbar = self.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         self.setUpdatesEnabled(True)
+
+        if self._DBG:
+            _now = _t.perf_counter()
+            self._dbg_render_calls += 1
+            self._dbg_render_history_ms += (_t_history_done - _t_locked) * 1000
+            self._dbg_render_lines_ms  += (_t_lines_done  - _t_history_done) * 1000
+            self._dbg_render_sethtml_ms += (_now - _t_lines_done) * 1000
+            self._dbg_render_total_ms  += (_now - _t_render_start) * 1000
+            self._dbg_report_if_due(_now)
 
     def resizeEvent(self, event):
         """Recalculate terminal dimensions when widget is resized"""
@@ -1459,6 +1539,40 @@ class TerminalWidget(QTextEdit):
                 self._render_needed = True
         if self._render_needed:
             self.size_changed.emit(cols, rows)
+
+    def _dbg_report_if_due(self, now):
+        """Print accumulated timing stats to stderr every 2 seconds."""
+        import sys
+        elapsed = now - self._dbg_t0
+        if elapsed < 2.0:
+            return
+        rc = self._dbg_render_calls or 1
+        fc = self._dbg_feed_calls or 1
+        print(
+            f"\n[TERM DBG] ── {elapsed:.1f}s window ──────────────────────────────\n"
+            f"  feed_from_worker : {self._dbg_feed_calls} calls, "
+            f"{self._dbg_feed_bytes/1024:.1f} KB total\n"
+            f"    strip_seq      : {self._dbg_feed_strip_ms/fc:.2f} ms/call avg "
+            f"({self._dbg_feed_strip_ms:.1f} ms total)\n"
+            f"    pyte.feed()    : {self._dbg_feed_pyte_ms/fc:.2f} ms/call avg "
+            f"({self._dbg_feed_pyte_ms:.1f} ms total)\n"
+            f"  render_screen    : {self._dbg_render_calls} rendered, "
+            f"{self._dbg_render_skipped} skipped\n"
+            f"    history drain  : {self._dbg_render_history_ms/rc:.2f} ms/render avg\n"
+            f"    _render_line×N : {self._dbg_render_lines_ms/rc:.2f} ms/render avg\n"
+            f"    setHtml+cursor : {self._dbg_render_sethtml_ms/rc:.2f} ms/render avg\n"
+            f"    total          : {self._dbg_render_total_ms/rc:.2f} ms/render avg "
+            f"({self._dbg_render_total_ms:.0f} ms total)\n"
+            f"──────────────────────────────────────────────────────────────────",
+            file=sys.stderr, flush=True
+        )
+        # Reset accumulators
+        self._dbg_t0 = now
+        self._dbg_feed_calls = self._dbg_feed_bytes = 0
+        self._dbg_feed_strip_ms = self._dbg_feed_pyte_ms = 0.0
+        self._dbg_render_calls = self._dbg_render_skipped = 0
+        self._dbg_render_history_ms = self._dbg_render_lines_ms = 0.0
+        self._dbg_render_sethtml_ms = self._dbg_render_total_ms = 0.0
 
     def increase_font_size(self):
         """Increase terminal font size"""
