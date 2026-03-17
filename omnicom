@@ -1439,7 +1439,9 @@ class TerminalWidget(QTextEdit):
                 rendered = self._render_line(history_line, self.screen.columns)
                 self._scrollback_lines.append(rendered)
                 self._scrollback_dirty = True
-                self._render_needed = True
+                # Do NOT set _render_needed here: history drain only updates the
+                # scrollback buffer, not the visible screen. Setting it caused
+                # spurious setHtml calls every 100ms even when the terminal was idle.
 
             _t_history_done = _t.perf_counter() if self._DBG else 0
 
