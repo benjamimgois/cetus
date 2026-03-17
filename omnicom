@@ -7341,7 +7341,8 @@ class TerminalDialog(QDialog):
     terminal_closed = pyqtSignal()
 
     def __init__(self, parent=None, config=None):
-        super().__init__(parent)
+        super().__init__(None)
+        self.setWindowFlags(Qt.WindowType.Window)
         self.setWindowTitle("Omnicom Terminal")
         self.setMinimumSize(1200, 700)
         self.process = None
