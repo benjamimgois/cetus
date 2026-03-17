@@ -1427,16 +1427,19 @@ class TerminalWidget(QTextEdit):
         try:
             _t_locked = _t.perf_counter() if self._DBG else 0
 
-            # Drain history lines — cap per tick so we never block too long
-            MAX_HISTORY_PER_TICK = 80
-            processed = 0
-            while self.screen.history.top and processed < MAX_HISTORY_PER_TICK:
+            # Drain history lines with a strict time budget (5ms).
+            # _render_line costs ~0.4ms/line, so ≈12 lines per tick at 10fps.
+            # A line-count cap (80) caused 33ms drain time even when idle.
+            DRAIN_BUDGET_S = 0.005  # 5ms budget per render tick
+            _t_drain_start = _t.perf_counter()
+            while self.screen.history.top:
+                if _t.perf_counter() - _t_drain_start >= DRAIN_BUDGET_S:
+                    break
                 history_line = self.screen.history.top.popleft()
                 rendered = self._render_line(history_line, self.screen.columns)
                 self._scrollback_lines.append(rendered)
                 self._scrollback_dirty = True
                 self._render_needed = True
-                processed += 1
 
             _t_history_done = _t.perf_counter() if self._DBG else 0
 
