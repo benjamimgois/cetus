@@ -16851,23 +16851,38 @@ class SerialTerminalGUI(QMainWindow):
             QFormLayout QLabel {
                 color: #4a4a4a;
             }
-            QMessageBox {
-                background-color: #ffffff;
+            QDialog, QMessageBox, QInputDialog {
+                background-color: palette(window);
+                color: palette(window-text);
             }
-            QMessageBox QLabel {
-                color: #2c2c2c;
-                font-size: 10pt;
+            QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel {
+                color: palette(window-text);
+                font-size: 9pt;
+                font-weight: normal;
             }
-            QMessageBox QPushButton {
-                background-color: #4caf50;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                min-width: 80px;
+            QDialog QLineEdit, QInputDialog QLineEdit {
+                background-color: palette(base);
+                color: palette(text);
+                border: 1px solid palette(mid);
+                border-radius: 3px;
+                padding: 4px 6px;
+                font-size: 9pt;
             }
-            QMessageBox QPushButton:hover {
-                background-color: #43a047;
+            QDialog QPushButton, QMessageBox QPushButton, QInputDialog QPushButton {
+                background-color: palette(button);
+                color: palette(button-text);
+                border: 1px solid palette(mid);
+                border-radius: 3px;
+                padding: 4px 12px;
+                min-width: 60px;
+                font-weight: normal;
+                font-size: 9pt;
+            }
+            QDialog QPushButton:hover, QMessageBox QPushButton:hover, QInputDialog QPushButton:hover {
+                background-color: palette(light);
+            }
+            QDialog QPushButton:default, QMessageBox QPushButton:default, QInputDialog QPushButton:default {
+                border: 2px solid palette(highlight);
             }
             QToolTip {
                 background-color: #424242;
