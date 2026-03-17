@@ -7337,6 +7337,8 @@ class TerminalDialog(QDialog):
 
     # Signal for thread-safe terminal output
     ssh_output_received = pyqtSignal(str)
+    # Emitted when the dialog window is actually closed (accepted close event)
+    terminal_closed = pyqtSignal()
 
     def __init__(self, parent=None, config=None):
         super().__init__(parent)
@@ -8708,10 +8710,12 @@ Router#_\r
             if reply == QMessageBox.StandardButton.Yes:
                 self.disconnect()
                 event.accept()
+                self.terminal_closed.emit()
             else:
                 event.ignore()
         else:
             event.accept()
+            self.terminal_closed.emit()
 
 
 _TEXT_EXTENSIONS = {
@@ -18747,7 +18751,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Add to open terminals and show; update button when this dialog closes
         self.open_terminals.append(terminal_dialog)
-        terminal_dialog.destroyed.connect(lambda: self._on_terminal_closed(terminal_dialog))
+        terminal_dialog.terminal_closed.connect(lambda: self._on_terminal_closed(terminal_dialog))
         self._update_ssh_connect_btn()
         terminal_dialog.show()
         # Resize PTY to match actual widget size after dialog is shown
