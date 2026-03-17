@@ -18662,6 +18662,20 @@ class SerialTerminalGUI(QMainWindow):
                     return
                 password = password_input.text()
 
+        # Show connecting state in the button itself
+        self.ssh_connect_btn.setText("Connecting...")
+        self.ssh_connect_btn.setEnabled(False)
+        self.ssh_connect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff9800;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+        """)
         QApplication.processEvents()
 
         # Determine connection type
@@ -18733,12 +18747,38 @@ class SerialTerminalGUI(QMainWindow):
 
         # Add to open terminals and show
         self.open_terminals.append(terminal_dialog)
+        self._reset_ssh_connect_btn()
         terminal_dialog.show()
         # Resize PTY to match actual widget size after dialog is shown
         QTimer.singleShot(100, terminal_dialog.terminal._recalculate_size)
-    
+
+    def _reset_ssh_connect_btn(self):
+        """Restore the SSH connect button to its default ready state."""
+        proto = getattr(self, 'ssh_current_protocol', 'SSH')
+        label = "CONNECT SSH" if proto != "Telnet" else "CONNECT TELNET"
+        self.ssh_connect_btn.setText(label)
+        self.ssh_connect_btn.setEnabled(True)
+        self.ssh_connect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4caf50;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #43a047;
+            }
+            QPushButton:pressed {
+                background-color: #388e3c;
+            }
+        """)
+
     def on_connection_failed(self, error_message):
         """Handle connection failure from worker thread"""
+        self._reset_ssh_connect_btn()
         if error_message:
             QMessageBox.critical(self, "Connection Error", error_message)
 
