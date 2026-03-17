@@ -898,7 +898,6 @@ class TerminalWidget(QTextEdit):
         import time as _t
         if self._DBG:
             self._dbg_feed_calls += 1
-            self._dbg_feed_bytes += len(text)
             t0 = _t.perf_counter()
 
         text = self._strip_unhandled_sequences(text)
@@ -908,10 +907,11 @@ class TerminalWidget(QTextEdit):
             self._dbg_feed_strip_ms += (t1 - t0) * 1000
 
         if text:
-            # Cap feed size: pyte is pure-Python (~460 KB/s). Batches larger than 64KB
-            # would hold the lock for 140ms+, freezing render_screen's lock acquisition.
-            # Content beyond the last 64KB scrolls off anyway (history cap = 5000 lines).
-            MAX_FEED_BYTES = 65536  # 64 KB
+            # Cap feed size so the lock is held for at most ~22ms per call.
+            # pyte is pure-Python (~735 KB/s measured). 16KB ≈ 22ms → lock free
+            # ~78ms per 100ms render window, enough for render_screen to acquire.
+            # Content beyond the last 16KB scrolls off the 5000-line history anyway.
+            MAX_FEED_BYTES = 16384  # 16 KB ≈ 22ms of pyte time
             if len(text) > MAX_FEED_BYTES:
                 text = text[-MAX_FEED_BYTES:]
                 nl = text.find('\n')  # align to line boundary to avoid split escape seqs
@@ -919,6 +919,7 @@ class TerminalWidget(QTextEdit):
                     text = text[nl + 1:]
 
             if self._DBG:
+                self._dbg_feed_bytes += len(text)  # bytes actually fed to pyte (after cap)
                 t2 = _t.perf_counter()
             with self._pyte_lock:
                 self.stream.feed(text)
