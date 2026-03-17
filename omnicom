@@ -18745,17 +18745,28 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.update_vendor_icon(vendor)
             self._pending_vendor = None
 
-        # Add to open terminals and show
+        # Add to open terminals and show; update button when this dialog closes
         self.open_terminals.append(terminal_dialog)
-        self._reset_ssh_connect_btn()
+        terminal_dialog.destroyed.connect(lambda: self._on_terminal_closed(terminal_dialog))
+        self._update_ssh_connect_btn()
         terminal_dialog.show()
         # Resize PTY to match actual widget size after dialog is shown
         QTimer.singleShot(100, terminal_dialog.terminal._recalculate_size)
 
-    def _reset_ssh_connect_btn(self):
-        """Restore the SSH connect button to its default ready state."""
+    def _on_terminal_closed(self, dialog):
+        """Called when a terminal window is destroyed; keeps open_terminals clean."""
+        try:
+            self.open_terminals.remove(dialog)
+        except ValueError:
+            pass
+        self._update_ssh_connect_btn()
+
+    def _update_ssh_connect_btn(self):
+        """Restore the SSH connect button showing current session count."""
         proto = getattr(self, 'ssh_current_protocol', 'SSH')
-        label = "CONNECT SSH" if proto != "Telnet" else "CONNECT TELNET"
+        base = "CONNECT SSH" if proto != "Telnet" else "CONNECT TELNET"
+        n = len(self.open_terminals)
+        label = f"{base}  (Sessions: {n})" if n else base
         self.ssh_connect_btn.setText(label)
         self.ssh_connect_btn.setEnabled(True)
         self.ssh_connect_btn.setStyleSheet("""
@@ -18778,7 +18789,7 @@ class SerialTerminalGUI(QMainWindow):
 
     def on_connection_failed(self, error_message):
         """Handle connection failure from worker thread"""
-        self._reset_ssh_connect_btn()
+        self._update_ssh_connect_btn()
         if error_message:
             QMessageBox.critical(self, "Connection Error", error_message)
 
