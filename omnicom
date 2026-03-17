@@ -262,7 +262,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter
+    QProgressBar, QSpinBox, QSplitter, QStyle
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter
@@ -705,7 +705,7 @@ class TerminalWidget(QTextEdit):
         if action == copy_action:
             text = self.textCursor().selectedText()
             if text:
-                QApplication.clipboard().setText(text)
+                QApplication.clipboard().setText(text.replace('\u2029', '\n'))
         elif action == paste_action:
             self._paste_clipboard(clipboard_text)
         elif action == export_action:
@@ -762,7 +762,7 @@ class TerminalWidget(QTextEdit):
             elif key == Qt.Key.Key_C:
                 text_sel = self.textCursor().selectedText()
                 if text_sel:
-                    QApplication.clipboard().setText(text_sel)
+                    QApplication.clipboard().setText(text_sel.replace('\u2029', '\n'))
                 return
 
         # Handle Ctrl combinations
@@ -7928,27 +7928,6 @@ class TerminalDialog(QDialog):
             }
         """)
 
-        self.disconnect_btn = QPushButton("DISCONNECT")
-        self.disconnect_btn.setAutoDefault(False)
-        self.disconnect_btn.setMinimumHeight(35)
-        self.disconnect_btn.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
-        self.disconnect_btn.clicked.connect(self.disconnect)
-        self.disconnect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f38ba8;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                padding: 8px;
-            }
-            QPushButton:hover {
-                background-color: #f26d8f;
-            }
-            QPushButton:pressed {
-                background-color: #d95a7a;
-            }
-        """)
-
         # Vendor selector
         # Get arrow icon path (same method as main window)
         arrow_path = self.get_arrow_icon_path()
@@ -8076,17 +8055,21 @@ class TerminalDialog(QDialog):
             }
         """
 
-        self.search_prev_btn = QPushButton("▲")
+        self.search_prev_btn = QPushButton()
         self.search_prev_btn.setAutoDefault(False)
         self.search_prev_btn.setFixedSize(30, 35)
         self.search_prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_prev_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
+        self.search_prev_btn.setToolTip("Previous match")
         self.search_prev_btn.setStyleSheet(search_nav_style)
         self.search_prev_btn.clicked.connect(self._search_prev)
 
-        self.search_next_btn = QPushButton("▼")
+        self.search_next_btn = QPushButton()
         self.search_next_btn.setAutoDefault(False)
         self.search_next_btn.setFixedSize(30, 35)
         self.search_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_next_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
+        self.search_next_btn.setToolTip("Next match")
         self.search_next_btn.setStyleSheet(search_nav_style)
         self.search_next_btn.clicked.connect(self._search_next)
 
@@ -8098,8 +8081,6 @@ class TerminalDialog(QDialog):
         button_layout.addWidget(self.search_next_btn)
         button_layout.addWidget(self.search_status)
 
-        button_layout.addStretch()
-        button_layout.addWidget(self.disconnect_btn)
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
@@ -8136,7 +8117,8 @@ class TerminalDialog(QDialog):
             return
         # Enter search mode: inject full scrollback into document and freeze updates
         self.terminal._search_active = True
-        self.terminal._enter_scrollback_mode()
+        if not self.terminal._in_scrollback_mode:
+            self.terminal._enter_scrollback_mode()
         lines = self._get_terminal_lines()
         matches = []
         lower_query = text.lower()
@@ -8195,16 +8177,15 @@ class TerminalDialog(QDialog):
         query_len = len(query)
 
         # Build ExtraSelections for all matches
+        doc = self.terminal.document()
         selections = []
         current_sel = None
         for i, (line_num, col) in enumerate(matches):
-            cursor = self.terminal.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.Start)
-            for _ in range(line_num):
-                cursor.movePosition(QTextCursor.MoveOperation.Down)
-            cursor.movePosition(QTextCursor.MoveOperation.StartOfLine)
-            for _ in range(col):
-                cursor.movePosition(QTextCursor.MoveOperation.Right)
+            block = doc.findBlockByLineNumber(line_num)
+            if not block.isValid():
+                continue
+            cursor = QTextCursor(block)
+            cursor.setPosition(block.position() + col)
             cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, query_len)
 
             sel = QTextEdit.ExtraSelection()
@@ -8213,7 +8194,9 @@ class TerminalDialog(QDialog):
                 # Current match: bright orange
                 fmt.setBackground(QColor("#ff9800"))
                 fmt.setForeground(QColor("#000000"))
-                current_sel = cursor
+                nav_cursor = QTextCursor(block)
+                nav_cursor.setPosition(block.position() + col)
+                current_sel = nav_cursor
             else:
                 # Other matches: yellow
                 fmt.setBackground(QColor("#ffeb3b"))
@@ -8667,8 +8650,6 @@ Router#_\r
         """Handle process termination"""
         self.terminal.append_output(f"\n\n[Process terminated with exit code {exit_code}]\n")
         self.terminal.append_output("You can close this window.\n")
-        self.disconnect_btn.setText("CLOSE")
-    
     def disconnect(self):
         """Disconnect from serial port, SSH, or Telnet"""
         if self.connection_type == 'ssh':
