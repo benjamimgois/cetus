@@ -608,24 +608,7 @@ class TerminalWidget(QTextEdit):
         self.refresh_timer.timeout.connect(self.render_screen)
         self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
 
-        # ── Performance debug instrumentation ─────────────────────────────────
-        # Set to True to print per-phase timing to stderr every 2 seconds.
-        self._DBG = True
-        import time as _time
-        self._dbg_t0 = _time.perf_counter()
-        # feed_from_worker stats
-        self._dbg_feed_calls = 0
-        self._dbg_feed_bytes = 0
-        self._dbg_feed_strip_ms = 0.0
-        self._dbg_feed_pyte_ms = 0.0
-        # render_screen stats
-        self._dbg_render_calls = 0
-        self._dbg_render_skipped = 0
-        self._dbg_render_history_ms = 0.0
-        self._dbg_render_lines_ms = 0.0
-        self._dbg_render_sethtml_ms = 0.0
-        self._dbg_render_total_ms = 0.0
-        # ──────────────────────────────────────────────────────────────────────
+        self._DBG = False  # set True to enable per-phase timing to stderr
 
         # Apply terminal styling
         self.setStyleSheet("""
@@ -911,7 +894,7 @@ class TerminalWidget(QTextEdit):
             # pyte is pure-Python (~735 KB/s measured). 16KB ≈ 22ms → lock free
             # ~78ms per 100ms render window, enough for render_screen to acquire.
             # Content beyond the last 16KB scrolls off the 5000-line history anyway.
-            MAX_FEED_BYTES = 16384  # 16 KB ≈ 22ms of pyte time
+            MAX_FEED_BYTES = 8192  # 8 KB ≈ 11ms of pyte time → lock free ~89ms/100ms
             if len(text) > MAX_FEED_BYTES:
                 text = text[-MAX_FEED_BYTES:]
                 nl = text.find('\n')  # align to line boundary to avoid split escape seqs
