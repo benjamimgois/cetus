@@ -261,7 +261,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QCheckBox, QFileDialog,
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMenu, QScrollArea, QTabWidget, QFrame, QToolButton, QListWidget, QListWidgetItem,
+    QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
     QProgressBar, QSpinBox, QSplitter, QStyle
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
@@ -7369,19 +7369,20 @@ class VendorReferenceDialog(QDialog):
             cat_label.setVisible(category_visible)
 
 
-class TerminalDialog(QDialog):
-    """Dialog window containing the embedded terminal"""
+class TerminalDialog(QWidget):
+    """Widget containing the embedded terminal (lives inside TerminalTabbedWindow tabs
+    or, when detached, inside a DetachedTerminalWindow)."""
 
     # Signal for thread-safe terminal output
     ssh_output_received = pyqtSignal(str)
-    # Emitted when the dialog window is actually closed (accepted close event)
+    # Emitted when the terminal is actually closed (accepted close event)
     terminal_closed = pyqtSignal()
 
     def __init__(self, parent=None, config=None):
-        super().__init__(None)
-        self.setWindowFlags(Qt.WindowType.Window)
+        super().__init__(parent)
         self.setWindowTitle("Omnicom Terminal")
         self.setMinimumSize(1200, 700)
+        self.banner_color = None   # assigned by TerminalTabbedWindow.add_terminal
         self.process = None
         self.sudo_process = None
         self.config = config
@@ -7885,8 +7886,7 @@ class TerminalDialog(QDialog):
     def set_profile_name(self, name):
         """Show the profile name banner at the top of the terminal"""
         if name:
-            color = self.BANNER_COLORS[TerminalDialog._banner_index % len(self.BANNER_COLORS)]
-            TerminalDialog._banner_index += 1
+            color = self.banner_color or self.BANNER_COLORS[0]
             self.profile_label.setText(f"  {name}")
             self.profile_label.setStyleSheet(f"""
                 QLabel {{
@@ -8858,6 +8858,178 @@ class FileTextEditor(QDialog):
             QMessageBox.critical(self, "Save Error", str(e))
 
 
+class DetachableTabBar(QTabBar):
+    """QTabBar with right-click context menu to detach a tab into its own window.
+    Draws a per-tab coloured indicator strip at the top of each tab."""
+    detach_requested = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tab_colors: dict[int, QColor] = {}
+
+    def set_tab_color(self, index: int, color: str):
+        self._tab_colors[index] = QColor(color)
+        self.update()
+
+    def paintEvent(self, event):
+        # Let Qt draw the default tab chrome (text, close button, selection bg…)
+        super().paintEvent(event)
+        # Overlay a coloured strip at the top of each tab
+        painter = QPainter(self)
+        for i in range(self.count()):
+            color = self._tab_colors.get(i)
+            if not color:
+                continue
+            rect = self.tabRect(i)
+            is_selected = (i == self.currentIndex())
+            strip = QColor(color)
+            if not is_selected:
+                strip.setAlpha(140)
+            painter.fillRect(rect.left(), rect.top(), rect.width(), 3 if is_selected else 2, strip)
+        painter.end()
+
+    def contextMenuEvent(self, event):
+        idx = self.tabAt(event.pos())
+        if idx >= 0:
+            menu = QMenu(self)
+            act = menu.addAction("Destacar em janela independente")
+            if menu.exec(event.globalPos()) == act:
+                self.detach_requested.emit(idx)
+
+
+class DetachedTerminalWindow(QMainWindow):
+    """Standalone window that wraps a TerminalDialog after it has been detached
+    from the tabbed view."""
+
+    def __init__(self, dialog: 'TerminalDialog', title: str):
+        super().__init__()
+        self.setWindowTitle(title)
+        self.resize(1200, 720)
+        self._dialog = dialog
+        # Re-parent the dialog widget into this window
+        dialog.setParent(self)
+        self.setCentralWidget(dialog)
+        dialog.show()
+        QTimer.singleShot(100, dialog.terminal._recalculate_size)
+
+    def closeEvent(self, event):
+        # Delegate to TerminalDialog.closeEvent (handles disconnect confirmation)
+        if self._dialog.close():
+            event.accept()
+        else:
+            event.ignore()
+
+
+class TerminalTabbedWindow(QMainWindow):
+    """Single window that hosts all SSH/Telnet terminal sessions as tabs."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Omnicom — Terminais")
+        self.resize(1280, 750)
+
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setTabsClosable(True)
+        self.tab_widget.setMovable(True)
+        self.tab_widget.setDocumentMode(True)
+
+        tab_bar = DetachableTabBar()
+        self.tab_widget.setTabBar(tab_bar)
+        tab_bar.detach_requested.connect(self._detach_tab)
+
+        self.tab_widget.tabCloseRequested.connect(self._close_tab)
+        self.setCentralWidget(self.tab_widget)
+
+        self._detached_windows: list = []  # keep refs so GC doesn't collect them
+
+        self._apply_tab_style()
+
+    def _apply_tab_style(self):
+        # NOTE: no 'color:' rule here — text colour is set per-tab via
+        # setTabTextColor() so it matches each terminal's banner colour.
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane { border: 0; background: #0a0a0a; }
+            QTabBar::tab {
+                background: #1a1a1a;
+                padding: 8px 20px 6px 14px;
+                border: none;
+                border-right: 1px solid #2a2a2a;
+                min-width: 130px;
+            }
+            QTabBar::tab:selected {
+                background: #0d0d0d;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover:!selected { background: #212121; }
+        """)
+
+    def add_terminal(self, dialog: 'TerminalDialog', label: str, color: str):
+        """Add a terminal dialog as a new tab."""
+        tab_bar: DetachableTabBar = self.tab_widget.tabBar()
+        idx = self.tab_widget.addTab(dialog, label)
+        # Colour the tab text AND draw the indicator strip via paintEvent
+        tab_bar.setTabTextColor(idx, QColor(color))
+        tab_bar.set_tab_color(idx, color)
+        self.tab_widget.setCurrentIndex(idx)
+        # Connect terminal_closed to auto-remove this tab
+        dialog.terminal_closed.connect(lambda: self._remove_tab_for_dialog(dialog))
+        QTimer.singleShot(100, dialog.terminal._recalculate_size)
+
+    def _remove_tab_for_dialog(self, dialog: 'TerminalDialog'):
+        """Remove the tab that contains *dialog* (called via terminal_closed signal)."""
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.widget(i) is dialog:
+                self.tab_widget.removeTab(i)
+                break
+        if self.tab_widget.count() == 0:
+            self.close()
+
+    def _close_tab(self, index: int):
+        """Called when user clicks the tab's × button."""
+        widget = self.tab_widget.widget(index)
+        # Trigger TerminalDialog.closeEvent (asks for confirmation if connected).
+        # terminal_closed signal will call _remove_tab_for_dialog on acceptance.
+        widget.close()
+
+    def _detach_tab(self, index: int):
+        """Detach the tab at *index* into its own floating window."""
+        dialog = self.tab_widget.widget(index)
+        label = self.tab_widget.tabText(index)
+        color = self.tab_widget.tabBar().tabTextColor(index)
+
+        # Disconnect the auto-remove handler (the tab no longer owns this dialog)
+        try:
+            dialog.terminal_closed.disconnect(lambda: self._remove_tab_for_dialog(dialog))
+        except Exception:
+            pass
+
+        self.tab_widget.removeTab(index)
+
+        win = DetachedTerminalWindow(dialog, label)
+        # Keep reference so window isn't garbage-collected
+        self._detached_windows.append(win)
+        # Clean up reference when the detached window eventually closes
+        dialog.terminal_closed.connect(lambda: self._detached_windows.remove(win)
+                                        if win in self._detached_windows else None)
+        win.show()
+
+        if self.tab_widget.count() == 0:
+            self.hide()
+
+    def closeEvent(self, event):
+        """Close all terminal tabs (with per-terminal confirmation)."""
+        while self.tab_widget.count() > 0:
+            widget = self.tab_widget.widget(0)
+            if not widget.close():
+                event.ignore()
+                return
+            # If terminal_closed fired synchronously, the tab was already removed.
+            # Guard against it still being present:
+            if self.tab_widget.count() > 0 and self.tab_widget.widget(0) is widget:
+                self.tab_widget.removeTab(0)
+        event.accept()
+
+
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -8866,6 +9038,7 @@ class SerialTerminalGUI(QMainWindow):
         self.resize(750, 780)
         self.terminal_dialog = None
         self.open_terminals = []  # Track multiple open terminals
+        self._terminal_manager: TerminalTabbedWindow | None = None
         self.tftp_process = None
         self._ft_protocol = 'TFTP'
         self._ft_mode = 'Server'
@@ -18559,21 +18732,23 @@ class SerialTerminalGUI(QMainWindow):
         self.connection_worker.start()
     
     def on_connection_ready(self, conn_type, client, channel, host_info):
-        """Handle successful connection from worker thread - create terminal in UI thread"""
-        # Create terminal dialog in UI thread
-        terminal_dialog = TerminalDialog(self, self.config)
-        
-        # Inject the established connection
+        """Handle successful connection from worker thread - create terminal tab in UI thread."""
+        terminal_dialog = TerminalDialog(None, self.config)
+
+        # ── Assign banner colour (cycles through BANNER_COLORS) ──────────────
+        color = TerminalDialog.BANNER_COLORS[
+            TerminalDialog._banner_index % len(TerminalDialog.BANNER_COLORS)
+        ]
+        TerminalDialog._banner_index += 1
+        terminal_dialog.banner_color = color
+
+        # ── Inject the established connection ────────────────────────────────
         if conn_type == 'telnet':
             terminal_dialog.telnet_client = client
             terminal_dialog.telnet_running = True
             terminal_dialog.connection_type = 'telnet'
-            title = f"Omnicom Terminal - Telnet: {host_info[0]}"
-            if self._pending_profile_name:
-                title = f"[{self._pending_profile_name}] {title}"
-            terminal_dialog.setWindowTitle(title)
-            
-            # Start read thread
+            tab_label = self._pending_profile_name or f"Telnet: {host_info[0]}"
+            terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
             terminal_dialog.telnet_read_thread = threading.Thread(
                 target=terminal_dialog._telnet_read_loop, daemon=True
             )
@@ -18583,21 +18758,15 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.ssh_channel = channel
             terminal_dialog.ssh_running = True
             terminal_dialog.connection_type = 'ssh'
-            title = f"Omnicom Terminal - SSH: {host_info[2]}@{host_info[0]}"
-            if self._pending_profile_name:
-                title = f"[{self._pending_profile_name}] {title}"
-            terminal_dialog.setWindowTitle(title)
-            
-            # Start read thread
+            tab_label = self._pending_profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
+            terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
             terminal_dialog.ssh_read_thread = threading.Thread(
                 target=terminal_dialog._ssh_read_loop, daemon=True
             )
             terminal_dialog.ssh_read_thread.start()
 
             # Fallback: if the server's /etc/profile overrides TERM to vt100,
-            # re-assert xterm-256color after the shell has finished its startup
-            # scripts.  The shell buffers our stdin, so this executes after all
-            # profile scripts have run, guaranteeing correct TERM/COLORTERM.
+            # re-assert xterm-256color after profile scripts have run.
             def _inject_term_env():
                 try:
                     if terminal_dialog.ssh_channel and terminal_dialog.ssh_running:
@@ -18608,12 +18777,12 @@ class SerialTerminalGUI(QMainWindow):
                     pass
             QTimer.singleShot(1200, _inject_term_env)
 
-        # Show profile name banner if connecting from Quick Connect
+        # ── Profile banner (coloured label inside the terminal widget) ───────
         if self._pending_profile_name:
             terminal_dialog.set_profile_name(self._pending_profile_name)
             self._pending_profile_name = None
 
-        # Apply vendor syntax highlighting from profile
+        # ── Vendor syntax highlighting ────────────────────────────────────────
         if hasattr(self, '_pending_vendor') and self._pending_vendor:
             vendor = self._pending_vendor
             terminal_dialog.terminal.set_vendor(vendor)
@@ -18623,13 +18792,20 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.update_vendor_icon(vendor)
             self._pending_vendor = None
 
-        # Add to open terminals and show; update button when this dialog closes
+        # ── Track and wire up close signal ───────────────────────────────────
         self.open_terminals.append(terminal_dialog)
-        terminal_dialog.terminal_closed.connect(lambda: self._on_terminal_closed(terminal_dialog))
+        terminal_dialog.terminal_closed.connect(
+            lambda: self._on_terminal_closed(terminal_dialog)
+        )
+
+        # ── Add to tabbed manager window ──────────────────────────────────────
+        if self._terminal_manager is None or not self._terminal_manager.isVisible():
+            self._terminal_manager = TerminalTabbedWindow()
+        self._terminal_manager.add_terminal(terminal_dialog, tab_label, color)
+        self._terminal_manager.show()
+        self._terminal_manager.raise_()
+
         self._update_ssh_connect_btn()
-        terminal_dialog.show()
-        # Resize PTY to match actual widget size after dialog is shown
-        QTimer.singleShot(100, terminal_dialog.terminal._recalculate_size)
 
     def _on_terminal_closed(self, dialog):
         """Called when a terminal window is destroyed; keeps open_terminals clean."""
