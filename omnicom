@@ -1235,7 +1235,7 @@ class TerminalWidget(QTextEdit):
 
         return text
 
-    def get_ansi_color(self, color, is_background=False):
+    def get_ansi_color(self, color, is_background=False, bold=False):
         """Convert pyte color to HTML color code.
 
         Pyte stores colors as:
@@ -1282,6 +1282,14 @@ class TerminalWidget(QTextEdit):
                     return f'#{color}'
                 except ValueError:
                     pass
+            # Bold-is-bright: VTE/Konsole default — bold + basic named color → bright variant.
+            # Only applies to foreground (background colors are never brightened).
+            if bold and not is_background:
+                color = {
+                    'black': 'brightblack', 'red': 'brightred', 'green': 'brightgreen',
+                    'brown': 'brightyellow', 'blue': 'brightblue',
+                    'magenta': 'brightmagenta', 'cyan': 'brightcyan', 'white': 'brightwhite',
+                }.get(color, color)
             return ansi_colors.get(color, default_bg if is_background else default_fg)
 
         # Integer fallback for older pyte versions
@@ -1326,7 +1334,7 @@ class TerminalWidget(QTextEdit):
             while x < columns:
                 char = line_buffer[x]
 
-                fg_color = self.get_ansi_color(char.fg, is_background=False)
+                fg_color = self.get_ansi_color(char.fg, is_background=False, bold=char.bold)
                 bg_color = self.get_ansi_color(char.bg, is_background=True)
 
                 styles = [f'color: {fg_color}']
@@ -1364,7 +1372,7 @@ class TerminalWidget(QTextEdit):
                             break
 
                         next_char = line_buffer[x]
-                        next_fg = self.get_ansi_color(next_char.fg, is_background=False)
+                        next_fg = self.get_ansi_color(next_char.fg, is_background=False, bold=next_char.bold)
                         next_bg = self.get_ansi_color(next_char.bg, is_background=True)
 
                         next_styles = [f'color: {next_fg}']
