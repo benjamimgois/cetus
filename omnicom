@@ -1236,56 +1236,68 @@ class TerminalWidget(QTextEdit):
         return text
 
     def get_ansi_color(self, color, is_background=False):
-        """Convert pyte color to HTML color code"""
-        # ANSI color palette (standard 16 colors)
+        """Convert pyte color to HTML color code.
+
+        Pyte stores colors as:
+          - str 'default'            → terminal default fg/bg
+          - str named  e.g. 'red'   → basic 8 + bright ANSI names
+          - str 6-char hex e.g. 'ff0000' → 256-color AND 24-bit true-color
+          - int                      → legacy fallback (older pyte versions)
+        """
+        # xterm-compatible 16-color palette
         ansi_colors = {
-            'black': '#000000',
-            'red': '#cd0000',
-            'green': '#00cd00',
-            'brown': '#cdcd00',
-            'blue': '#0000ee',
-            'magenta': '#cd00cd',
-            'cyan': '#00cdcd',
-            'white': '#e5e5e5',
-            # Bright variants
-            'brightblack': '#7f7f7f',
-            'brightred': '#ff0000',
-            'brightgreen': '#00ff00',
-            'brightyellow': '#ffff00',
-            'brightblue': '#5c5cff',
+            'black':         '#000000',
+            'red':           '#cd0000',
+            'green':         '#00cd00',
+            'brown':         '#cdcd00',   # dark yellow
+            'blue':          '#0000ee',
+            'magenta':       '#cd00cd',
+            'cyan':          '#00cdcd',
+            'white':         '#e5e5e5',
+            # Bright / high-intensity (AIXTERM 90-97 / 100-107)
+            'brightblack':   '#7f7f7f',
+            'brightred':     '#ff0000',
+            'brightgreen':   '#00ff00',
+            'brightyellow':  '#ffff00',
+            'brightbrown':   '#ffff00',   # pyte names bright-yellow as brightbrown
+            'brightblue':    '#5c5cff',
             'brightmagenta': '#ff00ff',
-            'brightcyan': '#00ffff',
-            'brightwhite': '#ffffff',
+            'bfightmagenta': '#ff00ff',   # pyte typo in BG_AIXTERM
+            'brightcyan':    '#00ffff',
+            'brightwhite':   '#ffffff',
         }
 
-        # Default colors
         default_fg = '#e0e0e0'
         default_bg = 'transparent'
 
         if color == 'default':
             return default_bg if is_background else default_fg
 
-        # Named color
         if isinstance(color, str):
+            # 6-char hex string: pyte stores 256-color AND 24-bit true-color this way
+            # e.g. 'ff0000' (red), '1e90ff' (dodger blue), '87afff' (256-color)
+            if len(color) == 6:
+                try:
+                    int(color, 16)
+                    return f'#{color}'
+                except ValueError:
+                    pass
             return ansi_colors.get(color, default_bg if is_background else default_fg)
 
-        # 256-color palette (simplified - using approximations)
+        # Integer fallback for older pyte versions
         if isinstance(color, int):
             if color < 16:
-                # Standard colors
                 color_names = ['black', 'red', 'green', 'brown', 'blue', 'magenta', 'cyan', 'white',
-                              'brightblack', 'brightred', 'brightgreen', 'brightyellow',
-                              'brightblue', 'brightmagenta', 'brightcyan', 'brightwhite']
+                               'brightblack', 'brightred', 'brightgreen', 'brightyellow',
+                               'brightblue', 'brightmagenta', 'brightcyan', 'brightwhite']
                 return ansi_colors.get(color_names[color], default_bg if is_background else default_fg)
             elif color < 232:
-                # 216 color cube (6x6x6)
                 color -= 16
                 r = (color // 36) * 51
                 g = ((color % 36) // 6) * 51
                 b = (color % 6) * 51
                 return f'#{r:02x}{g:02x}{b:02x}'
             else:
-                # Grayscale
                 gray = 8 + (color - 232) * 10
                 return f'#{gray:02x}{gray:02x}{gray:02x}'
 
