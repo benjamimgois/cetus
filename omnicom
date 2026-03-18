@@ -1271,6 +1271,9 @@ class TerminalWidget(QTextEdit):
         default_bg = 'transparent'
 
         if color == 'default':
+            # Bold + default fg → bright white (matches VTE 'intense colors' default)
+            if bold and not is_background:
+                return '#ffffff'
             return default_bg if is_background else default_fg
 
         if isinstance(color, str):
