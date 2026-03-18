@@ -1488,6 +1488,7 @@ class TerminalWidget(QTextEdit):
             # Render current screen under lock
             cursor_x = self.screen.cursor.x
             cursor_y = self.screen.cursor.y
+
             screen_lines = []
             for y in range(self.screen.lines):
                 cx = cursor_x if y == cursor_y else None
@@ -2249,10 +2250,23 @@ class ConnectionWorker(QThread):
                         allow_agent=False, look_for_keys=False
                     )
                 
-                # Open interactive shell
-                channel = ssh_client.invoke_shell()
+                # Open interactive shell with proper terminal type.
+                # Use low-level API so we can inject COLORTERM between the
+                # PTY request and the shell request.  Many servers override
+                # TERM in /etc/profile; sending TERM via AcceptEnv env request
+                # (which fires AFTER profile scripts on some sshd configs) is
+                # more reliable than the PTY term type alone.
+                transport = ssh_client.get_transport()
+                channel = transport.open_session()
+                channel.get_pty(term='xterm-256color', width=220, height=50)
+                try:
+                    channel.set_environment_variable('TERM', 'xterm-256color')
+                    channel.set_environment_variable('COLORTERM', 'truecolor')
+                except Exception:
+                    pass
+                channel.invoke_shell()
                 channel.settimeout(0.1)
-                
+
                 self.connection_ready.emit('ssh', ssh_client, channel,
                                           (self.host, self.port, self.username))
         except Exception as e:
@@ -8449,7 +8463,20 @@ Router#_\r
             # Request a pseudo-terminal with actual widget dimensions
             cols = self.terminal.screen.columns
             rows = self.terminal.screen.lines
-            self.ssh_channel = self.ssh_client.invoke_shell(term='xterm-256color', width=cols, height=rows)
+            # Open session manually so we can inject env vars between PTY and shell
+            # requests (invoke_shell high-level API doesn't allow this).
+            _transport = self.ssh_client.get_transport()
+            self.ssh_channel = _transport.open_session()
+            self.ssh_channel.get_pty(term='xterm-256color', width=cols, height=rows)
+            try:
+                # COLORTERM=truecolor tells nano/vim/etc. to use full 24-bit colour.
+                # Without it, some apps fall back to bold-only highlighting even when
+                # TERM=xterm-256color.  Many SSH servers restrict AcceptEnv so we
+                # silently ignore failures.
+                self.ssh_channel.set_environment_variable('COLORTERM', 'truecolor')
+            except Exception:
+                pass
+            self.ssh_channel.invoke_shell()
             self.ssh_channel.settimeout(0.1)
             self.ssh_running = True
 
@@ -18566,7 +18593,21 @@ class SerialTerminalGUI(QMainWindow):
                 target=terminal_dialog._ssh_read_loop, daemon=True
             )
             terminal_dialog.ssh_read_thread.start()
-        
+
+            # Fallback: if the server's /etc/profile overrides TERM to vt100,
+            # re-assert xterm-256color after the shell has finished its startup
+            # scripts.  The shell buffers our stdin, so this executes after all
+            # profile scripts have run, guaranteeing correct TERM/COLORTERM.
+            def _inject_term_env():
+                try:
+                    if terminal_dialog.ssh_channel and terminal_dialog.ssh_running:
+                        terminal_dialog.ssh_channel.send(
+                            b'export TERM=xterm-256color COLORTERM=truecolor; printf \'\\033[1A\\033[2K\'\r'
+                        )
+                except Exception:
+                    pass
+            QTimer.singleShot(1200, _inject_term_env)
+
         # Show profile name banner if connecting from Quick Connect
         if self._pending_profile_name:
             terminal_dialog.set_profile_name(self._pending_profile_name)
