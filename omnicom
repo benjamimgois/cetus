@@ -9219,9 +9219,29 @@ class TerminalTabbedWindow(QMainWindow):
 
         self.tab_widget.tabCloseRequested.connect(self._close_tab)
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
-        self.setCentralWidget(self.tab_widget)
 
-        self._detached_windows: list = []  # keep refs so GC doesn't collect them
+        # QStackedWidget lets us swap between tab view and tiled grid view
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self.tab_widget)   # index 0
+        self.setCentralWidget(self._stack)
+
+        self._detached_windows: list = []
+        self._tiled_mode = False
+        self._tiled_info: list = []  # list of (dialog, label, color_str) in tiled mode
+
+        # Grid-view toggle button — placed as the left corner widget of the tab bar
+        self._tile_btn = QToolButton()
+        self._tile_btn.setFixedSize(28, 28)
+        self._tile_btn.setToolTip("Modo grade (até 4 terminais simultâneos)")
+        self._tile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tile_btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 4px; }"
+            "QToolButton:hover { background: #2a2a2a; }"
+            "QToolButton:checked { background: #1a3a4a; }"
+        )
+        self._tile_btn.setIcon(self._make_grid_icon(active=False))
+        self._tile_btn.clicked.connect(self._toggle_tiled_mode)
+        self.tab_widget.setCornerWidget(self._tile_btn, Qt.Corner.TopLeftCorner)
 
         self._apply_tab_style()
 
@@ -9252,6 +9272,205 @@ class TerminalTabbedWindow(QMainWindow):
             QTabBar::tab:hover:!selected { background: #212121; }
         """)
 
+    # ── Tiled / grid mode ─────────────────────────────────────────────────────
+
+    def _make_grid_icon(self, active=False):
+        """Draw a simple 2×2 grid icon; blue when active, grey otherwise."""
+        size = 16
+        px = QPixmap(size, size)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        color = QColor('#4fc3f7') if active else QColor('#909090')
+        p.setPen(color)
+        m, mid = 1, size // 2
+        p.drawRect(m, m, size - 2 * m - 1, size - 2 * m - 1)
+        p.drawLine(mid, m, mid, size - m - 1)
+        p.drawLine(m, mid, size - m - 1, mid)
+        p.end()
+        return QIcon(px)
+
+    def _toggle_tiled_mode(self):
+        if self._tiled_mode:
+            self._exit_tiled_mode()
+        elif self.tab_widget.count() >= 2:
+            self._enter_tiled_mode()
+
+    def _enter_tiled_mode(self):
+        """Move up to 4 tabs into a split-screen grid view."""
+        n = min(self.tab_widget.count(), 4)
+
+        # Capture all tab data while indices are still correct, then remove.
+        # Reading _tab_colors.get(0) inside the removal loop is wrong because
+        # the dict isn't reindexed after removeTab(), so every iteration would
+        # get the same (stale) index-0 color.
+        tab_bar = self.tab_widget.tabBar()
+        self._tiled_info = []
+        for i in range(n):
+            dialog = self.tab_widget.widget(i)
+            label  = self.tab_widget.tabText(i)
+            color  = tab_bar._tab_colors.get(i)
+            color_str = color.name() if color else '#4fc3f7'
+            self._tiled_info.append((dialog, label, color_str))
+        for _ in range(n):
+            self.tab_widget.removeTab(0)
+
+        tiled_widget = self._build_tiled_widget(self._tiled_info)
+        self._stack.addWidget(tiled_widget)       # index 1
+        self._stack.setCurrentWidget(tiled_widget)
+        self._tiled_mode = True
+        self._tile_btn.setIcon(self._make_grid_icon(active=True))
+
+        # Recalculate PTY sizes after the layout settles
+        for dialog, _, _ in self._tiled_info:
+            QTimer.singleShot(200, dialog.terminal._recalculate_size)
+
+    def _make_tiled_panel(self, dialog: 'TerminalDialog', label: str, color: str) -> QWidget:
+        """Wrap a dialog in a panel with a colored title bar showing the host label."""
+        panel = QWidget()
+        panel.setStyleSheet("background: #0a0a0a;")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Title bar with host colour accent
+        title_bar = QWidget()
+        title_bar.setFixedHeight(22)
+        title_bar.setStyleSheet(
+            f"background: #161616; border-bottom: 2px solid {color};"
+        )
+        tb_layout = QHBoxLayout(title_bar)
+        tb_layout.setContentsMargins(8, 0, 6, 0)
+        tb_layout.setSpacing(4)
+
+        dot = QLabel("●")
+        dot.setStyleSheet(f"color: {color}; font-size: 9px; background: transparent;")
+        tb_layout.addWidget(dot)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet("color: #cccccc; font-size: 11px; background: transparent;")
+        tb_layout.addWidget(lbl)
+        tb_layout.addStretch()
+
+        layout.addWidget(title_bar)
+
+        # removeTab() hides the widget — must show() after reparenting into a splitter
+        dialog.show()
+        layout.addWidget(dialog)
+
+        return panel
+
+    def _build_tiled_widget(self, info: list) -> QWidget:
+        """Return a QWidget containing the terminals arranged in a labelled grid.
+
+        info: list of (dialog, label, color_str) tuples.
+        """
+        _SPLITTER_STYLE = """
+            QSplitter::handle:horizontal { background: #2a2a2a; width: 4px; }
+            QSplitter::handle:vertical   { background: #2a2a2a; height: 4px; }
+            QSplitter::handle:hover      { background: #4fc3f7; }
+        """
+
+        panels = [self._make_tiled_panel(d, lbl, col) for d, lbl, col in info]
+
+        container = QWidget()
+        container.setStyleSheet("background: #0a0a0a;")
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Thin header bar with exit-tiled-mode button (always visible in tiled mode)
+        header = QWidget()
+        header.setFixedHeight(28)
+        header.setStyleSheet("background: #111111; border-bottom: 1px solid #2a2a2a;")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(4, 0, 4, 0)
+        header_layout.setSpacing(0)
+        exit_btn = QToolButton()
+        exit_btn.setFixedSize(24, 24)
+        exit_btn.setIcon(self._make_grid_icon(active=True))
+        exit_btn.setToolTip("Exit grid view")
+        exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        exit_btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 2px; }"
+            "QToolButton:hover { background: #2a2a2a; }"
+        )
+        exit_btn.clicked.connect(self._exit_tiled_mode)
+        header_layout.addWidget(exit_btn)
+        header_layout.addStretch()
+        outer.addWidget(header)
+
+        n = len(panels)
+        if n == 1:
+            outer.addWidget(panels[0])
+        elif n == 2:
+            spl = QSplitter(Qt.Orientation.Horizontal)
+            spl.setStyleSheet(_SPLITTER_STYLE)
+            spl.addWidget(panels[0])
+            spl.addWidget(panels[1])
+            spl.setSizes([1, 1])
+            outer.addWidget(spl)
+        elif n == 3:
+            spl = QSplitter(Qt.Orientation.Horizontal)
+            spl.setStyleSheet(_SPLITTER_STYLE)
+            for p in panels:
+                spl.addWidget(p)
+            spl.setSizes([1, 1, 1])
+            outer.addWidget(spl)
+        else:  # n == 4
+            vspl = QSplitter(Qt.Orientation.Vertical)
+            vspl.setStyleSheet(_SPLITTER_STYLE)
+            top = QSplitter(Qt.Orientation.Horizontal)
+            top.setStyleSheet(_SPLITTER_STYLE)
+            top.addWidget(panels[0])
+            top.addWidget(panels[1])
+            top.setSizes([1, 1])
+            bot = QSplitter(Qt.Orientation.Horizontal)
+            bot.setStyleSheet(_SPLITTER_STYLE)
+            bot.addWidget(panels[2])
+            bot.addWidget(panels[3])
+            bot.setSizes([1, 1])
+            vspl.addWidget(top)
+            vspl.addWidget(bot)
+            vspl.setSizes([1, 1])
+            outer.addWidget(vspl)
+
+        return container
+
+    def _exit_tiled_mode(self):
+        """Restore all tiled terminals back into the tab widget."""
+        if not self._tiled_mode:
+            return
+
+        tiled_widget = self._stack.widget(1)
+
+        # Re-insert dialogs as tabs (signals already connected from add_terminal)
+        for dialog, label, color in self._tiled_info:
+            self._reinsert_tab(dialog, label, color)
+
+        self._stack.removeWidget(tiled_widget)
+        tiled_widget.deleteLater()
+
+        self._stack.setCurrentWidget(self.tab_widget)
+        self._tiled_mode = False
+        self._tiled_info = []
+        self._tile_btn.setIcon(self._make_grid_icon(active=False))
+
+        # Recalculate PTY sizes after layout settles
+        for i in range(self.tab_widget.count()):
+            w = self.tab_widget.widget(i)
+            if w and hasattr(w, 'terminal'):
+                QTimer.singleShot(200, w.terminal._recalculate_size)
+
+    def _reinsert_tab(self, dialog: 'TerminalDialog', label: str, color: str):
+        """Add dialog back to the tab widget without reconnecting signals."""
+        tab_bar: DetachableTabBar = self.tab_widget.tabBar()
+        idx = self.tab_widget.addTab(dialog, label)
+        tab_bar.setTabTextColor(idx, QColor(color))
+        tab_bar.set_tab_color(idx, color)
+        self.tab_widget.setCurrentIndex(idx)
+
+    # ── End tiled mode ─────────────────────────────────────────────────────────
+
     def _find_dialog_idx(self, dialog: 'TerminalDialog'):
         """Return the tab index for dialog, or None if not found."""
         for i in range(self.tab_widget.count()):
@@ -9268,6 +9487,9 @@ class TerminalTabbedWindow(QMainWindow):
 
     def add_terminal(self, dialog: 'TerminalDialog', label: str, color: str):
         """Add a terminal dialog as a new tab."""
+        # Exit tiled mode so the new terminal is immediately visible
+        if self._tiled_mode:
+            self._exit_tiled_mode()
         tab_bar: DetachableTabBar = self.tab_widget.tabBar()
         idx = self.tab_widget.addTab(dialog, label)
         # Colour the tab text AND draw the indicator strip via paintEvent
@@ -9283,6 +9505,11 @@ class TerminalTabbedWindow(QMainWindow):
 
     def _remove_tab_for_dialog(self, dialog: 'TerminalDialog'):
         """Remove the tab that contains *dialog* (called via terminal_closed signal)."""
+        if self._tiled_mode:
+            # Exit tiled mode first; the closed dialog won't be re-added
+            self._tiled_info = [(d, l, c) for d, l, c in self._tiled_info if d is not dialog]
+            self._exit_tiled_mode()
+            return
         for i in range(self.tab_widget.count()):
             if self.tab_widget.widget(i) is dialog:
                 self.tab_widget.removeTab(i)
