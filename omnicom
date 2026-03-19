@@ -618,15 +618,17 @@ class TerminalWidget(QTextEdit):
 
         self._DBG = False  # set True to enable per-phase timing to stderr
 
-        # Apply terminal styling
+        # Apply terminal styling — padding via setContentsMargins so Qt shrinks
+        # the viewport by the exact amount, making _recalculate_size accurate.
         self.setStyleSheet("""
             QTextEdit {
                 background-color: #0a0a0a;
                 color: #e0e0e0;
                 border: none;
-                padding: 10px;
             }
         """)
+        self.setContentsMargins(10, 6, 10, 6)
+        self.document().setDocumentMargin(0)
 
     def event(self, event):
         """Intercept Tab key before focus handling"""
@@ -662,6 +664,7 @@ class TerminalWidget(QTextEdit):
 
         self.setUpdatesEnabled(False)
         self.setHtml(full_html)
+        self.document().setDocumentMargin(0)
         scrollbar = self.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         self.setUpdatesEnabled(True)
@@ -1514,6 +1517,7 @@ class TerminalWidget(QTextEdit):
 
         self.setUpdatesEnabled(False)
         self.setHtml(new_html)
+        self.document().setDocumentMargin(0)
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)
@@ -1555,17 +1559,17 @@ class TerminalWidget(QTextEdit):
         char_height = fm.height()
         if char_width <= 0 or char_height <= 0:
             return
-        # Account for padding (10px on each side from stylesheet) and document margin
+        # Margins are handled via setContentsMargins (shrinks the viewport) and
+        # documentMargin=0 (set after every setHtml). The viewport dimensions are
+        # therefore the exact usable text area — no further subtraction needed.
         viewport = self.viewport()
-        doc_margin = self.document().documentMargin()
-        available_width = viewport.width() - 20
-        available_height = viewport.height() - 20 - doc_margin * 2
+        available_width = viewport.width()
+        available_height = viewport.height()
         cols = max(40, int(available_width / char_width))
-        # CSS line-height:1.2 multiplies the font *em* height (ascent+descent),
-        # NOT fm.height() which includes an extra rounding pixel. Using em keeps
-        # the row count in sync with what QTextEdit actually renders.
-        em = fm.ascent() + fm.descent()
-        line_height = em * 1.2
+        # CSS line-height:1.2 is applied to the CSS font-size (pt * screen_dpi / 72),
+        # not to Qt's em (ascent+descent). Use the same formula to stay in sync.
+        css_font_px = self.font().pointSizeF() * self.logicalDpiY() / 72.0
+        line_height = css_font_px * 1.2
         rows = max(10, int(available_height / line_height))
         with self._pyte_lock:
             if cols != self.screen.columns or rows != self.screen.lines:
@@ -7929,7 +7933,7 @@ class TerminalDialog(QWidget):
                     padding: 4px 10px;
                 }}
             """)
-            self.profile_label.setVisible(True)
+            self.profile_label.setVisible(False)  # only shown when detached
 
     def init_ui(self):
         """Initialize the terminal dialog UI"""
@@ -8154,7 +8158,10 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.search_status)
 
 
-        layout.addLayout(button_layout)
+        button_bar = QWidget()
+        button_bar.setStyleSheet("background-color: #1e1e1e;")
+        button_bar.setLayout(button_layout)
+        layout.addWidget(button_bar)
         self.setLayout(layout)
 
     def keyPressEvent(self, event):
@@ -9013,6 +9020,7 @@ class TerminalTabbedWindow(QMainWindow):
         # Connect terminal_closed to auto-remove this tab
         dialog.terminal_closed.connect(lambda: self._remove_tab_for_dialog(dialog))
         QTimer.singleShot(200, dialog.terminal._recalculate_size)
+        QTimer.singleShot(250, dialog.terminal.setFocus)
 
     def _remove_tab_for_dialog(self, dialog: 'TerminalDialog'):
         """Remove the tab that contains *dialog* (called via terminal_closed signal)."""
@@ -9043,6 +9051,8 @@ class TerminalTabbedWindow(QMainWindow):
             pass
 
         self.tab_widget.removeTab(index)
+
+        dialog.profile_label.setVisible(True)  # show banner in detached window
 
         win = DetachedTerminalWindow(dialog, label)
         # Keep reference so window isn't garbage-collected
@@ -16638,11 +16648,43 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        # === Remote Connection Group ===
+        # === Remote Connection Group (collapsible) ===
         ssh_group = QGroupBox("Remote Connection")
+        ssh_group_layout = QVBoxLayout()
+        ssh_group_layout.setContentsMargins(8, 2, 8, 6)
+        ssh_group_layout.setSpacing(2)
+
+        # Toggle button row (always visible, inside the group box)
+        ssh_rc_btn_row = QHBoxLayout()
+        ssh_rc_btn_row.setContentsMargins(0, 0, 0, 0)
+        self.ssh_rc_toggle_btn = QPushButton("^")
+        self.ssh_rc_toggle_btn.setFixedSize(22, 22)
+        self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
+        self.ssh_rc_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        font = QFont("Monospace", 9, QFont.Weight.Bold)
+        font.setStyleHint(QFont.StyleHint.TypeWriter)
+        self.ssh_rc_toggle_btn.setFont(font)
+        self.ssh_rc_toggle_btn.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #b0b0b0;
+                border-radius: 4px;
+                background-color: #e0e0e0;
+                color: #333333;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QPushButton:hover { background-color: #c8c8c8; }
+        """)
+        self.ssh_rc_toggle_btn.clicked.connect(self._toggle_ssh_remote_connection)
+        ssh_rc_btn_row.addStretch()
+        ssh_rc_btn_row.addWidget(self.ssh_rc_toggle_btn)
+        ssh_group_layout.addLayout(ssh_rc_btn_row)
+
+        # Collapsible content widget
+        self.ssh_rc_content = QWidget()
         ssh_layout = QFormLayout()
         ssh_layout.setVerticalSpacing(4)
-        ssh_layout.setContentsMargins(8, 5, 8, 6)
+        ssh_layout.setContentsMargins(0, 4, 0, 0)
         ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Protocol selection (SSH/Telnet) - toggle buttons
@@ -16801,7 +16843,9 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_key_widget.setVisible(False)
         ssh_layout.addRow("Key File:", self.ssh_key_widget)
 
-        ssh_group.setLayout(ssh_layout)
+        self.ssh_rc_content.setLayout(ssh_layout)
+        ssh_group_layout.addWidget(self.ssh_rc_content)
+        ssh_group.setLayout(ssh_group_layout)
 
         # Add shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -18393,6 +18437,35 @@ class SerialTerminalGUI(QMainWindow):
         self.config.set('ssh_profiles', json.dumps(profiles))
         self.refresh_ssh_profiles()
 
+    def _toggle_ssh_remote_connection(self):
+        """Collapse/expand the Remote Connection form with animation."""
+        collapsing = self.ssh_rc_content.maximumHeight() > 0
+
+        if collapsing:
+            start = self.ssh_rc_content.sizeHint().height()
+            end = 0
+            self.ssh_rc_toggle_btn.setText("v")
+            self.ssh_rc_toggle_btn.setToolTip("Expandir Remote Connection")
+        else:
+            start = 0
+            end = self.ssh_rc_content.sizeHint().height()
+            self.ssh_rc_content.setMaximumHeight(0)
+            self.ssh_rc_content.setVisible(True)
+            self.ssh_rc_toggle_btn.setText("^")
+            self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
+
+        anim = QPropertyAnimation(self.ssh_rc_content, b"maximumHeight", self)
+        anim.setDuration(220)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        if collapsing:
+            anim.finished.connect(lambda: self.ssh_rc_content.setVisible(False))
+            anim.finished.connect(lambda: self.ssh_rc_content.setMaximumHeight(16777215))
+        else:
+            anim.finished.connect(lambda: self.ssh_rc_content.setMaximumHeight(16777215))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
 
 
 
@@ -18843,6 +18916,7 @@ class SerialTerminalGUI(QMainWindow):
         self._terminal_manager.add_terminal(terminal_dialog, tab_label, color)
         self._terminal_manager.show()
         self._terminal_manager.raise_()
+        self._terminal_manager.activateWindow()
 
         self._update_ssh_connect_btn()
 
