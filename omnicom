@@ -418,6 +418,7 @@ class ConfigManager:
             'ssh_auth_method': 'password',
             'ssh_key_path': '',
             'ssh_profiles': '[]',
+            'ssh_rc_collapsed': False,
             # Serial profiles
             'serial_profiles': '[]',
             # Vuln scanner
@@ -2283,13 +2284,17 @@ class ConnectionWorker(QThread):
                 # more reliable than the PTY term type alone.
                 transport = ssh_client.get_transport()
                 channel = transport.open_session()
+                # Use a placeholder size — the main thread will resize_pty to
+                # the real terminal dimensions and invoke_shell() BEFORE the
+                # read loop starts, so the MOTD arrives at the correct size.
                 channel.get_pty(term='xterm-256color', width=220, height=50)
                 try:
                     channel.set_environment_variable('TERM', 'xterm-256color')
                     channel.set_environment_variable('COLORTERM', 'truecolor')
                 except Exception:
                     pass
-                channel.invoke_shell()
+                # Do NOT invoke_shell() here — deferred to on_connection_ready
+                # so the shell starts after the PTY is resized correctly.
                 channel.settimeout(0.1)
 
                 self.connection_ready.emit('ssh', ssh_client, channel,
@@ -16657,20 +16662,17 @@ class SerialTerminalGUI(QMainWindow):
         # Toggle button row (always visible, inside the group box)
         ssh_rc_btn_row = QHBoxLayout()
         ssh_rc_btn_row.setContentsMargins(0, 0, 0, 0)
-        self.ssh_rc_toggle_btn = QPushButton("^")
+        self.ssh_rc_toggle_btn = QPushButton()
+        self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
+            QStyle.StandardPixmap.SP_TitleBarShadeButton))
         self.ssh_rc_toggle_btn.setFixedSize(22, 22)
         self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
         self.ssh_rc_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        font = QFont("Monospace", 9, QFont.Weight.Bold)
-        font.setStyleHint(QFont.StyleHint.TypeWriter)
-        self.ssh_rc_toggle_btn.setFont(font)
         self.ssh_rc_toggle_btn.setStyleSheet("""
             QPushButton {
                 border: 1px solid #b0b0b0;
                 border-radius: 4px;
                 background-color: #e0e0e0;
-                color: #333333;
-                font-weight: bold;
                 padding: 0px;
             }
             QPushButton:hover { background-color: #c8c8c8; }
@@ -16846,6 +16848,13 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_rc_content.setLayout(ssh_layout)
         ssh_group_layout.addWidget(self.ssh_rc_content)
         ssh_group.setLayout(ssh_group_layout)
+
+        # Restore collapsed state from config
+        if self.config.get('ssh_rc_collapsed'):
+            self.ssh_rc_content.setVisible(False)
+            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
+                QStyle.StandardPixmap.SP_TitleBarUnshadeButton))
+            self.ssh_rc_toggle_btn.setToolTip("Expandir Remote Connection")
 
         # Add shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -18439,19 +18448,21 @@ class SerialTerminalGUI(QMainWindow):
 
     def _toggle_ssh_remote_connection(self):
         """Collapse/expand the Remote Connection form with animation."""
-        collapsing = self.ssh_rc_content.maximumHeight() > 0
+        collapsing = self.ssh_rc_content.isVisible()
 
         if collapsing:
             start = self.ssh_rc_content.sizeHint().height()
             end = 0
-            self.ssh_rc_toggle_btn.setText("v")
+            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
+                QStyle.StandardPixmap.SP_TitleBarUnshadeButton))
             self.ssh_rc_toggle_btn.setToolTip("Expandir Remote Connection")
         else:
             start = 0
             end = self.ssh_rc_content.sizeHint().height()
             self.ssh_rc_content.setMaximumHeight(0)
             self.ssh_rc_content.setVisible(True)
-            self.ssh_rc_toggle_btn.setText("^")
+            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
+                QStyle.StandardPixmap.SP_TitleBarShadeButton))
             self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
 
         anim = QPropertyAnimation(self.ssh_rc_content, b"maximumHeight", self)
@@ -18462,8 +18473,10 @@ class SerialTerminalGUI(QMainWindow):
         if collapsing:
             anim.finished.connect(lambda: self.ssh_rc_content.setVisible(False))
             anim.finished.connect(lambda: self.ssh_rc_content.setMaximumHeight(16777215))
+            anim.finished.connect(lambda: self.config.set('ssh_rc_collapsed', True))
         else:
             anim.finished.connect(lambda: self.ssh_rc_content.setMaximumHeight(16777215))
+            anim.finished.connect(lambda: self.config.set('ssh_rc_collapsed', False))
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 
@@ -18861,10 +18874,6 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.connection_type = 'telnet'
             tab_label = self._pending_profile_name or f"Telnet: {host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
-            terminal_dialog.telnet_read_thread = threading.Thread(
-                target=terminal_dialog._telnet_read_loop, daemon=True
-            )
-            terminal_dialog.telnet_read_thread.start()
         else:  # SSH
             terminal_dialog.ssh_client = client
             terminal_dialog.ssh_channel = channel
@@ -18872,22 +18881,6 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.connection_type = 'ssh'
             tab_label = self._pending_profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
-            terminal_dialog.ssh_read_thread = threading.Thread(
-                target=terminal_dialog._ssh_read_loop, daemon=True
-            )
-            terminal_dialog.ssh_read_thread.start()
-
-            # Fallback: if the server's /etc/profile overrides TERM to vt100,
-            # re-assert xterm-256color after profile scripts have run.
-            def _inject_term_env():
-                try:
-                    if terminal_dialog.ssh_channel and terminal_dialog.ssh_running:
-                        terminal_dialog.ssh_channel.send(
-                            b'export TERM=xterm-256color COLORTERM=truecolor; printf \'\\033[1A\\033[2K\'\r'
-                        )
-                except Exception:
-                    pass
-            QTimer.singleShot(1200, _inject_term_env)
 
         # ── Profile banner (coloured label inside the terminal widget) ───────
         if self._pending_profile_name:
@@ -18917,6 +18910,47 @@ class SerialTerminalGUI(QMainWindow):
         self._terminal_manager.show()
         self._terminal_manager.raise_()
         self._terminal_manager.activateWindow()
+
+        # ── Start the shell after Qt has fully computed the layout ────────────
+        # A brief timer gives the layout engine one full event-loop cycle to
+        # settle the viewport size. Then we resize pyte + the remote PTY and
+        # invoke_shell(), so the MOTD arrives already at the correct dimensions.
+        if conn_type == 'telnet':
+            terminal_dialog.telnet_read_thread = threading.Thread(
+                target=terminal_dialog._telnet_read_loop, daemon=True
+            )
+            terminal_dialog.telnet_read_thread.start()
+        else:
+            vendor = terminal_dialog.terminal.vendor
+
+            def _launch_ssh_session():
+                terminal_dialog.terminal._recalculate_size()
+                cols = terminal_dialog.terminal.screen.columns
+                rows = terminal_dialog.terminal.screen.lines
+                try:
+                    channel.resize_pty(width=cols, height=rows)
+                except Exception:
+                    pass
+                channel.invoke_shell()
+                terminal_dialog.ssh_read_thread = threading.Thread(
+                    target=terminal_dialog._ssh_read_loop, daemon=True
+                )
+                terminal_dialog.ssh_read_thread.start()
+
+                # Re-assert TERM only for Default vendor (others don't need it).
+                if vendor == 'Default':
+                    def _inject_term_env():
+                        try:
+                            if terminal_dialog.ssh_channel and terminal_dialog.ssh_running:
+                                terminal_dialog.ssh_channel.send(
+                                    b'export TERM=xterm-256color COLORTERM=truecolor;'
+                                    b' printf \'\\033[1A\\033[2K\'\r'
+                                )
+                        except Exception:
+                            pass
+                    QTimer.singleShot(1200, _inject_term_env)
+
+            QTimer.singleShot(80, _launch_ssh_session)
 
         self._update_ssh_connect_btn()
 
