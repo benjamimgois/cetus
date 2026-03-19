@@ -608,6 +608,14 @@ class TerminalWidget(QTextEdit):
         self.refresh_timer.timeout.connect(self.render_screen)
         self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
 
+        # Viewport size tracker: recalculates PTY dimensions when the widget
+        # gets its final layout size (after Qt's layout engine settles).
+        # Runs separately from render_screen to avoid clearing pyte's buffer mid-render.
+        self._last_vp_size = (0, 0)
+        self._vp_check_timer = QTimer()
+        self._vp_check_timer.timeout.connect(self._check_viewport_size)
+        self._vp_check_timer.start(150)
+
         self._DBG = False  # set True to enable per-phase timing to stderr
 
         # Apply terminal styling
@@ -1530,6 +1538,15 @@ class TerminalWidget(QTextEdit):
             return
         self._recalculate_size()
 
+    def _check_viewport_size(self):
+        """Periodically check if the viewport size changed and recalculate PTY dimensions if so.
+        Runs on a separate timer from render_screen to avoid interfering with the pyte buffer."""
+        vp = self.viewport()
+        cur = (vp.width(), vp.height())
+        if cur != self._last_vp_size and cur[0] > 0 and cur[1] > 0:
+            self._last_vp_size = cur
+            self._recalculate_size()
+
     def _recalculate_size(self):
         """Calculate columns and lines from widget size and font metrics, then resize pyte screen"""
         from PyQt6.QtGui import QFontMetricsF
@@ -1538,13 +1555,17 @@ class TerminalWidget(QTextEdit):
         char_height = fm.height()
         if char_width <= 0 or char_height <= 0:
             return
-        # Account for padding (10px on each side from stylesheet)
+        # Account for padding (10px on each side from stylesheet) and document margin
         viewport = self.viewport()
+        doc_margin = self.document().documentMargin()
         available_width = viewport.width() - 20
-        available_height = viewport.height() - 20  # top + bottom padding
+        available_height = viewport.height() - 20 - doc_margin * 2
         cols = max(40, int(available_width / char_width))
-        # Match the HTML line-height: 1.2 used in render_screen
-        line_height = char_height * 1.2
+        # CSS line-height:1.2 multiplies the font *em* height (ascent+descent),
+        # NOT fm.height() which includes an extra rounding pixel. Using em keeps
+        # the row count in sync with what QTextEdit actually renders.
+        em = fm.ascent() + fm.descent()
+        line_height = em * 1.2
         rows = max(10, int(available_height / line_height))
         with self._pyte_lock:
             if cols != self.screen.columns or rows != self.screen.lines:
@@ -7381,7 +7402,7 @@ class TerminalDialog(QWidget):
     def __init__(self, parent=None, config=None):
         super().__init__(parent)
         self.setWindowTitle("Omnicom Terminal")
-        self.setMinimumSize(1200, 700)
+        self.setMinimumSize(400, 300)
         self.banner_color = None   # assigned by TerminalTabbedWindow.add_terminal
         self.process = None
         self.sudo_process = None
@@ -7401,6 +7422,17 @@ class TerminalDialog(QWidget):
 
         # Connect SSH output signal to terminal
         self.ssh_output_received.connect(self._on_ssh_output)
+
+    def resizeEvent(self, event):
+        """Recalculate PTY size whenever the widget is resized (e.g. tab area changes)."""
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self.terminal._recalculate_size)
+
+    def showEvent(self, event):
+        """Recalculate PTY size when this tab becomes visible."""
+        super().showEvent(event)
+        QTimer.singleShot(0, self.terminal._recalculate_size)
+        QTimer.singleShot(300, self.terminal._recalculate_size)
 
     def get_icon_path(self, icon_name, subdir='icons'):
         """Get the path to an icon for different installation types"""
@@ -8938,11 +8970,18 @@ class TerminalTabbedWindow(QMainWindow):
         tab_bar.detach_requested.connect(self._detach_tab)
 
         self.tab_widget.tabCloseRequested.connect(self._close_tab)
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tab_widget)
 
         self._detached_windows: list = []  # keep refs so GC doesn't collect them
 
         self._apply_tab_style()
+
+    def _on_tab_changed(self, index: int):
+        """Recalculate PTY size when the user switches to a tab."""
+        widget = self.tab_widget.widget(index)
+        if widget and hasattr(widget, 'terminal'):
+            QTimer.singleShot(50, widget.terminal._recalculate_size)
 
     def _apply_tab_style(self):
         # NOTE: no 'color:' rule here — text colour is set per-tab via
@@ -8973,7 +9012,7 @@ class TerminalTabbedWindow(QMainWindow):
         self.tab_widget.setCurrentIndex(idx)
         # Connect terminal_closed to auto-remove this tab
         dialog.terminal_closed.connect(lambda: self._remove_tab_for_dialog(dialog))
-        QTimer.singleShot(100, dialog.terminal._recalculate_size)
+        QTimer.singleShot(200, dialog.terminal._recalculate_size)
 
     def _remove_tab_for_dialog(self, dialog: 'TerminalDialog'):
         """Remove the tab that contains *dialog* (called via terminal_closed signal)."""
