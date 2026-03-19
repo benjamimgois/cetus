@@ -656,6 +656,11 @@ class TerminalWidget(QTextEdit):
 
     def _enter_scrollback_mode(self):
         """Inject scrollback into document so user can browse history"""
+        # Rebuild cache if new history lines arrived since the last rebuild
+        if self._scrollback_dirty:
+            self._scrollback_cache = '\n'.join(self._scrollback_lines)
+            self._scrollback_dirty = False
+
         with self._pyte_lock:
             cursor_x = self.screen.cursor.x
             cursor_y = self.screen.cursor.y
@@ -838,6 +843,11 @@ class TerminalWidget(QTextEdit):
                     dialog.search_input.clear()
                     dialog.search_status.clear()
                     dialog._search_matches = []
+            # Scroll-to-bottom on keystroke (Konsole / GNOME Terminal behaviour):
+            # exit scrollback mode so the user can see the response to their input.
+            if self._in_scrollback_mode:
+                self._in_scrollback_mode = False
+                self._render_needed = True
             self.send_input.emit(sequence)
 
     # Regex to match complete DCS/SOS/PM/APC sequences (not handled by pyte 0.8.x)
