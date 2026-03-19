@@ -1535,21 +1535,16 @@ class TerminalWidget(QTextEdit):
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)
 
-        # Scroll to keep the terminal cursor visible.
-        # Always scrolling to maximum breaks after `clear` because the pyte cursor
-        # jumps to (0, 0) while maximum > 0 (due to sub-pixel rounding), placing
-        # line 0 above the visible area.  Instead, compute the target scroll so
-        # the cursor line appears near the bottom of the viewport (normal terminal
-        # behaviour), clamped to 0 so it never scrolls the cursor off the top.
+        # Scroll to follow output.
+        # Normally we scroll to maximum so new output at the bottom stays visible.
+        # Exception: when the cursor is on line 0 (e.g. immediately after `clear`),
+        # sub-pixel rounding can make maximum a few pixels > 0, which is enough to
+        # push line 0 just above the visible area.  In that case scroll to 0 instead.
         scrollbar = self.verticalScrollBar()
-        max_val = scrollbar.maximum()
-        if max_val > 0:
-            css_font_px = self.font().pointSizeF() * self.logicalDpiY() / 72.0
-            line_h = css_font_px * 1.2
-            ideal = int(max(0.0, cursor_y * line_h - self.viewport().height() + line_h * 2))
-            scrollbar.setValue(min(ideal, max_val))
-        else:
+        if cursor_y == 0:
             scrollbar.setValue(0)
+        else:
+            scrollbar.setValue(scrollbar.maximum())
 
         self.setUpdatesEnabled(True)
         self.data_received.emit()
