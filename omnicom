@@ -561,6 +561,7 @@ class TerminalWidget(QTextEdit):
 
     send_input = pyqtSignal(str)
     size_changed = pyqtSignal(int, int)  # columns, lines
+    data_received = pyqtSignal()         # emitted on each screen render (main thread)
 
     def __init__(self, parent=None, columns=120, lines=40):
         super().__init__(parent)
@@ -616,6 +617,12 @@ class TerminalWidget(QTextEdit):
         self._vp_check_timer = QTimer()
         self._vp_check_timer.timeout.connect(self._check_viewport_size)
         self._vp_check_timer.start(150)
+
+        # Cursor blink timer — toggles cursor visibility every 530 ms
+        self._cursor_visible = True
+        self._blink_timer = QTimer()
+        self._blink_timer.timeout.connect(self._on_blink)
+        self._blink_timer.start(530)
 
         self._DBG = False  # set True to enable per-phase timing to stderr
 
@@ -883,6 +890,11 @@ class TerminalWidget(QTextEdit):
             text = text[:-1]
 
         return text
+
+    def _on_blink(self):
+        """Toggle cursor visibility for the blinking effect."""
+        self._cursor_visible = not self._cursor_visible
+        self._render_needed = True
 
     def feed_from_worker(self, text):
         """Feed raw SSH/Telnet bytes to pyte — called from worker thread, NOT main thread.
@@ -1503,7 +1515,7 @@ class TerminalWidget(QTextEdit):
 
             screen_lines = []
             for y in range(self.screen.lines):
-                cx = cursor_x if y == cursor_y else None
+                cx = cursor_x if (y == cursor_y and self._cursor_visible) else None
                 screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns, cursor_x=cx))
 
             _t_lines_done = _t.perf_counter() if self._DBG else 0
@@ -1525,6 +1537,7 @@ class TerminalWidget(QTextEdit):
         scrollbar = self.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         self.setUpdatesEnabled(True)
+        self.data_received.emit()
 
         if self._DBG:
             _now = _t.perf_counter()
@@ -6773,7 +6786,7 @@ class LatencyGraphWidget(QWidget):
             painter.setFont(QFont("Monospace", 7))
             painter.drawText(origin_x - 60, origin_y - 36, 120, 13,
                              Qt.AlignmentFlag.AlignCenter, local_ip)
-        painter.restore()  # brush/pen voltam ao estado anterior — curva verde não é afetada
+        painter.restore()  # restore brush/pen state so the green curve is unaffected
 
         # ── timeout markers ──────────────────────────────────────────────────
         for hop_num, ip, _, lat in self.hops:
@@ -7399,6 +7412,73 @@ class VendorReferenceDialog(QDialog):
             cat_label.setVisible(category_visible)
 
 
+class _DisconnectOverlay(QWidget):
+    """Semi-transparent overlay shown over the terminal when the session ends."""
+
+    reconnect_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        card = QWidget()
+        card.setStyleSheet(
+            "background-color: rgba(18, 18, 18, 230);"
+            " border-radius: 14px;"
+            " border: 1px solid #333333;"
+        )
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(36, 24, 36, 24)
+        card_layout.setSpacing(14)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_lbl = QLabel("⊘")
+        icon_lbl.setStyleSheet("color: #e53935; font-size: 40pt; background: transparent; border: none;")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        msg_lbl = QLabel("Sessão terminada")
+        msg_lbl.setStyleSheet("color: #e0e0e0; font-size: 13pt; font-weight: bold; background: transparent; border: none;")
+        msg_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        close_btn = QPushButton("Fechar aba")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #c0c0c0;
+                border: 1px solid #444444;
+                border-radius: 6px;
+                padding: 8px 24px;
+                font-size: 10pt;
+            }
+            QPushButton:hover { background-color: #3a3a3a; }
+            QPushButton:pressed { background-color: #222222; }
+        """)
+        close_btn.clicked.connect(self._on_close)
+
+        card_layout.addWidget(icon_lbl)
+        card_layout.addWidget(msg_lbl)
+        card_layout.addSpacing(4)
+        card_layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        outer.addWidget(card)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        painter.end()
+
+    def _on_close(self):
+        # Close the parent TerminalDialog tab
+        parent = self.parent()
+        if parent:
+            parent.close()
+
+
 class TerminalDialog(QWidget):
     """Widget containing the embedded terminal (lives inside TerminalTabbedWindow tabs
     or, when detached, inside a DetachedTerminalWindow)."""
@@ -7407,6 +7487,8 @@ class TerminalDialog(QWidget):
     ssh_output_received = pyqtSignal(str)
     # Emitted when the terminal is actually closed (accepted close event)
     terminal_closed = pyqtSignal()
+    # Emitted when the remote session closes unexpectedly (not user-initiated)
+    session_disconnected = pyqtSignal()
 
     def __init__(self, parent=None, config=None):
         super().__init__(parent)
@@ -7436,6 +7518,9 @@ class TerminalDialog(QWidget):
         """Recalculate PTY size whenever the widget is resized (e.g. tab area changes)."""
         super().resizeEvent(event)
         QTimer.singleShot(0, self.terminal._recalculate_size)
+        if hasattr(self, '_disconnect_overlay') and self._disconnect_overlay.isVisible():
+            self._disconnect_overlay.resize(self.terminal.size())
+            self._disconnect_overlay.move(self.terminal.pos())
 
     def showEvent(self, event):
         """Recalculate PTY size when this tab becomes visible."""
@@ -7468,6 +7553,39 @@ class TerminalDialog(QWidget):
         if os.path.exists(root_path):
             return root_path
         return None
+
+    def set_connection_status(self, user='', host='', color='#4caf50', connected=True):
+        """Update the status bar to reflect the current connection state."""
+        if connected:
+            self._conn_dot.setStyleSheet(f"color: {color}; font-size: 9pt; background: transparent;")
+            label = f"{user}@{host}" if user and host else (host or "Conectado")
+            self._conn_label.setText(label)
+            self._conn_label.setStyleSheet("color: #c8c8c8; font-size: 8pt; background: transparent;")
+            self._session_start_time = time.monotonic()
+        else:
+            self._conn_dot.setStyleSheet("color: #e53935; font-size: 9pt; background: transparent;")
+            self._conn_label.setText("Sessão terminada")
+            self._conn_label.setStyleSheet("color: #888888; font-size: 8pt; background: transparent;")
+            self._session_start_time = None
+            self._session_timer_label.setText("")
+
+    def _update_session_timer(self):
+        """Tick the session duration counter in the status bar."""
+        if self._session_start_time is not None:
+            elapsed = int(time.monotonic() - self._session_start_time)
+            h, rem = divmod(elapsed, 3600)
+            m, s = divmod(rem, 60)
+            self._session_timer_label.setText(
+                f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+            )
+
+    def _on_session_ended(self):
+        """Called via session_disconnected signal — update status and show overlay."""
+        self.set_connection_status(connected=False)
+        self._disconnect_overlay.resize(self.terminal.size())
+        self._disconnect_overlay.move(self.terminal.pos())
+        self._disconnect_overlay.show()
+        self._disconnect_overlay.raise_()
 
     def get_arrow_icon_path(self):
         """Get the path to arrow_down.svg"""
@@ -7957,8 +8075,43 @@ class TerminalDialog(QWidget):
         self.terminal.size_changed.connect(self._on_terminal_resized)
         self.terminal.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.terminal, 1)
-        
-        # Control buttons
+
+        # ── Status bar ─────────────────────────────────────────────────────────
+        self._status_bar = QWidget()
+        self._status_bar.setFixedHeight(24)
+        self._status_bar.setStyleSheet("background-color: #111111; border-top: 1px solid #252525;")
+        _sb_layout = QHBoxLayout(self._status_bar)
+        _sb_layout.setContentsMargins(10, 0, 10, 0)
+        _sb_layout.setSpacing(6)
+
+        self._conn_dot = QLabel("●")
+        self._conn_dot.setStyleSheet("color: #3a3a3a; font-size: 9pt; background: transparent;")
+        self._conn_label = QLabel("Não conectado")
+        self._conn_label.setStyleSheet("color: #606060; font-size: 8pt; background: transparent;")
+        self._session_timer_label = QLabel("")
+        self._session_timer_label.setStyleSheet("color: #505050; font-size: 8pt; background: transparent;")
+
+        _sb_layout.addWidget(self._conn_dot)
+        _sb_layout.addWidget(self._conn_label)
+        _sb_layout.addStretch()
+        _sb_layout.addWidget(self._session_timer_label)
+        layout.addWidget(self._status_bar)
+
+        self._session_start_time = None
+        self._session_elapsed_timer = QTimer()
+        self._session_elapsed_timer.timeout.connect(self._update_session_timer)
+        self._session_elapsed_timer.start(1000)
+
+        # ── Gradient separator ─────────────────────────────────────────────────
+        _grad_sep = QWidget()
+        _grad_sep.setFixedHeight(6)
+        _grad_sep.setStyleSheet(
+            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            " stop:0 #252525, stop:1 #1e1e1e);"
+        )
+        layout.addWidget(_grad_sep)
+
+        # ── Control buttons ────────────────────────────────────────────────────
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(10, 5, 10, 10)
 
@@ -8091,13 +8244,26 @@ class TerminalDialog(QWidget):
         initial_vendor = self.vendor_combo.currentText()
         self.update_vendor_icon(initial_vendor)
 
+        def _make_vsep():
+            s = QFrame()
+            s.setFrameShape(QFrame.Shape.VLine)
+            s.setFixedWidth(1)
+            s.setStyleSheet("background-color: #333333; border: none;")
+            return s
+
+        # Group 1 – font size
         button_layout.addWidget(self.font_decrease_btn)
-        button_layout.addSpacing(10)  # Add space between font buttons
+        button_layout.addSpacing(6)
         button_layout.addWidget(self.font_increase_btn)
-        button_layout.addSpacing(20)  # Add space before vendor selector
+        button_layout.addSpacing(10)
+        button_layout.addWidget(_make_vsep())
+        button_layout.addSpacing(10)
+        # Group 2 – vendor
         button_layout.addWidget(self.vendor_combo)
-        button_layout.addSpacing(8)
+        button_layout.addSpacing(6)
         button_layout.addWidget(self.vendor_icon)
+        button_layout.addSpacing(10)
+        button_layout.addWidget(_make_vsep())
         button_layout.addStretch()
 
         # Search widgets (centered)
@@ -8157,16 +8323,24 @@ class TerminalDialog(QWidget):
         self.search_status = QLabel()
         self.search_status.setStyleSheet("color: #b0b0b0; font-size: 9pt;")
 
+        # Group 3 – search
         button_layout.addWidget(self.search_input)
+        button_layout.addSpacing(4)
         button_layout.addWidget(self.search_prev_btn)
         button_layout.addWidget(self.search_next_btn)
+        button_layout.addSpacing(6)
         button_layout.addWidget(self.search_status)
-
 
         button_bar = QWidget()
         button_bar.setStyleSheet("background-color: #1e1e1e;")
         button_bar.setLayout(button_layout)
         layout.addWidget(button_bar)
+
+        # ── Disconnect overlay ─────────────────────────────────────────────────
+        self._disconnect_overlay = _DisconnectOverlay(self)
+        self._disconnect_overlay.hide()
+        self.session_disconnected.connect(self._on_session_ended)
+
         self.setLayout(layout)
 
     def keyPressEvent(self, event):
@@ -8570,6 +8744,10 @@ Router#_\r
                 if self.ssh_running:
                     self.ssh_output_received.emit(f"\n[SSH Error: {e}]\n")
                 break
+        # Unexpected disconnect (server closed connection while we were still running)
+        if self.ssh_running:
+            self.ssh_running = False
+            self.session_disconnected.emit()
 
     def _on_ssh_output(self, text):
         """Slot for error/status messages that need to appear in the terminal."""
@@ -8671,6 +8849,10 @@ Router#_\r
                 if self.telnet_running:
                     self.ssh_output_received.emit(f"\n[Telnet Error: {e}]\n")
                 break
+        # Unexpected disconnect
+        if self.telnet_running:
+            self.telnet_running = False
+            self.session_disconnected.emit()
 
     def send_to_telnet(self, text):
         """Send input to Telnet connection"""
@@ -8910,26 +9092,41 @@ class DetachableTabBar(QTabBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tab_colors: dict[int, QColor] = {}
+        self._tab_activity: set[int] = set()  # indices with unread activity
 
     def set_tab_color(self, index: int, color: str):
         self._tab_colors[index] = QColor(color)
         self.update()
 
+    def set_tab_activity(self, index: int, active: bool):
+        if active:
+            self._tab_activity.add(index)
+        else:
+            self._tab_activity.discard(index)
+        self.update()
+
     def paintEvent(self, event):
         # Let Qt draw the default tab chrome (text, close button, selection bg…)
         super().paintEvent(event)
-        # Overlay a coloured strip at the top of each tab
+        # Overlay a coloured strip at the top of each tab + activity dot
         painter = QPainter(self)
         for i in range(self.count()):
-            color = self._tab_colors.get(i)
-            if not color:
-                continue
             rect = self.tabRect(i)
             is_selected = (i == self.currentIndex())
-            strip = QColor(color)
-            if not is_selected:
-                strip.setAlpha(140)
-            painter.fillRect(rect.left(), rect.top(), rect.width(), 3 if is_selected else 2, strip)
+            color = self._tab_colors.get(i)
+            if color:
+                strip = QColor(color)
+                if not is_selected:
+                    strip.setAlpha(140)
+                painter.fillRect(rect.left(), rect.top(), rect.width(), 3 if is_selected else 2, strip)
+            # Activity indicator: small bright dot in top-right corner of inactive tabs
+            if i in self._tab_activity and not is_selected:
+                dot_color = self._tab_colors.get(i, QColor('#ffffff'))
+                dot = QColor(dot_color)
+                dot.setAlpha(255)
+                painter.setBrush(dot)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(rect.right() - 14, rect.top() + 5, 7, 7)
         painter.end()
 
     def contextMenuEvent(self, event):
@@ -8945,19 +9142,38 @@ class DetachedTerminalWindow(QMainWindow):
     """Standalone window that wraps a TerminalDialog after it has been detached
     from the tabbed view."""
 
-    def __init__(self, dialog: 'TerminalDialog', title: str):
+    def __init__(self, dialog: 'TerminalDialog', title: str, reattach_callback=None):
         super().__init__()
         self.setWindowTitle(title)
         self.resize(1200, 720)
         self._dialog = dialog
+        self._reattach_callback = reattach_callback
+        self._reattaching = False  # prevents closeEvent from closing the dialog during reattach
+
+        # Menu bar with a window management option
+        win_menu = self.menuBar().addMenu("Janela")
+        reattach_act = win_menu.addAction("Reintegrar como aba")
+        reattach_act.triggered.connect(self._reattach)
+
         # Re-parent the dialog widget into this window
         dialog.setParent(self)
         self.setCentralWidget(dialog)
         dialog.show()
         QTimer.singleShot(100, dialog.terminal._recalculate_size)
 
+    def _reattach(self):
+        """Move the dialog back into the tabbed window as a new tab."""
+        if self._reattach_callback:
+            self._reattaching = True
+            self._reattach_callback(self._dialog, self.windowTitle(), self)
+            self.close()
+
     def closeEvent(self, event):
-        # Delegate to TerminalDialog.closeEvent (handles disconnect confirmation)
+        if self._reattaching:
+            # Dialog is being moved back to a tab — do not close it
+            event.accept()
+            return
+        # Normal close: delegate to TerminalDialog (handles disconnect confirmation)
         if self._dialog.close():
             event.accept()
         else:
@@ -8994,6 +9210,8 @@ class TerminalTabbedWindow(QMainWindow):
         widget = self.tab_widget.widget(index)
         if widget and hasattr(widget, 'terminal'):
             QTimer.singleShot(50, widget.terminal._recalculate_size)
+        # Clear activity indicator for the newly focused tab
+        self.tab_widget.tabBar().set_tab_activity(index, False)
 
     def _apply_tab_style(self):
         # NOTE: no 'color:' rule here — text colour is set per-tab via
@@ -9014,6 +9232,20 @@ class TerminalTabbedWindow(QMainWindow):
             QTabBar::tab:hover:!selected { background: #212121; }
         """)
 
+    def _find_dialog_idx(self, dialog: 'TerminalDialog'):
+        """Return the tab index for dialog, or None if not found."""
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.widget(i) is dialog:
+                return i
+        return None
+
+    def _on_tab_data(self, dialog: 'TerminalDialog'):
+        """Flash the activity indicator when data arrives in a non-active tab."""
+        idx = self._find_dialog_idx(dialog)
+        if idx is None or idx == self.tab_widget.currentIndex():
+            return
+        self.tab_widget.tabBar().set_tab_activity(idx, True)
+
     def add_terminal(self, dialog: 'TerminalDialog', label: str, color: str):
         """Add a terminal dialog as a new tab."""
         tab_bar: DetachableTabBar = self.tab_widget.tabBar()
@@ -9024,6 +9256,8 @@ class TerminalTabbedWindow(QMainWindow):
         self.tab_widget.setCurrentIndex(idx)
         # Connect terminal_closed to auto-remove this tab
         dialog.terminal_closed.connect(lambda: self._remove_tab_for_dialog(dialog))
+        # Connect activity indicator
+        dialog.terminal.data_received.connect(lambda d=dialog: self._on_tab_data(d))
         QTimer.singleShot(200, dialog.terminal._recalculate_size)
         QTimer.singleShot(250, dialog.terminal.setFocus)
 
@@ -9043,11 +9277,24 @@ class TerminalTabbedWindow(QMainWindow):
         # terminal_closed signal will call _remove_tab_for_dialog on acceptance.
         widget.close()
 
+    def _reattach_dialog(self, dialog: 'TerminalDialog', label: str, win: 'DetachedTerminalWindow'):
+        """Move a detached dialog back into the tab bar."""
+        # Remove from the detached-windows list so the cleanup lambda is a no-op
+        if win in self._detached_windows:
+            self._detached_windows.remove(win)
+        # Hide the profile-name banner (only shown when detached)
+        dialog.profile_label.setVisible(False)
+        # Bring the tabbed window back if it was hidden
+        if not self.isVisible():
+            self.show()
+        self.add_terminal(dialog, label, dialog.banner_color or '#4fc3f7')
+        self.raise_()
+        self.activateWindow()
+
     def _detach_tab(self, index: int):
         """Detach the tab at *index* into its own floating window."""
         dialog = self.tab_widget.widget(index)
         label = self.tab_widget.tabText(index)
-        color = self.tab_widget.tabBar().tabTextColor(index)
 
         # Disconnect the auto-remove handler (the tab no longer owns this dialog)
         try:
@@ -9059,7 +9306,8 @@ class TerminalTabbedWindow(QMainWindow):
 
         dialog.profile_label.setVisible(True)  # show banner in detached window
 
-        win = DetachedTerminalWindow(dialog, label)
+        win = DetachedTerminalWindow(dialog, label,
+                                     reattach_callback=self._reattach_dialog)
         # Keep reference so window isn't garbage-collected
         self._detached_windows.append(win)
         # Clean up reference when the detached window eventually closes
@@ -14407,7 +14655,7 @@ class SerialTerminalGUI(QMainWindow):
             t.setColumnWidth(col, 72)
         t.setColumnWidth(0, 50)
         t.setColumnWidth(1, 40)
-        # Ocultar colunas Best e Worst; StDev é visível
+        # Hide Best and Worst columns; StDev remains visible
         for col in (7, 8):
             t.setColumnHidden(col, True)
         t.setColumnHidden(9, False)
@@ -18874,6 +19122,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.connection_type = 'telnet'
             tab_label = self._pending_profile_name or f"Telnet: {host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
+            terminal_dialog.set_connection_status(host=host_info[0], color=color)
         else:  # SSH
             terminal_dialog.ssh_client = client
             terminal_dialog.ssh_channel = channel
@@ -18881,6 +19130,9 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.connection_type = 'ssh'
             tab_label = self._pending_profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
+            terminal_dialog.set_connection_status(
+                user=host_info[2], host=host_info[0], color=color
+            )
 
         # ── Profile banner (coloured label inside the terminal widget) ───────
         if self._pending_profile_name:
