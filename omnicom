@@ -8441,85 +8441,70 @@ class TerminalDialog(QWidget):
             }
         """)
 
-        # Vendor selector
-        # Get arrow icon path (same method as main window)
-        arrow_path = self.get_arrow_icon_path()
-
-        self.vendor_combo = QComboBox()
-        self.vendor_combo.setPlaceholderText("Manufacturer syntax highlight")
-        self.vendor_combo.addItems(['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik'])
-
-        # Load saved vendor selection
+        # Vendor selector — flat button with icon + name + ▾, opens a QMenu
+        _VENDORS = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper',
+                    'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik']
+        initial_vendor = 'Default'
         if self.config:
             saved_vendor = self.config.get('vendor')
-            index = self.vendor_combo.findText(saved_vendor)
-            if index >= 0:
-                self.vendor_combo.setCurrentIndex(index)
-        else:
-            self.vendor_combo.setCurrentText('Default')
+            if saved_vendor in _VENDORS:
+                initial_vendor = saved_vendor
+        self._current_vendor = initial_vendor
 
-        self.vendor_combo.currentTextChanged.connect(self.change_vendor)
-        self.vendor_combo.setMinimumHeight(35)
-        self.vendor_combo.setMaximumWidth(130)
-        self.vendor_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: #3a3a3a;
+        self.vendor_btn = QPushButton()
+        self.vendor_btn.setFixedHeight(35)
+        self.vendor_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.vendor_btn.setToolTip("Selecionar vendor / syntax highlight")
+        self.vendor_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2d2d2d;
                 color: #e0e0e0;
-                border: 2px solid #5a5a5a;
+                border: 1px solid #3d3d3d;
                 border-radius: 6px;
-                padding: 5px 28px 5px 10px;
+                padding: 4px 10px 4px 4px;
                 font-size: 10pt;
-            }}
-            QComboBox:hover {{
-                border: 2px solid #707070;
-                background-color: #454545;
-            }}
-            QComboBox:focus {{
-                border: 2px solid #707070;
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border-left: 1px solid #5a5a5a;
-                border-top-right-radius: 5px;
-                border-bottom-right-radius: 5px;
-                background-color: transparent;
-            }}
-            QComboBox::down-arrow {{
-                image: url({arrow_path});
-                width: 12px;
-                height: 12px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: #3a3a3a;
-                color: #e0e0e0;
-                border: 2px solid #5a5a5a;
-                selection-background-color: #5a5a5a;
-                selection-color: #ffffff;
-                outline: none;
-                padding: 4px;
-            }}
-            QComboBox QAbstractItemView::item {{
-                min-height: 28px;
-                padding: 5px;
-            }}
-            QComboBox QAbstractItemView::item:hover {{
-                background-color: #4a4a4a;
-            }}
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #383838;
+                border-color: #555555;
+            }
+            QPushButton:pressed {
+                background-color: #404040;
+            }
         """)
 
-        # Vendor icon (display only — shows vendor logo, no click action)
-        self.vendor_icon = QPushButton()
-        self.vendor_icon.setFixedSize(36, 36)
-        self.vendor_icon.setFlat(True)
-        self.vendor_icon.setEnabled(False)
-        self.vendor_icon.setStyleSheet("""
-            QPushButton { border: none; padding: 2px; background-color: transparent; }
-            QPushButton:disabled { background-color: transparent; }
+        # Build QMenu for vendor selection
+        self._vendor_menu = QMenu(self)
+        self._vendor_menu.setStyleSheet("""
+            QMenu {
+                background-color: #2a2a2a;
+                color: #e0e0e0;
+                border: 1px solid #484848;
+                border-radius: 6px;
+                padding: 4px 0px;
+            }
+            QMenu::item {
+                padding: 7px 20px 7px 10px;
+            }
+            QMenu::item:selected {
+                background-color: #3a3a3a;
+                border-radius: 4px;
+            }
+            QMenu::item:checked {
+                color: #64b5f6;
+            }
         """)
-        # Load initial vendor icon
-        initial_vendor = self.vendor_combo.currentText()
+        for v in _VENDORS:
+            action = self._vendor_menu.addAction(v)
+            action.setCheckable(True)
+            _ip = self.get_vendor_icon_path(v)
+            _pm = load_svg_pixmap(_ip, 18)
+            if _pm and not _pm.isNull():
+                action.setIcon(QIcon(_pm))
+            action.triggered.connect(lambda checked, name=v: self.change_vendor(name))
+
+        self.vendor_btn.clicked.connect(self._show_vendor_menu)
         self.update_vendor_icon(initial_vendor)
 
         # Quick reference button — notebook icon
@@ -8573,9 +8558,7 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(_make_vsep())
         button_layout.addSpacing(10)
         # Group 2 – vendor
-        button_layout.addWidget(self.vendor_combo)
-        button_layout.addSpacing(6)
-        button_layout.addWidget(self.vendor_icon)
+        button_layout.addWidget(self.vendor_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.quickref_btn)
         button_layout.addSpacing(6)
@@ -8791,22 +8774,29 @@ class TerminalDialog(QWidget):
             self.terminal.ensureCursorVisible()
 
     def update_vendor_icon(self, vendor):
-        """Update the vendor icon button with the appropriate SVG"""
+        """Update the vendor button icon and label."""
         icon_path = self.get_vendor_icon_path(vendor)
-        pixmap = load_svg_pixmap(icon_path, 32)
-        if pixmap and not pixmap.isNull():
-            self.vendor_icon.setIcon(QIcon(pixmap))
-            self.vendor_icon.setIconSize(QSize(32, 32))
-        else:
+        pixmap = load_svg_pixmap(icon_path, 20)
+        if not (pixmap and not pixmap.isNull()):
             fallback_path = self.get_vendor_icon_path('Default')
-            fallback_pixmap = load_svg_pixmap(fallback_path, 32)
-            if fallback_pixmap and not fallback_pixmap.isNull():
-                self.vendor_icon.setIcon(QIcon(fallback_pixmap))
-                self.vendor_icon.setIconSize(QSize(32, 32))
+            pixmap = load_svg_pixmap(fallback_path, 20)
+        if pixmap and not pixmap.isNull():
+            self.vendor_btn.setIcon(QIcon(pixmap))
+            self.vendor_btn.setIconSize(QSize(20, 20))
+        self.vendor_btn.setText(f"  {vendor}  ▾")
+        # Tick the active item in the menu
+        for action in self._vendor_menu.actions():
+            action.setChecked(action.text() == vendor)
+
+    def _show_vendor_menu(self):
+        """Show the vendor QMenu anchored below the vendor button."""
+        from PyQt6.QtCore import QPoint
+        pos = self.vendor_btn.mapToGlobal(QPoint(0, self.vendor_btn.height()))
+        self._vendor_menu.exec(pos)
 
     def open_vendor_reference(self):
         """Open the vendor quick reference guide dialog"""
-        vendor = self.vendor_combo.currentText()
+        vendor = self._current_vendor
         reference_data = self.get_vendor_reference().get(vendor, {})
         icon_path = self.get_vendor_icon_path(vendor)
         dialog = VendorReferenceDialog(vendor, reference_data, icon_path, parent=self)
@@ -8828,9 +8818,8 @@ class TerminalDialog(QWidget):
 
     def change_vendor(self, vendor):
         """Change the syntax highlighting vendor"""
+        self._current_vendor = vendor
         self.terminal.set_vendor(vendor)
-
-        # Update vendor icon based on selection
         self.update_vendor_icon(vendor)
 
         # Save vendor selection
@@ -19700,12 +19689,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # ── Vendor syntax highlighting ────────────────────────────────────────
         if hasattr(self, '_pending_vendor') and self._pending_vendor:
-            vendor = self._pending_vendor
-            terminal_dialog.terminal.set_vendor(vendor)
-            idx = terminal_dialog.vendor_combo.findText(vendor)
-            if idx >= 0:
-                terminal_dialog.vendor_combo.setCurrentIndex(idx)
-            terminal_dialog.update_vendor_icon(vendor)
+            terminal_dialog.change_vendor(self._pending_vendor)
             self._pending_vendor = None
 
         # ── Track and wire up close signal ───────────────────────────────────
@@ -19862,12 +19846,7 @@ class SerialTerminalGUI(QMainWindow):
         if terminal_dialog.start_picocom(cmd):
             # Apply vendor syntax highlighting from profile
             if hasattr(self, '_pending_vendor') and self._pending_vendor:
-                vendor = self._pending_vendor
-                terminal_dialog.terminal.set_vendor(vendor)
-                idx = terminal_dialog.vendor_combo.findText(vendor)
-                if idx >= 0:
-                    terminal_dialog.vendor_combo.setCurrentIndex(idx)
-                terminal_dialog.update_vendor_icon(vendor)
+                terminal_dialog.change_vendor(self._pending_vendor)
                 self._pending_vendor = None
             self.open_terminals.append(terminal_dialog)
             self.status_label.setText("Connected - Terminal opened")
