@@ -646,7 +646,7 @@ class TerminalWidget(QTextEdit):
         """Called when the user drags the scrollbar manually."""
         if not self._in_scrollback_mode:
             scrollbar = self.verticalScrollBar()
-            if scrollbar.maximum() - value > 10:
+            if value < scrollbar.maximum():
                 if self._scrollback_lines:
                     self._enter_scrollback_mode()
                 else:
@@ -667,11 +667,17 @@ class TerminalWidget(QTextEdit):
         if event.angleDelta().y() > 0 and not self._in_scrollback_mode:
             if self._scrollback_lines:
                 self._enter_scrollback_mode()
-            else:
-                # No scrollback lines yet, but still freeze auto-scroll so
-                # the user can read the current screen without being pushed down.
-                self._in_scrollback_mode = True
         super().wheelEvent(event)
+        # After Qt has moved the scrollbar: if the user actually moved away from
+        # the bottom (e.g. current screen is taller than viewport), freeze
+        # auto-scroll.  We check *after* super() so we know whether there was
+        # anything to scroll to.  Full-screen TUIs like htop fill the viewport
+        # exactly (maximum ≈ 0) so the scrollbar never moves and the flag is
+        # never set — avoiding the snap-back problem.
+        if event.angleDelta().y() > 0 and not self._in_scrollback_mode:
+            scrollbar = self.verticalScrollBar()
+            if scrollbar.value() < scrollbar.maximum():
+                self._in_scrollback_mode = True
 
     def _enter_scrollback_mode(self):
         """Inject scrollback into document so user can browse history"""
@@ -1520,10 +1526,13 @@ class TerminalWidget(QTextEdit):
                     self._dbg_render_skipped += 1
                 return
 
-            # In scrollback mode: check if user scrolled back to bottom to exit
+            # In scrollback mode: exit only when the scrollbar is at the very
+            # bottom (value >= maximum).  The old <= 10 threshold caused false
+            # exits for full-screen TUIs (htop) whose scrollbar.maximum() is
+            # only a few pixels due to font-rounding.
             if self._in_scrollback_mode:
                 scrollbar = self.verticalScrollBar()
-                if scrollbar.maximum() - scrollbar.value() <= 10:
+                if scrollbar.value() >= scrollbar.maximum():
                     self._in_scrollback_mode = False
                     self._render_needed = True
                 else:
