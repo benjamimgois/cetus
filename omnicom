@@ -383,6 +383,173 @@ def get_network_interfaces():
     return interfaces
 
 
+class FlatComboButton(QPushButton):
+    """Drop-in replacement for QComboBox using a flat QPushButton + QMenu.
+
+    Supports the most common QComboBox API:
+      addItem / addItems / insertItem / clear / count / itemText
+      currentText / setCurrentText / currentIndex / setCurrentIndex / findText
+      currentTextChanged signal
+      setPlaceholderText / setToolTip / setFixedWidth / setMinimumWidth / setMaximumWidth
+
+    External setStyleSheet() calls targeting "QComboBox { ... }" have no
+    effect on a QPushButton subclass, so existing per-combo stylesheets are
+    automatically ignored and the consistent dark look is preserved.
+    """
+
+    currentTextChanged = pyqtSignal(str)
+
+    _BTN_STYLE = """
+        QPushButton {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #3d3d3d;
+            border-radius: 6px;
+            padding: 3px 10px 3px 8px;
+            font-size: 10pt;
+            text-align: left;
+        }
+        QPushButton:hover {
+            background-color: #383838;
+            border-color: #555555;
+        }
+        QPushButton:pressed {
+            background-color: #404040;
+        }
+    """
+    _MENU_STYLE = """
+        QMenu {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #484848;
+            border-radius: 6px;
+            padding: 4px 0px;
+        }
+        QMenu::item {
+            padding: 6px 20px 6px 10px;
+        }
+        QMenu::item:selected {
+            background-color: #3a3a3a;
+            border-radius: 4px;
+        }
+        QMenu::item:checked {
+            color: #64b5f6;
+        }
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items = []
+        self._current = ''
+        self._placeholder = ''
+        self._menu = QMenu(self)
+        self._menu.setStyleSheet(self._MENU_STYLE)
+        super().setStyleSheet(self._BTN_STYLE)
+        self.setFixedHeight(35)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(self._show_menu)
+
+    # ── internal ──────────────────────────────────────────────────────────
+
+    def _show_menu(self):
+        from PyQt6.QtCore import QPoint
+        pos = self.mapToGlobal(QPoint(0, self.height()))
+        self._menu.exec(pos)
+
+    def _select(self, text, emit=True):
+        old = self._current
+        self._current = text
+        self._refresh_display()
+        if emit and text != old:
+            self.currentTextChanged.emit(text)
+
+    def _refresh_display(self):
+        label = self._current if self._current else self._placeholder
+        super().setText(f"  {label}  ▾")
+        for action in self._menu.actions():
+            action.setChecked(action.text() == self._current)
+
+    def _rebuild_menu(self):
+        self._menu.clear()
+        for text in self._items:
+            action = self._menu.addAction(text)
+            action.setCheckable(True)
+            action.setChecked(text == self._current)
+            action.triggered.connect(lambda checked, t=text: self._select(t))
+
+    # ── QComboBox-compatible API ───────────────────────────────────────────
+
+    def addItem(self, text, userData=None):
+        if text not in self._items:
+            self._items.append(text)
+            action = self._menu.addAction(text)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked, t=text: self._select(t))
+        if not self._current:
+            self._select(text, emit=False)
+
+    def addItems(self, items):
+        for item in items:
+            self.addItem(item)
+
+    def insertItem(self, idx, text, userData=None):
+        if text not in self._items:
+            self._items.insert(idx, text)
+            self._rebuild_menu()
+        if not self._current:
+            self._select(text, emit=False)
+
+    def clear(self):
+        self._items.clear()
+        self._menu.clear()
+        self._current = ''
+        self._refresh_display()
+
+    def count(self):
+        return len(self._items)
+
+    def currentText(self):
+        return self._current
+
+    def currentIndex(self):
+        try:
+            return self._items.index(self._current)
+        except ValueError:
+            return -1
+
+    def setCurrentText(self, text):
+        if text not in self._items:
+            self.addItem(text)
+        self._select(text, emit=False)
+
+    def setCurrentIndex(self, idx):
+        if 0 <= idx < len(self._items):
+            self._select(self._items[idx], emit=False)
+
+    def findText(self, text, flags=None):
+        try:
+            return self._items.index(text)
+        except ValueError:
+            return -1
+
+    def itemText(self, idx):
+        if 0 <= idx < len(self._items):
+            return self._items[idx]
+        return ''
+
+    def setPlaceholderText(self, text):
+        self._placeholder = text
+        if not self._current:
+            self._refresh_display()
+
+    # QPushButton overrides to keep our style intact
+    def setStyleSheet(self, _):
+        pass  # external stylesheets targeting QComboBox have no effect here
+
+    def setText(self, _):
+        pass  # label is managed internally via _refresh_display
+
+
 class ConfigManager:
     """Manage application settings using XDG Base Directory specification"""
 
@@ -10453,7 +10620,7 @@ class SerialTerminalGUI(QMainWindow):
         port_inner_layout.setSpacing(6)
         port_label = QLabel("Port:")
         port_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.port = QComboBox()
+        self.port = FlatComboButton()
         self.port.setFixedWidth(port_field_width)
         self.port.setToolTip("Select the serial port to connect")
         port_inner_layout.addWidget(port_label)
@@ -10518,7 +10685,7 @@ class SerialTerminalGUI(QMainWindow):
         velocity_label.setFont(velocity_font)
         velocity_label.setStyleSheet("color: #1976D2;")
 
-        self.baudrate = QComboBox()
+        self.baudrate = FlatComboButton()
         self.baudrate.addItems([
             '300', '1200', '2400', '4800', '9600', '19200',
             '38400', '57600', '115200', '230400', '460800', '921600'
@@ -10539,7 +10706,7 @@ class SerialTerminalGUI(QMainWindow):
         comm_layout.addRow(velocity_label, self.baudrate)
 
         # Serial config (data bits + parity + stop bits combined)
-        self.serial_config = QComboBox()
+        self.serial_config = FlatComboButton()
         self.serial_config.addItems([
             '8N1', '8E1', '8O1', '8N2',
             '7N1', '7E1', '7O1',
@@ -10553,7 +10720,7 @@ class SerialTerminalGUI(QMainWindow):
         comm_layout.addRow("Config:", self.serial_config)
 
         # Flow control
-        self.flow = QComboBox()
+        self.flow = FlatComboButton()
         self.flow.addItems(['None', 'Hardware (RTS/CTS)', 'Software (XON/XOFF)'])
         self.flow.setCurrentText('None')
         self.flow.setFixedWidth(combo_width)
@@ -10953,7 +11120,7 @@ class SerialTerminalGUI(QMainWindow):
         tftp_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         tftp_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self.tftp_interface = QComboBox()
+        self.tftp_interface = FlatComboButton()
         self.tftp_interface.setFixedWidth(combo_width)
         self.tftp_interface.setToolTip("Select network interface for TFTP server")
         self.tftp_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
@@ -11140,7 +11307,7 @@ class SerialTerminalGUI(QMainWindow):
         ftp_dir_row.addWidget(ftp_browse_btn)
         ftp_dir_row.addStretch()
         ftp_dir_w = QWidget(); ftp_dir_w.setContentsMargins(0,0,0,0); ftp_dir_w.setLayout(ftp_dir_row)
-        self._ftp_srv_interface = QComboBox()
+        self._ftp_srv_interface = FlatComboButton()
         self._ftp_srv_interface.setFixedWidth(combo_width)
         self._ftp_srv_interface.setToolTip("Select network interface for FTP server")
         self._ftp_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
@@ -11204,7 +11371,7 @@ class SerialTerminalGUI(QMainWindow):
         ssh_cfg_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         ssh_cfg_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self._ssh_srv_interface = QComboBox()
+        self._ssh_srv_interface = FlatComboButton()
         self._ssh_srv_interface.setFixedWidth(combo_width)
         self._ssh_srv_interface.setToolTip("Select network interface for SSH/SFTP server")
         self._ssh_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
@@ -11299,7 +11466,7 @@ class SerialTerminalGUI(QMainWindow):
         smb_cfg_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         smb_cfg_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self._smb_srv_interface = QComboBox()
+        self._smb_srv_interface = FlatComboButton()
         self._smb_srv_interface.setFixedWidth(combo_width)
         self._smb_srv_interface.setStyleSheet("QComboBox { font-size: 8pt; }")
         smb_cfg_form.addRow("Interface:", self._smb_srv_interface)
@@ -11826,7 +11993,7 @@ class SerialTerminalGUI(QMainWindow):
         slash_label = QLabel("/")
         slash_label.setFixedWidth(8)
 
-        self.scan_mask_combo = QComboBox()
+        self.scan_mask_combo = FlatComboButton()
         self.scan_mask_combo.addItems(["8", "16", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "32"])
         self.scan_mask_combo.setCurrentText("24")
         self.scan_mask_combo.setFixedWidth(80)
@@ -12064,7 +12231,7 @@ class SerialTerminalGUI(QMainWindow):
         options_layout.setSpacing(15)
 
         timeout_label = QLabel("Timeout:")
-        self.scan_timeout_combo = QComboBox()
+        self.scan_timeout_combo = FlatComboButton()
         self.scan_timeout_combo.addItems(["1s", "2s", "3s", "5s"])
         self.scan_timeout_combo.setFixedWidth(80)
 
@@ -12389,7 +12556,7 @@ class SerialTerminalGUI(QMainWindow):
         v3_auth_layout.setContentsMargins(0, 0, 0, 0)
         v3_auth_layout.setSpacing(6)
 
-        self.snmp_v3_auth_proto_combo = QComboBox()
+        self.snmp_v3_auth_proto_combo = FlatComboButton()
         self.snmp_v3_auth_proto_combo.addItems(["None", "MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"])
         self.snmp_v3_auth_proto_combo.setFixedWidth(100)
         self.snmp_v3_auth_proto_combo.setToolTip("Authentication protocol")
@@ -12417,7 +12584,7 @@ class SerialTerminalGUI(QMainWindow):
         v3_priv_layout.setContentsMargins(0, 0, 0, 0)
         v3_priv_layout.setSpacing(6)
 
-        self.snmp_v3_priv_proto_combo = QComboBox()
+        self.snmp_v3_priv_proto_combo = FlatComboButton()
         self.snmp_v3_priv_proto_combo.addItems(["None", "DES", "3DES", "AES", "AES192", "AES256"])
         self.snmp_v3_priv_proto_combo.setFixedWidth(100)
         self.snmp_v3_priv_proto_combo.setToolTip("Privacy protocol")
@@ -13083,7 +13250,7 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_packets_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.mtr_packets_label.setVisible(False)
 
-        self.mtr_packets_combo = QComboBox()
+        self.mtr_packets_combo = FlatComboButton()
         self.mtr_packets_combo.addItems(["10", "20", "50", "100", "200"])
         self.mtr_packets_combo.setCurrentText("10")
         self.mtr_packets_combo.setFixedWidth(80)
@@ -13094,7 +13261,7 @@ class SerialTerminalGUI(QMainWindow):
         self.mtr_interval_label = QLabel("Interval:")
         self.mtr_interval_label.setStyleSheet("color: #555555; font-size: 8pt;")
         self.mtr_interval_label.setVisible(False)
-        self.mtr_interval_combo = QComboBox()
+        self.mtr_interval_combo = FlatComboButton()
         self.mtr_interval_combo.addItems(["1s", "2s", "5s"])
         self.mtr_interval_combo.setCurrentText("1s")
         self.mtr_interval_combo.setFixedWidth(75)
@@ -13103,7 +13270,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self._hops_label = QLabel("Max Hops:")
         self._hops_label.setStyleSheet("color: #555555; font-size: 8pt;")
-        self.traceroute_max_hops_combo = QComboBox()
+        self.traceroute_max_hops_combo = FlatComboButton()
         self.traceroute_max_hops_combo.addItems(["10", "15", "20", "25", "30"])
         self.traceroute_max_hops_combo.setCurrentText("30")
         self.traceroute_max_hops_combo.setFixedWidth(80)
@@ -13111,7 +13278,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self._timeout_label = QLabel("Timeout:")
         self._timeout_label.setStyleSheet("color: #555555; font-size: 8pt;")
-        self.traceroute_timeout_combo = QComboBox()
+        self.traceroute_timeout_combo = FlatComboButton()
         self.traceroute_timeout_combo.addItems(["1s", "2s", "3s", "5s", "10s"])
         self.traceroute_timeout_combo.setCurrentText("5s")
         self.traceroute_timeout_combo.setFixedWidth(85)
@@ -14223,7 +14390,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # ── Widgets ──────────────────────────────────────────────────────────
 
-        self.wifi_iface_combo = QComboBox()
+        self.wifi_iface_combo = FlatComboButton()
         self.wifi_iface_combo.setMinimumWidth(120)
         self.wifi_iface_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.wifi_iface_combo.setToolTip("WiFi interface to use for scanning")
@@ -14287,7 +14454,7 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_band_btn_5.clicked.connect(lambda:  _on_band_btn(self.wifi_band_btn_5))
         self.wifi_band_btn_both.clicked.connect(lambda: _on_band_btn(self.wifi_band_btn_both))
 
-        self.wifi_refresh_combo = QComboBox()
+        self.wifi_refresh_combo = FlatComboButton()
         self.wifi_refresh_combo.addItems(["2s", "5s", "10s", "15s", "30s"])
         self.wifi_refresh_combo.setCurrentText("2s")
         self.wifi_refresh_combo.setFixedWidth(62)
@@ -15859,7 +16026,7 @@ class SerialTerminalGUI(QMainWindow):
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        type_combo = QComboBox()
+        type_combo = FlatComboButton()
         type_combo.addItems(["SOCKS5", "SOCKS4", "HTTP"])
         type_combo.setCurrentText(self._proxy_type)
         type_combo.setEnabled(self._proxy_enabled)
@@ -20035,7 +20202,7 @@ class SerialTerminalGUI(QMainWindow):
         dur_lbl = QLabel("Duration:")
         dur_lbl.setFixedWidth(56)
         dur_lbl.setStyleSheet(lbl_style)
-        self.iperf_duration_combo = QComboBox()
+        self.iperf_duration_combo = FlatComboButton()
         self.iperf_duration_combo.addItems(["5 s", "10 s", "15 s", "20 s", "30 s", "60 s", "120 s", "300 s"])
         self.iperf_duration_combo.setCurrentText("10 s")
         self.iperf_duration_combo.setFixedWidth(70)
