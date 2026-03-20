@@ -407,6 +407,7 @@ class FlatComboButton(QPushButton):
             border-radius: 6px;
             padding: 3px 10px 3px 8px;
             font-size: 10pt;
+            font-weight: normal;
             text-align: left;
         }
         QPushButton:hover {
