@@ -638,6 +638,20 @@ class TerminalWidget(QTextEdit):
         self.setContentsMargins(10, 6, 10, 6)
         self.document().setDocumentMargin(0)
 
+        # Detect manual scrollbar drag: if user moves scrollbar away from
+        # the bottom, freeze auto-scroll (same effect as scrolling up with wheel).
+        self.verticalScrollBar().sliderMoved.connect(self._on_slider_moved)
+
+    def _on_slider_moved(self, value):
+        """Called when the user drags the scrollbar manually."""
+        if not self._in_scrollback_mode:
+            scrollbar = self.verticalScrollBar()
+            if scrollbar.maximum() - value > 10:
+                if self._scrollback_lines:
+                    self._enter_scrollback_mode()
+                else:
+                    self._in_scrollback_mode = True
+
     def event(self, event):
         """Intercept Tab key before focus handling"""
         if event.type() == event.Type.KeyPress:
@@ -650,8 +664,13 @@ class TerminalWidget(QTextEdit):
 
     def wheelEvent(self, event):
         """Enter scrollback mode when user scrolls up"""
-        if event.angleDelta().y() > 0 and not self._in_scrollback_mode and self._scrollback_lines:
-            self._enter_scrollback_mode()
+        if event.angleDelta().y() > 0 and not self._in_scrollback_mode:
+            if self._scrollback_lines:
+                self._enter_scrollback_mode()
+            else:
+                # No scrollback lines yet, but still freeze auto-scroll so
+                # the user can read the current screen without being pushed down.
+                self._in_scrollback_mode = True
         super().wheelEvent(event)
 
     def _enter_scrollback_mode(self):
