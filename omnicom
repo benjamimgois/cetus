@@ -8320,21 +8320,36 @@ class TerminalDialog(QWidget):
             }}
         """)
 
-        # Vendor icon button (clickable, opens quick reference guide)
+        # Vendor icon (display only — shows vendor logo, no click action)
         self.vendor_icon = QPushButton()
         self.vendor_icon.setFixedSize(36, 36)
         self.vendor_icon.setFlat(True)
-        self.vendor_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.vendor_icon.setToolTip("Click for vendor quick reference guide")
+        self.vendor_icon.setEnabled(False)
         self.vendor_icon.setStyleSheet("""
+            QPushButton { border: none; padding: 2px; background-color: transparent; }
+            QPushButton:disabled { background-color: transparent; }
+        """)
+        # Load initial vendor icon
+        initial_vendor = self.vendor_combo.currentText()
+        self.update_vendor_icon(initial_vendor)
+
+        # Quick reference button — notebook icon
+        self.quickref_btn = QPushButton()
+        self.quickref_btn.setFixedSize(36, 36)
+        self.quickref_btn.setFlat(True)
+        self.quickref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quickref_btn.setToolTip("Quick reference guide")
+        self.quickref_btn.setStyleSheet("""
             QPushButton { border: none; border-radius: 4px; padding: 2px; background-color: transparent; }
             QPushButton:hover { background-color: #3a3a3a; }
             QPushButton:pressed { background-color: #4a4a4a; }
         """)
-        self.vendor_icon.clicked.connect(self.open_vendor_reference)
-        # Load initial vendor icon
-        initial_vendor = self.vendor_combo.currentText()
-        self.update_vendor_icon(initial_vendor)
+        _qr_icon_path = self.get_icon_path('quickref.svg')
+        _qr_pixmap = load_svg_pixmap(_qr_icon_path, 28)
+        if _qr_pixmap and not _qr_pixmap.isNull():
+            self.quickref_btn.setIcon(QIcon(_qr_pixmap))
+            self.quickref_btn.setIconSize(QSize(28, 28))
+        self.quickref_btn.clicked.connect(self.open_vendor_reference)
 
         def _make_vsep():
             s = QFrame()
@@ -8354,6 +8369,8 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.vendor_combo)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.vendor_icon)
+        button_layout.addSpacing(6)
+        button_layout.addWidget(self.quickref_btn)
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
         button_layout.addStretch()
