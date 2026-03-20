@@ -434,7 +434,6 @@ class FlatComboButton(QPushButton):
         }
         QMenu::item:checked {
             color: #1976d2;
-            font-weight: bold;
         }
     """
 
