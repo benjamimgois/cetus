@@ -555,6 +555,25 @@ class ConfigManager:
         profiles = [p for p in self.get_serial_profiles() if p.get('name') != name]
         self.set('serial_profiles', json.dumps(profiles))
 
+    def get_device_note(self, host):
+        """Return the sticky note text for a given host (empty string if none)."""
+        notes = {}
+        try:
+            notes = json.loads(self.get('device_notes') or '{}')
+        except Exception:
+            pass
+        return notes.get(host, '')
+
+    def set_device_note(self, host, text):
+        """Persist the sticky note text for a given host."""
+        notes = {}
+        try:
+            notes = json.loads(self.get('device_notes') or '{}')
+        except Exception:
+            pass
+        notes[host] = text
+        self.set('device_notes', json.dumps(notes))
+
 
 class _CursorOverlay(QWidget):
     """Transparent widget that sits on top of TerminalWidget's viewport and
@@ -7384,6 +7403,82 @@ class PingGraphWidget(QWidget):
         painter.end()
 
 
+class StickyNoteDialog(QDialog):
+    """Floating sticky-note editor associated with a specific device (host).
+    Text is auto-saved 600 ms after the last keystroke — no save button needed."""
+
+    def __init__(self, host, config, parent=None):
+        super().__init__(parent)
+        self._host = host
+        self._config = config
+        self.setWindowTitle(f"Nota — {host}" if host else "Nota rápida")
+        self.setMinimumSize(280, 220)
+        self.resize(320, 260)
+        self.setWindowFlags(
+            self.windowFlags() |
+            Qt.WindowType.WindowStaysOnTopHint
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Title bar
+        title_bar = QLabel(f"  📌  {host}" if host else "  📌  Nota rápida")
+        title_bar.setFixedHeight(28)
+        title_bar.setStyleSheet("""
+            QLabel {
+                background-color: #F9A825;
+                color: #3e2723;
+                font-size: 9pt;
+                font-weight: bold;
+                padding-left: 6px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }
+        """)
+        layout.addWidget(title_bar)
+
+        # Text area
+        self._editor = QTextEdit()
+        self._editor.setPlaceholderText("Escreve a tua nota aqui…")
+        self._editor.setStyleSheet("""
+            QTextEdit {
+                background-color: #FFF9C4;
+                color: #3e2723;
+                border: none;
+                font-size: 10pt;
+                font-family: sans-serif;
+                padding: 8px;
+            }
+        """)
+        self._editor.setFrameShape(QFrame.Shape.NoFrame)
+        layout.addWidget(self._editor, 1)
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FFF9C4;
+                border: 1px solid #F9A825;
+                border-radius: 6px;
+            }
+        """)
+
+        # Load existing note
+        if config and host:
+            self._editor.setPlainText(config.get_device_note(host))
+
+        # Auto-save timer: saves 600 ms after last keystroke
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(600)
+        self._save_timer.timeout.connect(self._save)
+        self._editor.textChanged.connect(self._save_timer.start)
+
+    def _save(self):
+        if self._config and self._host:
+            self._config.set_device_note(self._host, self._editor.toPlainText())
+
+
 class VendorReferenceDialog(QDialog):
     """Quick reference guide dialog for vendor commands"""
 
@@ -7633,6 +7728,8 @@ class TerminalDialog(QWidget):
         self.telnet_read_thread = None
         self.telnet_running = False
         self.connection_type = 'serial'
+        self._note_host = ''       # set by set_connection_status; used as notes key
+        self._sticky_note_dlg = None  # open StickyNoteDialog instance (if any)
 
         self.init_ui()
 
@@ -7687,6 +7784,12 @@ class TerminalDialog(QWidget):
             self._conn_label.setText(label)
             self._conn_label.setStyleSheet("color: #c8c8c8; font-size: 8pt; background: transparent;")
             self._session_start_time = time.monotonic()
+            if host and host != self._note_host:
+                self._note_host = host
+                # Update open sticky note window title/content if already open
+                if self._sticky_note_dlg and self._sticky_note_dlg.isVisible():
+                    self._sticky_note_dlg.close()
+                    self._sticky_note_dlg = None
         else:
             self._conn_dot.setStyleSheet("color: #e53935; font-size: 9pt; background: transparent;")
             self._conn_label.setText("Sessão terminada")
@@ -8437,6 +8540,24 @@ class TerminalDialog(QWidget):
             self.quickref_btn.setIconSize(QSize(28, 28))
         self.quickref_btn.clicked.connect(self.open_vendor_reference)
 
+        # Sticky note button
+        self.stickynote_btn = QPushButton()
+        self.stickynote_btn.setFixedSize(36, 36)
+        self.stickynote_btn.setFlat(True)
+        self.stickynote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stickynote_btn.setToolTip("Nota rápida do dispositivo")
+        self.stickynote_btn.setStyleSheet("""
+            QPushButton { border: none; border-radius: 4px; padding: 2px; background-color: transparent; }
+            QPushButton:hover { background-color: #3a3a3a; }
+            QPushButton:pressed { background-color: #4a4a4a; }
+        """)
+        _sn_icon_path = self.get_icon_path('stickynote.svg')
+        _sn_pixmap = load_svg_pixmap(_sn_icon_path, 28)
+        if _sn_pixmap and not _sn_pixmap.isNull():
+            self.stickynote_btn.setIcon(QIcon(_sn_pixmap))
+            self.stickynote_btn.setIconSize(QSize(28, 28))
+        self.stickynote_btn.clicked.connect(self.open_sticky_note)
+
         def _make_vsep():
             s = QFrame()
             s.setFrameShape(QFrame.Shape.VLine)
@@ -8457,6 +8578,8 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.vendor_icon)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.quickref_btn)
+        button_layout.addSpacing(6)
+        button_layout.addWidget(self.stickynote_btn)
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
         button_layout.addStretch()
@@ -8688,6 +8811,20 @@ class TerminalDialog(QWidget):
         icon_path = self.get_vendor_icon_path(vendor)
         dialog = VendorReferenceDialog(vendor, reference_data, icon_path, parent=self)
         dialog.show()
+
+    def open_sticky_note(self):
+        """Open (or bring to front) the sticky note for the current device."""
+        # Reuse existing window if still open
+        if self._sticky_note_dlg and self._sticky_note_dlg.isVisible():
+            self._sticky_note_dlg.raise_()
+            self._sticky_note_dlg.activateWindow()
+            return
+        self._sticky_note_dlg = StickyNoteDialog(
+            host=self._note_host,
+            config=self.config,
+            parent=self,
+        )
+        self._sticky_note_dlg.show()
 
     def change_vendor(self, vendor):
         """Change the syntax highlighting vendor"""
