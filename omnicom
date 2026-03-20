@@ -574,29 +574,27 @@ class _CursorOverlay(QWidget):
         t = self._t
         if not t._cursor_visible or t._in_scrollback_mode:
             return
-        from PyQt6.QtGui import QPainter, QColor, QFontMetricsF
+        from PyQt6.QtGui import QPainter, QColor, QFontMetricsF, QTextCursor
         from PyQt6.QtCore import QRectF
 
-        # Use Qt's document layout to get the exact pixel position of the
-        # cursor's block — avoids accumulated rounding error from manual
-        # line_height * cursor_y arithmetic.
+        # Use QTextEdit.cursorRect() so Qt's own layout engine gives us the
+        # exact pixel position — avoids any discrepancy with averageCharWidth().
         doc = t.document()
         block = doc.findBlockByNumber(t._cur_y)
         if not block.isValid():
             return
-        block_rect = doc.documentLayout().blockBoundingRect(block)
+        tc = QTextCursor(block)
+        if t._cur_x > 0:
+            tc.movePosition(QTextCursor.MoveOperation.Right,
+                            QTextCursor.MoveMode.MoveAnchor, t._cur_x)
+        # cursorRect() returns viewport coordinates directly
+        cr = t.cursorRect(tc)
 
         fm = QFontMetricsF(t.font())
         char_width = fm.averageCharWidth()
         em = fm.ascent() + fm.descent()
+        rect = QRectF(cr.x(), cr.y(), char_width, em)
 
-        # Convert document coordinates to viewport coordinates
-        doc_x = block_rect.x() + t._cur_x * char_width
-        doc_y = block_rect.y()
-        vp_x = doc_x - t.horizontalScrollBar().value()
-        vp_y = doc_y - t.verticalScrollBar().value()
-
-        rect = QRectF(vp_x, vp_y, char_width, em)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         try:
