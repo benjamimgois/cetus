@@ -576,29 +576,40 @@ class _CursorOverlay(QWidget):
             return
         from PyQt6.QtGui import QPainter, QColor, QFontMetricsF
         from PyQt6.QtCore import QRectF
+
+        # Use Qt's document layout to get the exact pixel position of the
+        # cursor's block — avoids accumulated rounding error from manual
+        # line_height * cursor_y arithmetic.
+        doc = t.document()
+        block = doc.findBlockByNumber(t._cur_y)
+        if not block.isValid():
+            return
+        block_rect = doc.documentLayout().blockBoundingRect(block)
+
         fm = QFontMetricsF(t.font())
         char_width = fm.averageCharWidth()
         em = fm.ascent() + fm.descent()
-        line_height = em * 1.2
-        x = t._cur_x * char_width
-        y = t._cur_y * line_height - t.verticalScrollBar().value()
-        rect = QRectF(x, y, char_width, em)
+
+        # Convert document coordinates to viewport coordinates
+        doc_x = block_rect.x() + t._cur_x * char_width
+        doc_y = block_rect.y()
+        vp_x = doc_x - t.horizontalScrollBar().value()
+        vp_y = doc_y - t.verticalScrollBar().value()
+
+        rect = QRectF(vp_x, vp_y, char_width, em)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        # Determine character under cursor
         try:
             with t._pyte_lock:
                 ch = t.screen.buffer[t._cur_y][t._cur_x].data
         except Exception:
             ch = ' '
         if ch and ch != ' ':
-            # Filled block with inverted colour; draw character on top
             painter.fillRect(rect, QColor('#e0e0e0'))
             painter.setPen(QColor('#0a0a0a'))
             painter.setFont(t.font())
-            painter.drawText(rect, ch.replace('&', '&').replace('<', '<'))
+            painter.drawText(rect, ch)
         else:
-            # Empty cell — draw a solid block
             painter.fillRect(rect, QColor('#e0e0e0'))
         painter.end()
 
