@@ -19993,14 +19993,61 @@ class SerialTerminalGUI(QMainWindow):
             # Password authentication
             password = self.ssh_password.text()
             if not password:
-                # Prompt for password if not entered
-                password, ok = QInputDialog.getText(
-                    self, "SSH Password",
-                    f"Password for {username}@{host}:",
-                    QLineEdit.EchoMode.Password
+                # Prompt for password with option to save it
+                _pw_dlg = QDialog(self)
+                _pw_dlg.setWindowTitle("SSH Password")
+                _pw_dlg.setMinimumWidth(320)
+                _pw_dlg.setStyleSheet("""
+                    QDialog   { background-color: #1e1e1e; color: #e0e0e0; }
+                    QLabel    { color: #e0e0e0; }
+                    QLineEdit { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;
+                                border-radius: 5px; padding: 4px 8px; }
+                    QDialogButtonBox QPushButton {
+                        background: #2d2d2d; color: #e0e0e0;
+                        border: 1px solid #555; border-radius: 5px;
+                        padding: 5px 16px; min-width: 70px; }
+                    QDialogButtonBox QPushButton:hover   { background: #3a3a3a; }
+                    QDialogButtonBox QPushButton:pressed { background: #222; }
+                """)
+                _pw_layout = QVBoxLayout(_pw_dlg)
+                _pw_layout.setContentsMargins(16, 16, 16, 12)
+                _pw_layout.setSpacing(10)
+                _pw_layout.addWidget(QLabel(f"Password for {username}@{host}:"))
+                _pw_input = QLineEdit()
+                _pw_input.setEchoMode(QLineEdit.EchoMode.Password)
+                _pw_layout.addWidget(_pw_input)
+                _save_cb = QCheckBox("Save password")
+                _save_cb.setStyleSheet(
+                    "QCheckBox { background: transparent; color: #e0e0e0; }"
+                    "QCheckBox::indicator { background: #2d2d2d; border: 1px solid #666; border-radius: 3px; }"
+                    "QCheckBox::indicator:checked { background: #4CAF50; border-color: #4CAF50; }"
                 )
-                if not ok:
+                _pw_layout.addWidget(_save_cb)
+                _btns = QDialogButtonBox(
+                    QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+                _btns.accepted.connect(_pw_dlg.accept)
+                _btns.rejected.connect(_pw_dlg.reject)
+                _pw_layout.addWidget(_btns)
+
+                if _pw_dlg.exec() != QDialog.DialogCode.Accepted:
                     return
+                password = _pw_input.text()
+                if not password:
+                    return
+
+                # Save password to profile if requested
+                if _save_cb.isChecked() and self._pending_profile_name:
+                    import base64
+                    profiles = self.config.get_ssh_profiles()
+                    for p in profiles:
+                        if p.get('name') == self._pending_profile_name:
+                            p['password'] = base64.b64encode(password.encode()).decode()
+                            break
+                    import json
+                    self.config.set('ssh_profiles', json.dumps(profiles))
+                    self.ssh_password.setText(password)
+                    self.ssh_save_password.setChecked(True)
+                    self.refresh_ssh_profiles()
 
         # Show connecting state in the button itself
         self.ssh_connect_btn.setText("Connecting...")
