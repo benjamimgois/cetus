@@ -17833,6 +17833,11 @@ class SerialTerminalGUI(QMainWindow):
 
         self.ssh_save_password = QCheckBox("Salvar senha")
         self.ssh_save_password.setToolTip("Salvar a senha no perfil para login automático")
+        self.ssh_save_password.setStyleSheet(
+            "QCheckBox { background: transparent; color: #333333; }"
+            "QCheckBox::indicator { background: #ffffff; border: 1px solid #aaaaaa; border-radius: 3px; }"
+            "QCheckBox::indicator:checked { background: #1976d2; border-color: #1976d2; }"
+        )
 
         _pw_row = QWidget()
         _pw_layout = QHBoxLayout(_pw_row)
