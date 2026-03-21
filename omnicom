@@ -9622,9 +9622,14 @@ class DetachableTabBar(QTabBar):
         idx = self.tabAt(event.pos())
         if idx >= 0:
             menu = QMenu(self)
-            act = menu.addAction("Destacar em janela independente")
-            if menu.exec(event.globalPos()) == act:
+            detach_act = menu.addAction("Destacar em janela independente")
+            menu.addSeparator()
+            close_act = menu.addAction("Fechar aba")
+            chosen = menu.exec(event.globalPos())
+            if chosen == detach_act:
                 self.detach_requested.emit(idx)
+            elif chosen == close_act:
+                self.tabCloseRequested.emit(idx)
 
 
 class DetachedTerminalWindow(QMainWindow):
