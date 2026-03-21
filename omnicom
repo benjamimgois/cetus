@@ -7578,7 +7578,7 @@ class StickyNoteDialog(QDialog):
         super().__init__(parent)
         self._host = host
         self._config = config
-        self.setWindowTitle(f"Nota — {host}" if host else "Nota rápida")
+        self.setWindowTitle(f"Note — {host}" if host else "Quick Note")
         self.setMinimumSize(280, 220)
         self.resize(320, 260)
         self.setWindowFlags(
@@ -7591,7 +7591,7 @@ class StickyNoteDialog(QDialog):
         layout.setSpacing(0)
 
         # Title bar
-        title_bar = QLabel(f"  📌  {host}" if host else "  📌  Nota rápida")
+        title_bar = QLabel(f"  📌  {host}" if host else "  📌  Quick Note")
         title_bar.setFixedHeight(28)
         title_bar.setStyleSheet("""
             QLabel {
@@ -7828,11 +7828,11 @@ class _DisconnectOverlay(QWidget):
         icon_lbl.setStyleSheet("color: #e53935; font-size: 40pt; background: transparent; border: none;")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        msg_lbl = QLabel("Sessão terminada")
+        msg_lbl = QLabel("Session terminated")
         msg_lbl.setStyleSheet("color: #e0e0e0; font-size: 13pt; font-weight: bold; background: transparent; border: none;")
         msg_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        close_btn = QPushButton("Fechar aba")
+        close_btn = QPushButton("Close tab")
         close_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2a2a2a;
@@ -7959,7 +7959,7 @@ class TerminalDialog(QWidget):
                     self._sticky_note_dlg = None
         else:
             self._conn_dot.setStyleSheet("color: #e53935; font-size: 9pt; background: transparent;")
-            self._conn_label.setText("Sessão terminada")
+            self._conn_label.setText("Session terminated")
             self._conn_label.setStyleSheet("color: #888888; font-size: 8pt; background: transparent;")
             self._session_start_time = None
             self._session_timer_label.setText("")
@@ -8621,7 +8621,7 @@ class TerminalDialog(QWidget):
         self.vendor_btn = QPushButton()
         self.vendor_btn.setFixedHeight(35)
         self.vendor_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.vendor_btn.setToolTip("Selecionar vendor / syntax highlight")
+        self.vendor_btn.setToolTip("Select vendor / syntax highlight")
         self.vendor_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2d2d2d;
@@ -8697,7 +8697,7 @@ class TerminalDialog(QWidget):
         self.stickynote_btn.setFixedSize(36, 36)
         self.stickynote_btn.setFlat(True)
         self.stickynote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.stickynote_btn.setToolTip("Nota rápida do dispositivo")
+        self.stickynote_btn.setToolTip("Device quick note")
         self.stickynote_btn.setStyleSheet("""
             QPushButton { border: none; border-radius: 4px; padding: 2px; background-color: transparent; }
             QPushButton:hover { background-color: #3a3a3a; }
@@ -9622,9 +9622,9 @@ class DetachableTabBar(QTabBar):
         idx = self.tabAt(event.pos())
         if idx >= 0:
             menu = QMenu(self)
-            detach_act = menu.addAction("Destacar em janela independente")
+            detach_act = menu.addAction("Detach to independent window")
             menu.addSeparator()
-            close_act = menu.addAction("Fechar aba")
+            close_act = menu.addAction("Close tab")
             chosen = menu.exec(event.globalPos())
             if chosen == detach_act:
                 self.detach_requested.emit(idx)
@@ -9645,8 +9645,8 @@ class DetachedTerminalWindow(QMainWindow):
         self._reattaching = False  # prevents closeEvent from closing the dialog during reattach
 
         # Menu bar with a window management option
-        win_menu = self.menuBar().addMenu("Janela")
-        reattach_act = win_menu.addAction("Reintegrar como aba")
+        win_menu = self.menuBar().addMenu("Window")
+        reattach_act = win_menu.addAction("Reattach as tab")
         reattach_act.triggered.connect(self._reattach)
 
         # Re-parent the dialog widget into this window
@@ -9728,7 +9728,7 @@ class TerminalTabbedWindow(QMainWindow):
         # Grid-view toggle button — placed as the left corner widget of the tab bar
         self._tile_btn = QToolButton()
         self._tile_btn.setFixedSize(28, 28)
-        self._tile_btn.setToolTip("Modo grade (até 4 terminais simultâneos)")
+        self._tile_btn.setToolTip("Grid mode (up to 4 simultaneous terminals)")
         self._tile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tile_btn.setStyleSheet(
             "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 4px; }"
@@ -9873,7 +9873,7 @@ class TerminalTabbedWindow(QMainWindow):
         # Right-click on the title bar to close this terminal
         def _title_context_menu(pos, dlg=dialog):
             menu = QMenu(title_bar)
-            close_act = menu.addAction("Fechar terminal")
+            close_act = menu.addAction("Close terminal")
             if menu.exec(title_bar.mapToGlobal(pos)) == close_act:
                 dlg.close()
         title_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -17510,7 +17510,7 @@ class SerialTerminalGUI(QMainWindow):
                 QMenu::item { padding: 6px 20px; border-radius: 3px; }
                 QMenu::item:selected { background-color: #e8e8e8; }
             """)
-            connect_all_action = menu.addAction("Conectar a todos os dispositivos")
+            connect_all_action = menu.addAction("Connect to all devices")
             menu.addSeparator()
             rename_action = menu.addAction("Rename Group")
             action = menu.exec(self.ssh_profiles_tree.viewport().mapToGlobal(pos))
@@ -17831,12 +17831,12 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_password.setToolTip("Password for authentication (optional)")
         self.ssh_password.setStyleSheet(line_edit_style)
 
-        self.ssh_save_password = QCheckBox("Salvar senha")
-        self.ssh_save_password.setToolTip("Salvar a senha no perfil para login automático")
+        self.ssh_save_password = QCheckBox("Save password")
+        self.ssh_save_password.setToolTip("Save password in profile for automatic login")
         self.ssh_save_password.setStyleSheet(
             "QCheckBox { background: transparent; color: #333333; }"
             "QCheckBox::indicator { background: #ffffff; border: 1px solid #aaaaaa; border-radius: 3px; }"
-            "QCheckBox::indicator:checked { background: #1976d2; border-color: #1976d2; }"
+            "QCheckBox::indicator:checked { background: #4CAF50; border-color: #4CAF50; }"
         )
 
         _pw_row = QWidget()
@@ -20403,7 +20403,7 @@ class SerialTerminalGUI(QMainWindow):
         _srv_btn.setFixedWidth(28)
         _srv_btn.setFixedHeight(self.iperf_host_input.sizeHint().height() or 26)
         _srv_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _srv_btn.setToolTip("Servidores iPerf3 públicos")
+        _srv_btn.setToolTip("Public iPerf3 servers")
         _srv_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f5f5f5;
