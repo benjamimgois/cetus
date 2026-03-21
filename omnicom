@@ -8799,6 +8799,31 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.search_next_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.search_status)
+        button_layout.addStretch()
+        button_layout.addWidget(_make_vsep())
+        button_layout.addSpacing(8)
+
+        # Group 4 – disconnect
+        self.disconnect_btn = QPushButton("  Disconnect  ")
+        self.disconnect_btn.setFixedHeight(35)
+        self.disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.disconnect_btn.setToolTip("Encerrar sessão e fechar aba")
+        self.disconnect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a1a1a;
+                color: #ef5350;
+                border: 1px solid #5a2a2a;
+                border-radius: 6px;
+                font-size: 10pt;
+                font-weight: bold;
+                padding: 0 12px;
+            }
+            QPushButton:hover { background-color: #4a2020; border-color: #ef5350; }
+            QPushButton:pressed { background-color: #2a1010; }
+        """)
+        self.disconnect_btn.clicked.connect(self.close)
+        button_layout.addWidget(self.disconnect_btn)
+        button_layout.addSpacing(6)
 
         button_bar = QWidget()
         button_bar.setStyleSheet("background-color: #1e1e1e;")
@@ -9577,6 +9602,7 @@ class DetachableTabBar(QTabBar):
     """QTabBar with right-click context menu to detach a tab into its own window.
     Draws a per-tab coloured indicator strip at the top of each tab."""
     detach_requested = pyqtSignal(int)
+    close_requested  = pyqtSignal(int)   # emitted by context-menu "Fechar aba"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -9629,7 +9655,7 @@ class DetachableTabBar(QTabBar):
             if chosen == detach_act:
                 self.detach_requested.emit(idx)
             elif chosen == close_act:
-                self.tabCloseRequested.emit(idx)
+                self.close_requested.emit(idx)
 
 
 class DetachedTerminalWindow(QMainWindow):
@@ -9710,6 +9736,7 @@ class TerminalTabbedWindow(QMainWindow):
         tab_bar = DetachableTabBar()
         self.tab_widget.setTabBar(tab_bar)
         tab_bar.detach_requested.connect(self._detach_tab)
+        tab_bar.close_requested.connect(self._close_tab)
 
         self.tab_widget.tabCloseRequested.connect(self._close_tab)
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -9868,6 +9895,15 @@ class TerminalTabbedWindow(QMainWindow):
         tb_layout.addStretch()
 
         layout.addWidget(title_bar)
+
+        # Right-click on the title bar to close this terminal
+        def _title_context_menu(pos, dlg=dialog):
+            menu = QMenu(title_bar)
+            close_act = menu.addAction("Fechar terminal")
+            if menu.exec(title_bar.mapToGlobal(pos)) == close_act:
+                dlg.close()
+        title_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        title_bar.customContextMenuRequested.connect(_title_context_menu)
 
         # removeTab() hides the widget — must show() after reparenting into a splitter
         dialog.show()
