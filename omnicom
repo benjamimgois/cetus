@@ -19613,12 +19613,7 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Enter a host before saving")
             return
 
-        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
-        if not ok or not name.strip():
-            return
-        name = name.strip()
-
-        # Collect existing groups from the tree for autocomplete
+        # Collect existing groups
         existing_groups = []
         root = self.ssh_profiles_tree.invisibleRootItem()
         for i in range(root.childCount()):
@@ -19629,11 +19624,47 @@ class SerialTerminalGUI(QMainWindow):
         if not existing_groups:
             existing_groups = ['Default']
 
-        group, ok = QInputDialog.getItem(
-            self, "Profile Group", "Group:", existing_groups, 0, True)
-        if not ok:
+        # Single dialog: name + group + vendor
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Save Profile")
+        dlg.setMinimumWidth(320)
+        form = QFormLayout(dlg)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 16, 16, 16)
+
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("e.g. SW_CORE")
+        form.addRow("Profile name:", name_edit)
+
+        group_combo = QComboBox()
+        group_combo.setEditable(True)
+        group_combo.addItems(existing_groups)
+        form.addRow("Group:", group_combo)
+
+        vendor_combo = QComboBox()
+        vendor_combo.addItems(self.VENDOR_LIST)
+        # Pre-select vendor currently active in the terminal (if any)
+        current_vendor = getattr(self, '_pending_vendor', None) or 'Default'
+        idx = vendor_combo.findText(current_vendor)
+        if idx >= 0:
+            vendor_combo.setCurrentIndex(idx)
+        form.addRow("Vendor:", vendor_combo)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form.addRow(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        group = group.strip() or 'Default'
+
+        name = name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Warning", "Profile name cannot be empty")
+            return
+        group  = group_combo.currentText().strip() or 'Default'
+        vendor = vendor_combo.currentText()
 
         auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
         protocol = self.ssh_current_protocol
@@ -19642,7 +19673,7 @@ class SerialTerminalGUI(QMainWindow):
             name, host, self.ssh_port.text(),
             self.ssh_username.text(), auth_method,
             self.ssh_key_path.text() if auth_method == 'key' else '',
-            protocol, group=group, password=saved_pw
+            protocol, group=group, password=saved_pw, vendor=vendor
         )
         self.refresh_ssh_profiles()
         QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
