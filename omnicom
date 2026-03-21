@@ -9803,7 +9803,7 @@ class TerminalTabbedWindow(QMainWindow):
 
         # Title bar with host colour accent
         title_bar = QWidget()
-        title_bar.setFixedHeight(22)
+        title_bar.setFixedHeight(26)
         title_bar.setStyleSheet(
             f"background: #161616; border-bottom: 2px solid {color};"
         )
@@ -9816,7 +9816,7 @@ class TerminalTabbedWindow(QMainWindow):
         tb_layout.addWidget(dot)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #cccccc; font-size: 11px; background: transparent;")
+        lbl.setStyleSheet("color: #e0e0e0; font-size: 13px; font-weight: bold; background: transparent;")
         tb_layout.addWidget(lbl)
         tb_layout.addStretch()
 
