@@ -634,26 +634,25 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH', vendor='Default', group='Default'):
+    def save_ssh_profile(self, name, host, port, username, auth_method, key_path='', protocol='SSH', vendor='Default', group='Default', password=''):
         """Save an SSH connection profile"""
         profiles = self.get_ssh_profiles()
+        entry = {
+            'name': name, 'host': host, 'port': port,
+            'username': username, 'auth_method': auth_method,
+            'key_path': key_path, 'protocol': protocol,
+            'vendor': vendor, 'group': group,
+        }
+        if password:
+            import base64
+            entry['password'] = base64.b64encode(password.encode()).decode()
         # Update existing or add new
         for i, p in enumerate(profiles):
             if p.get('name') == name:
-                profiles[i] = {
-                    'name': name, 'host': host, 'port': port,
-                    'username': username, 'auth_method': auth_method,
-                    'key_path': key_path, 'protocol': protocol,
-                    'vendor': vendor, 'group': group
-                }
+                profiles[i] = entry
                 break
         else:
-            profiles.append({
-                'name': name, 'host': host, 'port': port,
-                'username': username, 'auth_method': auth_method,
-                'key_path': key_path, 'protocol': protocol,
-                'vendor': vendor, 'group': group
-            })
+            profiles.append(entry)
         self.set('ssh_profiles', json.dumps(profiles))
 
     def delete_ssh_profile(self, name):
@@ -8799,31 +8798,6 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.search_next_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.search_status)
-        button_layout.addStretch()
-        button_layout.addWidget(_make_vsep())
-        button_layout.addSpacing(8)
-
-        # Group 4 – disconnect
-        self.disconnect_btn = QPushButton("  Disconnect  ")
-        self.disconnect_btn.setFixedHeight(35)
-        self.disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.disconnect_btn.setToolTip("Encerrar sessão e fechar aba")
-        self.disconnect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3a1a1a;
-                color: #ef5350;
-                border: 1px solid #5a2a2a;
-                border-radius: 6px;
-                font-size: 10pt;
-                font-weight: bold;
-                padding: 0 12px;
-            }
-            QPushButton:hover { background-color: #4a2020; border-color: #ef5350; }
-            QPushButton:pressed { background-color: #2a1010; }
-        """)
-        self.disconnect_btn.clicked.connect(self.close)
-        button_layout.addWidget(self.disconnect_btn)
-        button_layout.addSpacing(6)
 
         button_bar = QWidget()
         button_bar.setStyleSheet("background-color: #1e1e1e;")
@@ -17536,10 +17510,14 @@ class SerialTerminalGUI(QMainWindow):
                 QMenu::item { padding: 6px 20px; border-radius: 3px; }
                 QMenu::item:selected { background-color: #e8e8e8; }
             """)
+            connect_all_action = menu.addAction("Conectar a todos os dispositivos")
+            menu.addSeparator()
             rename_action = menu.addAction("Rename Group")
             action = menu.exec(self.ssh_profiles_tree.viewport().mapToGlobal(pos))
             if action == rename_action:
                 self._rename_ssh_group(item)
+            elif action == connect_all_action:
+                self._connect_all_in_group(item)
             return
 
         ip = profile.get('host', '').strip()
@@ -17852,7 +17830,17 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_password.setPlaceholderText("Leave blank to be prompted")
         self.ssh_password.setToolTip("Password for authentication (optional)")
         self.ssh_password.setStyleSheet(line_edit_style)
-        ssh_layout.addRow("Password:", self.ssh_password)
+
+        self.ssh_save_password = QCheckBox("Salvar senha")
+        self.ssh_save_password.setToolTip("Salvar a senha no perfil para login automático")
+
+        _pw_row = QWidget()
+        _pw_layout = QHBoxLayout(_pw_row)
+        _pw_layout.setContentsMargins(0, 0, 0, 0)
+        _pw_layout.setSpacing(8)
+        _pw_layout.addWidget(self.ssh_password)
+        _pw_layout.addWidget(self.ssh_save_password)
+        ssh_layout.addRow("Password:", _pw_row)
 
         # SSH Key checkbox (for SSH only)
         self.use_ssh_key = QCheckBox("Use SSH Key instead of password")
@@ -19427,6 +19415,19 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_key_path.setText(profile.get('key_path', ''))
         else:
             self.use_ssh_key.setChecked(False)
+            # Restore saved password if present
+            import base64
+            saved_pw = profile.get('password', '')
+            if saved_pw:
+                try:
+                    self.ssh_password.setText(base64.b64decode(saved_pw.encode()).decode())
+                    self.ssh_save_password.setChecked(True)
+                except Exception:
+                    self.ssh_password.clear()
+                    self.ssh_save_password.setChecked(False)
+            else:
+                self.ssh_password.clear()
+                self.ssh_save_password.setChecked(False)
 
         port = profile.get('port', '22')
         protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
@@ -19442,6 +19443,60 @@ class SerialTerminalGUI(QMainWindow):
 
         QApplication.processEvents()
         QTimer.singleShot(100, self.connect_ssh)
+
+    def _connect_all_in_group(self, group_item):
+        """Connect to every device in a Quick Connect group sequentially."""
+        import base64
+        children = [group_item.child(i) for i in range(group_item.childCount())]
+        if not children:
+            return
+
+        def _connect_one(idx):
+            if idx >= len(children):
+                return
+            item = children[idx]
+            profile = item.data(0, Qt.ItemDataRole.UserRole)
+            if not profile:
+                QTimer.singleShot(0, lambda: _connect_one(idx + 1))
+                return
+
+            self._pending_profile_name = profile.get('name', '')
+            self.ssh_host.setText(profile.get('host', ''))
+            self.ssh_port.setText(profile.get('port', '22'))
+            self.ssh_username.setText(profile.get('username', ''))
+
+            if profile.get('auth_method') == 'key':
+                self.use_ssh_key.setChecked(True)
+                self.ssh_key_path.setText(profile.get('key_path', ''))
+                self.ssh_password.clear()
+            else:
+                self.use_ssh_key.setChecked(False)
+                saved_pw = profile.get('password', '')
+                if saved_pw:
+                    try:
+                        self.ssh_password.setText(base64.b64decode(saved_pw.encode()).decode())
+                    except Exception:
+                        self.ssh_password.clear()
+                else:
+                    self.ssh_password.clear()
+
+            port = profile.get('port', '22')
+            protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
+            self._ssh_protocol_btn_clicked(protocol)
+
+            vendor_widget = self.ssh_profiles_tree.itemWidget(item, 4)
+            if vendor_widget:
+                btn = vendor_widget.findChild(QPushButton)
+                self._pending_vendor = btn.property('vendor') if btn else 'Default'
+            else:
+                self._pending_vendor = profile.get('vendor', 'Default')
+
+            QApplication.processEvents()
+            self.connect_ssh()
+            # Small delay between connections so the terminal window has time to open
+            QTimer.singleShot(400, lambda: _connect_one(idx + 1))
+
+        _connect_one(0)
 
     def _ssh_group_expanded(self, item):
         """Update group item arrow indicator when expanded"""
@@ -19577,11 +19632,12 @@ class SerialTerminalGUI(QMainWindow):
 
         auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
         protocol = self.ssh_current_protocol
+        saved_pw = self.ssh_password.text() if self.ssh_save_password.isChecked() else ''
         self.config.save_ssh_profile(
             name, host, self.ssh_port.text(),
             self.ssh_username.text(), auth_method,
             self.ssh_key_path.text() if auth_method == 'key' else '',
-            protocol, group=group
+            protocol, group=group, password=saved_pw
         )
         self.refresh_ssh_profiles()
         QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
