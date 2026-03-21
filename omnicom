@@ -19969,19 +19969,32 @@ class SerialTerminalGUI(QMainWindow):
         connection_type = 'telnet' if self.ssh_current_protocol == "Telnet" else 'ssh'
 
         # Create and start connection worker thread
-        self.connection_worker = ConnectionWorker(
+        # Capture profile name and vendor NOW (before async callbacks fire),
+        # so concurrent connections don't overwrite each other's values.
+        _profile_name = self._pending_profile_name
+        _vendor       = getattr(self, '_pending_vendor', None)
+        self._pending_profile_name = None
+        self._pending_vendor       = None
+
+        worker = ConnectionWorker(
             connection_type,
             host, port, username, password, key_path
         )
-        
-        # Connect signals
-        self.connection_worker.connection_ready.connect(self.on_connection_ready)
-        self.connection_worker.connection_failed.connect(self.on_connection_failed)
-        
-        # Start connection in background thread
-        self.connection_worker.start()
+        worker.connection_ready.connect(
+            lambda ct, cl, ch, hi, pn=_profile_name, v=_vendor:
+                self.on_connection_ready(ct, cl, ch, hi, pn, v)
+        )
+        worker.connection_failed.connect(self.on_connection_failed)
+
+        # Keep a reference so the worker isn't GC'd while the thread runs
+        if not hasattr(self, '_active_workers'):
+            self._active_workers = []
+        self._active_workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._active_workers.remove(w) if w in self._active_workers else None)
+        worker.start()
     
-    def on_connection_ready(self, conn_type, client, channel, host_info):
+    def on_connection_ready(self, conn_type, client, channel, host_info,
+                            profile_name=None, vendor=None):
         """Handle successful connection from worker thread - create terminal tab in UI thread."""
         terminal_dialog = TerminalDialog(None, self.config)
 
@@ -19997,7 +20010,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.telnet_client = client
             terminal_dialog.telnet_running = True
             terminal_dialog.connection_type = 'telnet'
-            tab_label = self._pending_profile_name or f"Telnet: {host_info[0]}"
+            tab_label = profile_name or f"Telnet: {host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
             terminal_dialog.set_connection_status(host=host_info[0], color=color)
         else:  # SSH
@@ -20005,21 +20018,19 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.ssh_channel = channel
             terminal_dialog.ssh_running = True
             terminal_dialog.connection_type = 'ssh'
-            tab_label = self._pending_profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
+            tab_label = profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
             terminal_dialog.set_connection_status(
                 user=host_info[2], host=host_info[0], color=color
             )
 
         # ── Profile banner (coloured label inside the terminal widget) ───────
-        if self._pending_profile_name:
-            terminal_dialog.set_profile_name(self._pending_profile_name)
-            self._pending_profile_name = None
+        if profile_name:
+            terminal_dialog.set_profile_name(profile_name)
 
         # ── Vendor syntax highlighting ────────────────────────────────────────
-        if hasattr(self, '_pending_vendor') and self._pending_vendor:
-            terminal_dialog.change_vendor(self._pending_vendor)
-            self._pending_vendor = None
+        if vendor:
+            terminal_dialog.change_vendor(vendor)
 
         # ── Track and wire up close signal ───────────────────────────────────
         self.open_terminals.append(terminal_dialog)
