@@ -19627,7 +19627,23 @@ class SerialTerminalGUI(QMainWindow):
         # Single dialog: name + group + vendor
         dlg = QDialog(self)
         dlg.setWindowTitle("Save Profile")
-        dlg.setMinimumWidth(320)
+        dlg.setMinimumWidth(340)
+        dlg.setStyleSheet("""
+            QDialog       { background-color: #1e1e1e; color: #e0e0e0; }
+            QLabel        { color: #e0e0e0; }
+            QLineEdit     { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;
+                            border-radius: 5px; padding: 4px 8px; }
+            QComboBox     { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;
+                            border-radius: 5px; padding: 4px 8px; }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView { background: #2d2d2d; color: #e0e0e0;
+                                          selection-background-color: #3a3a3a; border: 1px solid #555; }
+            QDialogButtonBox QPushButton { background: #2d2d2d; color: #e0e0e0;
+                                           border: 1px solid #555; border-radius: 5px;
+                                           padding: 5px 16px; min-width: 70px; }
+            QDialogButtonBox QPushButton:hover   { background: #3a3a3a; border-color: #888; }
+            QDialogButtonBox QPushButton:pressed { background: #222; }
+        """)
         form = QFormLayout(dlg)
         form.setSpacing(10)
         form.setContentsMargins(16, 16, 16, 16)
