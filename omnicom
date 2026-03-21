@@ -262,7 +262,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter, QStyle
+    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter
