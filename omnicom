@@ -9669,6 +9669,26 @@ class DetachedTerminalWindow(QMainWindow):
             event.ignore()
 
 
+class _OverflowTiledWindow(QMainWindow):
+    """Standalone window for overflow tiled terminals (groups beyond the first 4).
+    Closing it returns all terminals to the main TerminalTabbedWindow as tabs."""
+
+    def __init__(self, tiled_widget, group, main_win):
+        super().__init__()
+        self.setWindowTitle("Omnicom — Terminais")
+        self._group = group
+        self._main_win = main_win
+        self.resize(main_win.width(), main_win.height())
+        self.setCentralWidget(tiled_widget)
+
+    def closeEvent(self, event):
+        for dialog, label, color in self._group:
+            self._main_win._reinsert_tab(dialog, label, color)
+        if self in self._main_win._overflow_tiled_windows:
+            self._main_win._overflow_tiled_windows.remove(self)
+        super().closeEvent(event)
+
+
 class TerminalTabbedWindow(QMainWindow):
     """Single window that hosts all SSH/Telnet terminal sessions as tabs."""
 
@@ -9696,7 +9716,8 @@ class TerminalTabbedWindow(QMainWindow):
 
         self._detached_windows: list = []
         self._tiled_mode = False
-        self._tiled_info: list = []  # list of (dialog, label, color_str) in tiled mode
+        self._tiled_info: list = []          # list of (dialog, label, color_str) in tiled mode
+        self._overflow_tiled_windows: list = []  # _OverflowTiledWindow instances for groups 2, 3, …
 
         # Grid-view toggle button — placed as the left corner widget of the tab bar
         self._tile_btn = QToolButton()
@@ -9765,33 +9786,54 @@ class TerminalTabbedWindow(QMainWindow):
             self._enter_tiled_mode()
 
     def _enter_tiled_mode(self):
-        """Move up to 4 tabs into a split-screen grid view."""
-        n = min(self.tab_widget.count(), 4)
+        """Move all tabs into split-screen grid view(s).
+        First 4 go into the main window; every additional group of 4 gets
+        its own _OverflowTiledWindow."""
+        n_total = self.tab_widget.count()
 
         # Capture all tab data while indices are still correct, then remove.
-        # Reading _tab_colors.get(0) inside the removal loop is wrong because
-        # the dict isn't reindexed after removeTab(), so every iteration would
-        # get the same (stale) index-0 color.
         tab_bar = self.tab_widget.tabBar()
-        self._tiled_info = []
-        for i in range(n):
+        all_info = []
+        for i in range(n_total):
             dialog = self.tab_widget.widget(i)
             label  = self.tab_widget.tabText(i)
             color  = tab_bar._tab_colors.get(i)
             color_str = color.name() if color else '#4fc3f7'
-            self._tiled_info.append((dialog, label, color_str))
-        for _ in range(n):
+            all_info.append((dialog, label, color_str))
+        for _ in range(n_total):
             self.tab_widget.removeTab(0)
 
+        # Main window: first group of up to 4
+        self._tiled_info = all_info[:4]
         tiled_widget = self._build_tiled_widget(self._tiled_info)
-        self._stack.addWidget(tiled_widget)       # index 1
+        self._stack.addWidget(tiled_widget)
         self._stack.setCurrentWidget(tiled_widget)
         self._tiled_mode = True
         self._tile_btn.setIcon(self._make_grid_icon(active=True))
-
-        # Recalculate PTY sizes after the layout settles
         for dialog, _, _ in self._tiled_info:
             QTimer.singleShot(200, dialog.terminal._recalculate_size)
+
+        # Overflow groups: one new window per group of 4
+        self._overflow_tiled_windows = []
+        for start in range(4, n_total, 4):
+            group = all_info[start:start + 4]
+            exit_cb_ref = []  # mutable cell for forward reference
+
+            def _make_overflow_exit(grp):
+                def _exit():
+                    for dialog, label, color in grp:
+                        self._reinsert_tab(dialog, label, color)
+                    if win in self._overflow_tiled_windows:
+                        self._overflow_tiled_windows.remove(win)
+                    win.close()
+                return _exit
+
+            tw = self._build_tiled_widget(group, exit_callback=_make_overflow_exit(group))
+            win = _OverflowTiledWindow(tw, group, self)
+            win.show()
+            self._overflow_tiled_windows.append(win)
+            for dialog, _, _ in group:
+                QTimer.singleShot(200, dialog.terminal._recalculate_size)
 
     def _make_tiled_panel(self, dialog: 'TerminalDialog', label: str, color: str) -> QWidget:
         """Wrap a dialog in a panel with a colored title bar showing the host label."""
@@ -9828,10 +9870,16 @@ class TerminalTabbedWindow(QMainWindow):
 
         return panel
 
-    def _build_tiled_widget(self, info: list) -> QWidget:
+    def _build_tiled_widget(self, info: list, exit_callback=None) -> QWidget:
         """Return a QWidget containing the terminals arranged in a labelled grid.
 
         info: list of (dialog, label, color_str) tuples.
+        Layout rules:
+          1  → full screen
+          2  → side by side (Q1 | Q2)
+          3  → top row (Q1 | Q2), bottom row (Q3+Q4 full width)
+          4  → 2×2 grid
+        exit_callback: callable connected to the exit button (defaults to self._exit_tiled_mode).
         """
         _SPLITTER_STYLE = """
             QSplitter::handle:horizontal { background: #2a2a2a; width: 4px; }
@@ -9863,7 +9911,7 @@ class TerminalTabbedWindow(QMainWindow):
             "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 2px; }"
             "QToolButton:hover { background: #2a2a2a; }"
         )
-        exit_btn.clicked.connect(self._exit_tiled_mode)
+        exit_btn.clicked.connect(exit_callback or self._exit_tiled_mode)
         header_layout.addWidget(exit_btn)
         header_layout.addStretch()
         outer.addWidget(header)
@@ -9879,12 +9927,18 @@ class TerminalTabbedWindow(QMainWindow):
             spl.setSizes([1, 1])
             outer.addWidget(spl)
         elif n == 3:
-            spl = QSplitter(Qt.Orientation.Horizontal)
-            spl.setStyleSheet(_SPLITTER_STYLE)
-            for p in panels:
-                spl.addWidget(p)
-            spl.setSizes([1, 1, 1])
-            outer.addWidget(spl)
+            # Q1+Q2 on top, Q3+Q4 (terminal 3 full width) on bottom
+            vspl = QSplitter(Qt.Orientation.Vertical)
+            vspl.setStyleSheet(_SPLITTER_STYLE)
+            top = QSplitter(Qt.Orientation.Horizontal)
+            top.setStyleSheet(_SPLITTER_STYLE)
+            top.addWidget(panels[0])
+            top.addWidget(panels[1])
+            top.setSizes([1, 1])
+            vspl.addWidget(top)
+            vspl.addWidget(panels[2])
+            vspl.setSizes([1, 1])
+            outer.addWidget(vspl)
         else:  # n == 4
             vspl = QSplitter(Qt.Orientation.Vertical)
             vspl.setStyleSheet(_SPLITTER_STYLE)
@@ -9906,13 +9960,18 @@ class TerminalTabbedWindow(QMainWindow):
         return container
 
     def _exit_tiled_mode(self):
-        """Restore all tiled terminals back into the tab widget."""
+        """Restore all tiled terminals (main window + overflow windows) to tabs."""
         if not self._tiled_mode:
             return
 
+        # Close overflow windows first — their closeEvent returns terminals to tabs
+        for win in list(getattr(self, '_overflow_tiled_windows', [])):
+            win.close()
+        self._overflow_tiled_windows = []
+
         tiled_widget = self._stack.widget(1)
 
-        # Re-insert dialogs as tabs (signals already connected from add_terminal)
+        # Re-insert main-window dialogs as tabs
         for dialog, label, color in self._tiled_info:
             self._reinsert_tab(dialog, label, color)
 
