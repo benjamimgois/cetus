@@ -17978,19 +17978,17 @@ class SerialTerminalGUI(QMainWindow):
 
         # Profiles tree
         self.ssh_profiles_tree = SshProfilesTree()
-        self.ssh_profiles_tree.setColumnCount(6)
-        self.ssh_profiles_tree.setHeaderLabels(["Name", "", "IP", "Port", "Protocol", "Vendor"])
+        self.ssh_profiles_tree.setColumnCount(5)
+        self.ssh_profiles_tree.setHeaderLabels(["Name", "IP", "Port", "Protocol", "Vendor"])
         self.ssh_profiles_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ssh_profiles_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.ssh_profiles_tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_tree.header().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.ssh_profiles_tree.setColumnWidth(1, 22)   # key icon
-        self.ssh_profiles_tree.setColumnWidth(2, 150)
-        self.ssh_profiles_tree.setColumnWidth(3, 38)
-        self.ssh_profiles_tree.setColumnWidth(4, 62)
-        self.ssh_profiles_tree.setColumnWidth(5, 42)
+        self.ssh_profiles_tree.setColumnWidth(1, 150)
+        self.ssh_profiles_tree.setColumnWidth(2, 38)
+        self.ssh_profiles_tree.setColumnWidth(3, 62)
+        self.ssh_profiles_tree.setColumnWidth(4, 42)
         # Center-align all column headers
         for col in range(5):
             self.ssh_profiles_tree.headerItem().setTextAlignment(
@@ -19432,26 +19430,29 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_profiles_tree.setFirstColumnSpanned(
                 group_item_row, self.ssh_profiles_tree.rootIndex(), True)
 
+            _key_icon_path = self.get_tab_icon_path('key.svg')
+            _key_icon = QIcon(load_svg_pixmap(_key_icon_path, 14)) if _key_icon_path else None
+
             for profile in group_profiles:
                 child = QTreeWidgetItem(group_item)
                 child.setText(0, profile.get('name', ''))
-                # Col 1: key icon if password is saved
-                if profile.get('password'):
-                    child.setText(1, '🔑')
-                    child.setToolTip(1, "Password saved")
-                child.setText(2, profile.get('host', ''))
-                child.setText(3, profile.get('port', '22'))
+                # Key icon left of name if password is saved
+                if profile.get('password') and _key_icon:
+                    child.setIcon(0, _key_icon)
+                    child.setToolTip(0, "Password saved")
+                child.setText(1, profile.get('host', ''))
+                child.setText(2, profile.get('port', '22'))
                 port = profile.get('port', '22')
                 protocol = profile.get('protocol', 'SSH' if port == '22' else 'Telnet' if port == '23' else 'SSH')
-                child.setText(4, protocol)
+                child.setText(3, protocol)
                 child.setData(0, Qt.ItemDataRole.UserRole, profile)
                 child.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
                                Qt.ItemFlag.ItemIsDragEnabled)
 
-                # Vendor icon widget (col 5)
+                # Vendor icon widget (col 4)
                 vendor = profile.get('vendor', 'Default')
                 vendor_widget = self._create_vendor_icon_widget(vendor, child, table='ssh')
-                self.ssh_profiles_tree.setItemWidget(child, 5, vendor_widget)
+                self.ssh_profiles_tree.setItemWidget(child, 4, vendor_widget)
 
             group_item.setExpanded(True)
 
