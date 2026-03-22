@@ -10151,7 +10151,7 @@ class SerialTerminalGUI(QMainWindow):
         self._terminal_manager: TerminalTabbedWindow | None = None
         self.tftp_process = None
         self._ft_protocol = 'TFTP'
-        self._ft_mode = 'Server'
+        self._ft_mode = 'Client'
         self._ft_conn = None
         self._ft_connect_time = None
         self._ft_local_path = os.path.expanduser('~')
@@ -11117,15 +11117,15 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:checked     {{ background-color: {PURPLE}; color: white; }}
             QPushButton:hover:!checked {{ background-color: #d8d8d8; }}
         """
-        self._ft_mode_server_btn = QPushButton("Server")
-        self._ft_mode_server_btn.setCheckable(True)
-        self._ft_mode_server_btn.setChecked(True)
-        self._ft_mode_server_btn.setStyleSheet(
-            _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
-        )
         self._ft_mode_client_btn = QPushButton("Client")
         self._ft_mode_client_btn.setCheckable(True)
+        self._ft_mode_client_btn.setChecked(True)
         self._ft_mode_client_btn.setStyleSheet(
+            _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
+        )
+        self._ft_mode_server_btn = QPushButton("Server")
+        self._ft_mode_server_btn.setCheckable(True)
+        self._ft_mode_server_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
         _mode_sep = QFrame()
@@ -11138,11 +11138,11 @@ class SerialTerminalGUI(QMainWindow):
         _mode_inner = QHBoxLayout(_mode_wrap)
         _mode_inner.setContentsMargins(0, 0, 0, 0)
         _mode_inner.setSpacing(0)
-        _mode_inner.addWidget(self._ft_mode_server_btn)
-        _mode_inner.addWidget(_mode_sep)
         _mode_inner.addWidget(self._ft_mode_client_btn)
-        self._ft_mode_server_btn.clicked.connect(lambda: self._ft_mode_changed('Server'))
+        _mode_inner.addWidget(_mode_sep)
+        _mode_inner.addWidget(self._ft_mode_server_btn)
         self._ft_mode_client_btn.clicked.connect(lambda: self._ft_mode_changed('Client'))
+        self._ft_mode_server_btn.clicked.connect(lambda: self._ft_mode_changed('Server'))
 
         mode_sel_row = QHBoxLayout()
         mode_sel_row.addStretch()
