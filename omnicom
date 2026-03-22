@@ -10152,7 +10152,7 @@ class SerialTerminalGUI(QMainWindow):
         self.open_terminals = []  # Track multiple open terminals
         self._terminal_manager: TerminalTabbedWindow | None = None
         self.tftp_process = None
-        self._ft_protocol = 'TFTP'
+        self._ft_protocol = 'SSH'
         self._ft_mode = 'Client'
         self._ft_conn = None
         self._ft_connect_time = None
@@ -11193,7 +11193,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             self._ft_srv_proto_btns[_proto] = _pb
             srv_proto_row.addWidget(_pb)
-        self._ft_srv_proto_btns['TFTP'].setChecked(True)
+        self._ft_srv_proto_btns['SSH'].setChecked(True)
         srv_proto_row.addStretch()
         srv_group_layout.addLayout(srv_proto_row)
 
@@ -11794,7 +11794,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             self._ft_cli_proto_btns[_proto] = _pb
             cli_proto_row.addWidget(_pb)
-        self._ft_cli_proto_btns['TFTP'].setChecked(True)
+        self._ft_cli_proto_btns['SSH'].setChecked(True)
         cli_proto_row.addStretch()
         cli_proto_widget = QWidget()
         cli_proto_widget.setContentsMargins(0, 0, 0, 0)
@@ -11955,6 +11955,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_stack.addWidget(server_panel)   # index 0: Server
         self._ft_stack.addWidget(client_panel)   # index 1: Client
         self._ft_stack.setCurrentIndex(1)        # Client is default
+        self._ft_proto_changed('SSH')            # SSH is default protocol
 
         main_layout.addWidget(self._ft_stack, 1)
 
