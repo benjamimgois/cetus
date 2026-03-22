@@ -10237,10 +10237,10 @@ class SerialTerminalGUI(QMainWindow):
         self.serial_tab_btn.clicked.connect(lambda: self.switch_tab(1))  # Serial stays at 1
         self.serial_tab_btn.setStyleSheet(tab_btn_style.format(color='#2196F3'))
 
-        # SSH tab button
+        # Remote Access tab button
         self.ssh_tab_btn = QPushButton()
         self.ssh_tab_btn.setFixedSize(62, 52)
-        ssh_icon_path = self.get_tab_icon_path('ssh_icon.svg')
+        ssh_icon_path = self.get_tab_icon_path('remote.svg')
         ssh_icon = load_svg_icon(ssh_icon_path, icon_size) if ssh_icon_path else None
         if ssh_icon:
             self.ssh_tab_btn.setIcon(ssh_icon)
@@ -10248,7 +10248,7 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.ssh_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_ComputerIcon))
-        self.ssh_tab_btn.setToolTip("SSH Connection")
+        self.ssh_tab_btn.setToolTip("Remote Access")
         self.ssh_tab_btn.setCheckable(True)
         self.ssh_tab_btn.setChecked(True)
         self.ssh_tab_btn.clicked.connect(lambda: self.switch_tab(0))
