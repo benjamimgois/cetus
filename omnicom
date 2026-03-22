@@ -10122,6 +10122,24 @@ class TerminalTabbedWindow(QMainWindow):
         event.accept()
 
 
+class _CollapsibleGroupBox(QGroupBox):
+    """QGroupBox whose title bar acts as a collapse/expand toggle.
+    Click anywhere on the title text (top ~20 px) to toggle visibility of content.
+    The title prefix '▾ ' / '▸ ' reflects the current state.
+    """
+    toggle_requested = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        title_height = self.fontMetrics().height() + 10
+        if event.position().y() <= title_height:
+            self.toggle_requested.emit()
+        else:
+            super().mousePressEvent(event)
+
+    def setCursor_hand(self):
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -17695,34 +17713,14 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        # === Remote Connection Group (collapsible) ===
-        ssh_group = QGroupBox("Remote Connection")
+        # === Remote Connection Group (collapsible via title click) ===
+        ssh_group = _CollapsibleGroupBox("▾  Remote Connection")
+        ssh_group.setCursor_hand()
+        ssh_group.toggle_requested.connect(self._toggle_ssh_remote_connection)
+        self.ssh_rc_group = ssh_group
         ssh_group_layout = QVBoxLayout()
         ssh_group_layout.setContentsMargins(8, 2, 8, 6)
         ssh_group_layout.setSpacing(2)
-
-        # Toggle button row (always visible, inside the group box)
-        ssh_rc_btn_row = QHBoxLayout()
-        ssh_rc_btn_row.setContentsMargins(0, 0, 0, 0)
-        self.ssh_rc_toggle_btn = QPushButton()
-        self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
-            QStyle.StandardPixmap.SP_TitleBarShadeButton))
-        self.ssh_rc_toggle_btn.setFixedSize(22, 22)
-        self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
-        self.ssh_rc_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.ssh_rc_toggle_btn.setStyleSheet("""
-            QPushButton {
-                border: 1px solid #b0b0b0;
-                border-radius: 4px;
-                background-color: #e0e0e0;
-                padding: 0px;
-            }
-            QPushButton:hover { background-color: #c8c8c8; }
-        """)
-        self.ssh_rc_toggle_btn.clicked.connect(self._toggle_ssh_remote_connection)
-        ssh_rc_btn_row.addStretch()
-        ssh_rc_btn_row.addWidget(self.ssh_rc_toggle_btn)
-        ssh_group_layout.addLayout(ssh_rc_btn_row)
 
         # Collapsible content widget
         self.ssh_rc_content = QWidget()
@@ -17927,9 +17925,7 @@ class SerialTerminalGUI(QMainWindow):
         # Restore collapsed state from config
         if self.config.get('ssh_rc_collapsed'):
             self.ssh_rc_content.setVisible(False)
-            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
-                QStyle.StandardPixmap.SP_TitleBarUnshadeButton))
-            self.ssh_rc_toggle_btn.setToolTip("Expandir Remote Connection")
+            self.ssh_rc_group.setTitle("▸  Remote Connection")
 
         # Add shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -19644,17 +19640,13 @@ class SerialTerminalGUI(QMainWindow):
         if collapsing:
             start = self.ssh_rc_content.sizeHint().height()
             end = 0
-            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
-                QStyle.StandardPixmap.SP_TitleBarUnshadeButton))
-            self.ssh_rc_toggle_btn.setToolTip("Expandir Remote Connection")
+            self.ssh_rc_group.setTitle("▸  Remote Connection")
         else:
             start = 0
             end = self.ssh_rc_content.sizeHint().height()
             self.ssh_rc_content.setMaximumHeight(0)
             self.ssh_rc_content.setVisible(True)
-            self.ssh_rc_toggle_btn.setIcon(self.style().standardIcon(
-                QStyle.StandardPixmap.SP_TitleBarShadeButton))
-            self.ssh_rc_toggle_btn.setToolTip("Recolher Remote Connection")
+            self.ssh_rc_group.setTitle("▾  Remote Connection")
 
         anim = QPropertyAnimation(self.ssh_rc_content, b"maximumHeight", self)
         anim.setDuration(220)
