@@ -12069,6 +12069,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self.scan_network_input = QLineEdit()
         self.scan_network_input.setFixedWidth(186)
+        self.scan_network_input.setFixedHeight(35)
         self.scan_network_input.setPlaceholderText("192.168.1.0")
         self.scan_network_input.setToolTip("Network or host IP address")
         self.scan_network_input.setStyleSheet("""
