@@ -11952,7 +11952,7 @@ class SerialTerminalGUI(QMainWindow):
         # Add panels to main stack
         self._ft_stack.addWidget(server_panel)   # index 0: Server
         self._ft_stack.addWidget(client_panel)   # index 1: Client
-        self._ft_stack.setCurrentIndex(0)
+        self._ft_stack.setCurrentIndex(1)        # Client is default
 
         main_layout.addWidget(self._ft_stack, 1)
 
