@@ -443,6 +443,7 @@ class FlatComboButton(QPushButton):
         self._items = []
         self._current = ''
         self._placeholder = ''
+        self._display_func = None   # optional callable(raw_value) -> display string
         self._menu = QMenu(self)
         self._menu.setStyleSheet(self._MENU_STYLE)
         super().setStyleSheet(self._BTN_STYLE)
@@ -465,7 +466,8 @@ class FlatComboButton(QPushButton):
             self.currentTextChanged.emit(text)
 
     def _refresh_display(self):
-        label = self._current if self._current else self._placeholder
+        raw = self._current if self._current else self._placeholder
+        label = self._display_func(raw) if (self._display_func and self._current) else raw
         super().setText(f"  {label}  ▾")
         for action in self._menu.actions():
             action.setChecked(action.text() == self._current)
@@ -12063,7 +12065,7 @@ class SerialTerminalGUI(QMainWindow):
         # Network input: IP address + subnet mask combo
         net_input_layout = QHBoxLayout()
         net_input_layout.setContentsMargins(0, 0, 0, 0)
-        net_input_layout.setSpacing(0)
+        net_input_layout.setSpacing(6)
 
         self.scan_network_input = QLineEdit()
         self.scan_network_input.setFixedWidth(186)
@@ -12083,15 +12085,23 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
-        slash_label = QLabel("/")
-        slash_label.setFixedWidth(6)
-        slash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _cidr_to_decimal = {
+            "8": "/8  (255.0.0.0)", "16": "/16  (255.255.0.0)",
+            "20": "/20  (255.255.240.0)", "21": "/21  (255.255.248.0)",
+            "22": "/22  (255.255.252.0)", "23": "/23  (255.255.254.0)",
+            "24": "/24  (255.255.255.0)", "25": "/25  (255.255.255.128)",
+            "26": "/26  (255.255.255.192)", "27": "/27  (255.255.255.224)",
+            "28": "/28  (255.255.255.240)", "29": "/29  (255.255.255.248)",
+            "30": "/30  (255.255.255.252)", "32": "/32  (255.255.255.255)",
+        }
 
         self.scan_mask_combo = FlatComboButton()
         self.scan_mask_combo.addItems(["8", "16", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "32"])
         self.scan_mask_combo.setCurrentText("24")
-        self.scan_mask_combo.setFixedWidth(90)
+        self.scan_mask_combo.setFixedWidth(186)
         self.scan_mask_combo.setToolTip("Subnet mask (CIDR prefix length)")
+        self.scan_mask_combo._display_func = lambda v: _cidr_to_decimal.get(v, f"/{v}")
+        self.scan_mask_combo._refresh_display()
 
         self.scan_dns_checkbox = QCheckBox("DNS Lookup")
         self.scan_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS (slower)")
@@ -12119,7 +12129,6 @@ class SerialTerminalGUI(QMainWindow):
         """)
 
         net_input_layout.addWidget(self.scan_network_input)
-        net_input_layout.addWidget(slash_label)
         net_input_layout.addWidget(self.scan_mask_combo)
         net_input_layout.addSpacing(10)
         net_input_layout.addWidget(self.scan_dns_checkbox)
@@ -12336,7 +12345,7 @@ class SerialTerminalGUI(QMainWindow):
         options_widget = QWidget()
         options_widget.setContentsMargins(0, 0, 0, 0)
         options_widget.setLayout(options_layout)
-        scan_layout.addRow("Options:", options_widget)
+        scan_layout.addRow(options_widget)
 
         scan_group.setLayout(scan_layout)
         scan_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
