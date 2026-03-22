@@ -17917,6 +17917,10 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_key_widget.setLayout(key_layout)
         self.ssh_key_widget.setVisible(False)
         ssh_layout.addRow("Key File:", self.ssh_key_widget)
+        # Hide the "Key File:" label initially (shown only when SSH key is selected)
+        _key_lbl = ssh_layout.labelForField(self.ssh_key_widget)
+        if _key_lbl:
+            _key_lbl.setVisible(False)
 
         self.ssh_rc_content.setLayout(ssh_layout)
         ssh_group_layout.addWidget(self.ssh_rc_content)
@@ -19247,8 +19251,13 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_connect_btn.setText("CONNECT TELNET")
 
     def toggle_ssh_key(self, checked):
-        """Toggle SSH key file widget visibility"""
+        """Toggle SSH key file widget and its label visibility"""
         self.ssh_key_widget.setVisible(checked)
+        layout = self.ssh_rc_content.layout()
+        if isinstance(layout, QFormLayout):
+            lbl = layout.labelForField(self.ssh_key_widget)
+            if lbl:
+                lbl.setVisible(checked)
 
     def _launch_vnc(self, host, port, password):
         """Launch a VNC viewer.
