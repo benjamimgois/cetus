@@ -17773,8 +17773,24 @@ class SerialTerminalGUI(QMainWindow):
         self.protocol_telnet_btn.setStyleSheet(protocol_btn_style)
         self.protocol_telnet_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("Telnet"))
 
+        self.protocol_vnc_btn = QPushButton("VNC")
+        self.protocol_vnc_btn.setCheckable(True)
+        self.protocol_vnc_btn.setFixedWidth(90)
+        self.protocol_vnc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.protocol_vnc_btn.setStyleSheet(protocol_btn_style)
+        self.protocol_vnc_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("VNC"))
+
+        self.protocol_rdp_btn = QPushButton("RDP")
+        self.protocol_rdp_btn.setCheckable(True)
+        self.protocol_rdp_btn.setFixedWidth(90)
+        self.protocol_rdp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.protocol_rdp_btn.setStyleSheet(protocol_btn_style)
+        self.protocol_rdp_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("RDP"))
+
         protocol_layout.addWidget(self.protocol_ssh_btn)
         protocol_layout.addWidget(self.protocol_telnet_btn)
+        protocol_layout.addWidget(self.protocol_vnc_btn)
+        protocol_layout.addWidget(self.protocol_rdp_btn)
         protocol_layout.addStretch()
         protocol_widget.setLayout(protocol_layout)
         ssh_layout.addRow("Protocol:", protocol_widget)
@@ -17782,7 +17798,9 @@ class SerialTerminalGUI(QMainWindow):
         # Store protocol buttons for easy access
         self.ssh_protocol_buttons = {
             'SSH': self.protocol_ssh_btn,
-            'Telnet': self.protocol_telnet_btn
+            'Telnet': self.protocol_telnet_btn,
+            'VNC': self.protocol_vnc_btn,
+            'RDP': self.protocol_rdp_btn,
         }
         self.ssh_current_protocol = "SSH"
 
@@ -19204,17 +19222,22 @@ class SerialTerminalGUI(QMainWindow):
     # === SSH/Telnet Helper Methods ===
 
     def _ssh_protocol_btn_clicked(self, protocol):
-        """Handle SSH/Telnet protocol button click"""
+        """Handle protocol button click (SSH / Telnet / VNC / RDP)"""
         for btn in self.ssh_protocol_buttons.values():
             btn.setChecked(False)
         self.ssh_protocol_buttons[protocol].setChecked(True)
         self.ssh_current_protocol = protocol
-        if protocol == "SSH":
-            self.ssh_port.setText("22")
-            self.ssh_connect_btn.setText("CONNECT SSH")
-        else:
-            self.ssh_port.setText("23")
-            self.ssh_connect_btn.setText("CONNECT TELNET")
+
+        port_map = {'SSH': '22', 'Telnet': '23', 'VNC': '5900', 'RDP': '3389'}
+        self.ssh_port.setText(port_map.get(protocol, '22'))
+        self.ssh_connect_btn.setText(f"CONNECT {protocol}")
+
+        # SSH Key fields only make sense for SSH
+        is_ssh = (protocol == 'SSH')
+        self.use_ssh_key.setVisible(is_ssh)
+        if not is_ssh:
+            self.use_ssh_key.setChecked(False)
+            self.ssh_key_widget.setVisible(False)
 
     def toggle_protocol(self, button):
         """Toggle between SSH and Telnet protocol"""
@@ -19230,6 +19253,50 @@ class SerialTerminalGUI(QMainWindow):
     def toggle_ssh_key(self, checked):
         """Toggle SSH key file widget visibility"""
         self.ssh_key_widget.setVisible(checked)
+
+    def _launch_vnc(self, host, port, password):
+        """Launch an external VNC viewer."""
+        import shutil, subprocess
+        for viewer in ('xtigervncviewer', 'vncviewer', 'vinagre', 'remmina'):
+            if shutil.which(viewer):
+                break
+        else:
+            QMessageBox.critical(self, "VNC Error",
+                "No VNC viewer found.\n\n"
+                "Install one with:\n  sudo apt install tigervnc-viewer")
+            return
+        if viewer == 'remmina':
+            args = [viewer, f'vnc://{host}:{port}']
+        else:
+            args = [viewer, f'{host}::{port}']
+        subprocess.Popen(args)
+
+    def _launch_rdp(self, host, port, username, password):
+        """Launch an external RDP client."""
+        import shutil, subprocess
+        for client in ('xfreerdp', 'rdesktop', 'remmina'):
+            if shutil.which(client):
+                break
+        else:
+            QMessageBox.critical(self, "RDP Error",
+                "No RDP client found.\n\n"
+                "Install one with:\n  sudo apt install freerdp2-x11")
+            return
+        if client == 'xfreerdp':
+            args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution']
+            if username:
+                args.append(f'/u:{username}')
+            if password:
+                args.append(f'/p:{password}')
+        elif client == 'remmina':
+            args = [client, f'rdp://{username}@{host}:{port}']
+        else:  # rdesktop
+            args = [client, '-P', f'-p{port}', host]
+            if username:
+                args += ['-u', username]
+            if password:
+                args += [f'-p{password}']
+        subprocess.Popen(args)
 
     def browse_ssh_key(self):
         """Open file dialog to select SSH private key"""
@@ -19955,14 +20022,25 @@ class SerialTerminalGUI(QMainWindow):
             QApplication.clipboard().setText(profile.get('baudrate', ''))
 
     def connect_ssh(self):
-        """Connect via SSH or Telnet"""
+        """Connect via SSH, Telnet, VNC or RDP"""
         host = self.ssh_host.text().strip()
-        port = self.ssh_port.text().strip() or "22"
+        port = self.ssh_port.text().strip()
         username = self.ssh_username.text().strip()
+        password = self.ssh_password.text()
 
         if not host:
             QMessageBox.warning(self, "Warning", "Enter host address")
             return
+
+        # VNC / RDP: launch external viewer and return immediately
+        if self.ssh_current_protocol == "VNC":
+            self._launch_vnc(host, port or "5900", password)
+            return
+        if self.ssh_current_protocol == "RDP":
+            self._launch_rdp(host, port or "3389", username, password)
+            return
+
+        port = port or "22"
 
         # SSH connection requires paramiko
         if self.ssh_current_protocol == "SSH" and not SSH_AVAILABLE:
@@ -19979,7 +20057,6 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         # Get authentication credentials
-        password = None
         key_path = None
 
         if self.use_ssh_key.isChecked():
@@ -19989,9 +20066,9 @@ class SerialTerminalGUI(QMainWindow):
                 QMessageBox.warning(self, "Warning", "Select SSH key file")
                 return
             key_path = os.path.expanduser(key_path)
+            password = None
         else:
-            # Password authentication
-            password = self.ssh_password.text()
+            # Password authentication (already read above)
             if not password:
                 # Prompt for password with option to save it
                 _pw_dlg = QDialog(self)
