@@ -19255,15 +19255,19 @@ class SerialTerminalGUI(QMainWindow):
         self.ssh_key_widget.setVisible(checked)
 
     def _launch_vnc(self, host, port, password):
-        """Launch an external VNC viewer."""
+        """Launch a Wayland-compatible VNC viewer.
+        Priority: remmina (native Wayland) → vncviewer → xtigervncviewer (XWayland)
+        """
         import shutil, subprocess
-        for viewer in ('xtigervncviewer', 'vncviewer', 'vinagre', 'remmina'):
+        # remmina has native Wayland support; tigervnc/vncviewer run via XWayland
+        for viewer in ('remmina', 'vncviewer', 'xtigervncviewer'):
             if shutil.which(viewer):
                 break
         else:
             QMessageBox.critical(self, "VNC Error",
                 "No VNC viewer found.\n\n"
-                "Install one with:\n  sudo apt install tigervnc-viewer")
+                "Install Remmina (Wayland-native):\n"
+                "  sudo apt install remmina remmina-plugin-vnc")
             return
         if viewer == 'remmina':
             args = [viewer, f'vnc://{host}:{port}']
@@ -19272,30 +19276,31 @@ class SerialTerminalGUI(QMainWindow):
         subprocess.Popen(args)
 
     def _launch_rdp(self, host, port, username, password):
-        """Launch an external RDP client."""
+        """Launch a Wayland-compatible RDP client.
+        Priority: wlfreerdp (FreeRDP 3.x Wayland) → remmina (GTK Wayland) → xfreerdp (XWayland)
+        """
         import shutil, subprocess
-        for client in ('xfreerdp', 'rdesktop', 'remmina'):
+        # wlfreerdp is the native Wayland frontend for FreeRDP 3.x
+        for client in ('wlfreerdp', 'remmina', 'xfreerdp'):
             if shutil.which(client):
                 break
         else:
             QMessageBox.critical(self, "RDP Error",
                 "No RDP client found.\n\n"
-                "Install one with:\n  sudo apt install freerdp2-x11")
+                "Install FreeRDP 3 (Wayland-native):\n"
+                "  sudo apt install freerdp3-wayland\n"
+                "or Remmina:\n"
+                "  sudo apt install remmina remmina-plugin-rdp")
             return
-        if client == 'xfreerdp':
+        if client in ('wlfreerdp', 'xfreerdp'):
             args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution']
             if username:
                 args.append(f'/u:{username}')
             if password:
                 args.append(f'/p:{password}')
-        elif client == 'remmina':
-            args = [client, f'rdp://{username}@{host}:{port}']
-        else:  # rdesktop
-            args = [client, '-P', f'-p{port}', host]
-            if username:
-                args += ['-u', username]
-            if password:
-                args += [f'-p{password}']
+        else:  # remmina
+            user_part = f'{username}@' if username else ''
+            args = [client, f'rdp://{user_part}{host}:{port}']
         subprocess.Popen(args)
 
     def browse_ssh_key(self):
