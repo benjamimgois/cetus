@@ -11955,7 +11955,6 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_stack.addWidget(server_panel)   # index 0: Server
         self._ft_stack.addWidget(client_panel)   # index 1: Client
         self._ft_stack.setCurrentIndex(1)        # Client is default
-        self._ft_proto_changed('SSH')            # SSH is default protocol
 
         main_layout.addWidget(self._ft_stack, 1)
 
@@ -12039,6 +12038,9 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_status_timer.timeout.connect(self._ft_update_duration)
 
         page.setLayout(main_layout)
+
+        # Set default protocol
+        self._ft_proto_changed('SSH')
 
         # Load initial local file list and TFTP file list
         self._ft_refresh_local()
