@@ -12063,10 +12063,10 @@ class SerialTerminalGUI(QMainWindow):
         # Network input: IP address + subnet mask combo
         net_input_layout = QHBoxLayout()
         net_input_layout.setContentsMargins(0, 0, 0, 0)
-        net_input_layout.setSpacing(4)
+        net_input_layout.setSpacing(0)
 
         self.scan_network_input = QLineEdit()
-        self.scan_network_input.setFixedWidth(162)
+        self.scan_network_input.setFixedWidth(186)
         self.scan_network_input.setPlaceholderText("192.168.1.0")
         self.scan_network_input.setToolTip("Network or host IP address")
         self.scan_network_input.setStyleSheet("""
@@ -12084,12 +12084,13 @@ class SerialTerminalGUI(QMainWindow):
         """)
 
         slash_label = QLabel("/")
-        slash_label.setFixedWidth(8)
+        slash_label.setFixedWidth(6)
+        slash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.scan_mask_combo = FlatComboButton()
         self.scan_mask_combo.addItems(["8", "16", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "32"])
         self.scan_mask_combo.setCurrentText("24")
-        self.scan_mask_combo.setFixedWidth(80)
+        self.scan_mask_combo.setFixedWidth(90)
         self.scan_mask_combo.setToolTip("Subnet mask (CIDR prefix length)")
 
         self.scan_dns_checkbox = QCheckBox("DNS Lookup")
