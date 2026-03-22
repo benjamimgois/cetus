@@ -8,7 +8,9 @@ url="https://github.com/benjamimgois/omnicom"
 license=('GPL-3.0-or-later')
 depends=('python' 'python-pyqt6' 'python-pyte' 'python-paramiko' 'python-pysnmp' 'python-standard-telnetlib' 'qt6-serialport' 'picocom' 'sudo' 'openssh' 'samba' 'iperf3' 'traceroute' 'mtr' 'networkmanager' 'nmap')
 optdepends=('nodejs: required for fast-cli (npm install -g fast-cli) — Speed Test via fast.com'
-            'python-pyftpdlib: built-in FTP server support')
+            'python-pyftpdlib: built-in FTP server support'
+            'tigervnc: VNC remote desktop viewer'
+            'freerdp: RDP remote desktop client (provides wlfreerdp for Wayland)')
 makedepends=('git' 'imagemagick')
 provides=('omnicom')
 conflicts=('omnicom')

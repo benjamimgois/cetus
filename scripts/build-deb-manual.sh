@@ -79,6 +79,7 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: Benjamim Gois <benjamimgois@example.com>
 Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, mtr | mtr-tiny, snmp, iw, network-manager, traceroute, whois
+Recommends: tigervnc-viewer, freerdp3-wayland | freerdp2-x11
 Description: Modern graphical interface for serial communication
  Omnicom is a modern and elegant graphical interface for serial
  communication via picocom, with support for SSH and Telnet connections.
