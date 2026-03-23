@@ -2,11 +2,11 @@
 Version=1.0
 Type=Application
 Name=Omnicom
-GenericName=Serial Communication
-Comment=Modern graphical interface for serial communication via picocom
+GenericName=Network Management
+Comment=Network management tools
 Exec=omnicom
 Icon=io.github.benjamimgois.omnicom
 Terminal=false
-Categories=System;Utility;
-Keywords=serial;communication;picocom;tty;uart;rs232;
+Categories=Network;Internet;
+Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;picocom;tty;uart;
 StartupNotify=true

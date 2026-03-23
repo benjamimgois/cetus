@@ -32,7 +32,7 @@
   </a>
 </p>
 
-Easy and modern interface to manage network devices — Serial, SSH, Telnet, Traceroute/MTR, IP Scanner, SNMP, Speed Test and Wi-Fi Survey.
+Easy and modern interface to manage network devices — Serial, SSH, Telnet, VNC, RDP, Traceroute/MTR, IP Scanner, SNMP, File Transfer, Speed Test and Wi-Fi Survey.
 
 <img width="716" height="896" alt="image" src="https://github.com/user-attachments/assets/fe1d4bc5-b92d-4094-bd90-189f70b06466" />
 
@@ -41,80 +41,75 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 
 ### Serial Communication
 - Modern graphical interface with PyQt6
-- **Embedded terminal** - No external terminal required
-- Elegant and responsive design
+- **Embedded terminal** — no external terminal required
 - Automatic serial port detection with QSerialPortInfo
-- Support for serial ports (/dev/ttyS*) and USB adapters (/dev/ttyUSB*)
-- **Port type toggle buttons** (USB / Serial) for quick switching
-- Complete serial parameter configuration:
-  - Baud rate - 300 to 921600 bps
-  - Data bits (5-8)
-  - Parity (None, Even, Odd)
-  - Stop bits (1-2)
-  - Flow control (None, Hardware, Software)
+- Support for serial ports (`/dev/ttyS*`) and USB adapters (`/dev/ttyUSB*`)
+- **Port type toggle** (USB / Serial) for quick switching
+- Complete parameter configuration: baud rate (300–921600), data bits, parity, stop bits, flow control
 - Quick connect profiles with per-device vendor selection
 - Root password request via sudo
-- Real-time bidirectional communication
-- Support for picocom control sequences (Ctrl+A, Ctrl+X, etc.)
 
-### Remote Connections
-- **SSH Support** - Secure remote connections with password or key authentication
-- **Telnet Support** - Connect to network devices via Telnet protocol
-- Connection profile management with per-device vendor selection
-- Automatic protocol detection (SSH port 22, Telnet port 23)
+### Remote Access
+- **SSH** — secure shell with password or private key authentication
+- **Telnet** — connect to legacy devices over port 23
+- **VNC** — graphical desktop access via xtigervncviewer (Wayland-compatible)
+- **RDP** — Windows Remote Desktop via wlfreerdp/xfreerdp (Wayland-compatible)
+- Saved connection profiles with Quick Connect list and vendor selection
+- Save password per host (encrypted in profile)
+- Right-click Quick Connect entries to remove them
+- Key icon indicator for hosts with saved credentials
 
-### Terminal Features
-- VT100/ANSI terminal emulation with pyte
+### Terminal Emulator
+- VT100/ANSI terminal emulation via pyte
 - **Syntax highlighting** for network equipment commands
 - Support for multiple vendors: Cisco, Huawei, H3C, Juniper, D-Link, Brocade, Datacom, Fortinet
-- **Vendor selection per profile** - Automatically applies syntax highlighting on connect
-- **Search with scroll-to-match** - Find text in terminal output (Ctrl+F)
-- **Context menu** - Right-click for copy, paste, and export options
-- Adjustable font size
-- Full keyboard support including special keys and control sequences
+- **Vendor selection per profile** — applies syntax highlighting automatically on connect
+- **Search with scroll-to-match** (Ctrl+F)
+- Scrollback mode — scroll freely without losing the live view
+- Adjustable font size, multiple simultaneous terminal tabs
+- Right-click context menu: copy, paste, export, close tab
 
 ### IP Scanner
 - Network host discovery with ICMP, TCP and UDP scan methods
-- **ARP Scanning** with hostname resolution and MAC vendor detection
-- Configurable subnet mask, ports, timeout and threads
-- Real-time results with IP, status, latency and MAC vendor detection
-- Sortable results table with export to CSV
+- **ARP scanning** with hostname resolution and MAC vendor detection
+- Configurable subnet mask (CIDR /8–/30), ports, timeout and threads
+- Real-time results with IP, status, latency and MAC vendor
+- Sortable results table with CSV export
 - Progress indicator on the scan button
 
 ### Traceroute / MTR
 - Graphical route visualization with glowing neon bars and hop details
 - **MTR (My Traceroute)** for continuous real-time path monitoring
 - **ICMP and TCP ping** with results visualization
-- Latency graph with premium dark/neon aesthetic
+- Latency graph with dark/neon aesthetic
 - Automatic `cap_net_raw` capability configuration for TCP/UDP probes
 - Packet loss and latency statistics per hop
 - Configurable packet count and proxy (SOCKS/HTTP)
 
 ### SNMP Queries
 - SNMP GET, GETNEXT and WALK operations (v1 and v2c)
-- Real-time streaming results displayed in a sortable table (OID, Value, Type)
-- Automatic SNMP value type classification (Integer, String, Counter, TimeTicks, etc.)
-- Walk progress indicator on the execute button
-- Limit of 1000 entries per walk to prevent UI overload
+- GETNEXT remembers the last OID per host and advances on each click
+- Real-time streaming results in a sortable table (OID, Value, Type)
+- Automatic value type classification (Integer, String, Counter, TimeTicks, etc.)
+- Walk progress indicator; limit of 1000 entries per walk to prevent UI overload
 
 ### File Transfer
-- **SSH/SFTP** client and server mode with file browser
-- **SMB** server with full configuration: Share Name, Comment, Workgroup, Valid Users, Guest access, Read-only
-- **FTP** server via pyftpdlib with automatic `pkexec` elevation for port 21
-- **TFTP** server for firmware transfers with network interface auto-detection
-- Collapsible log panel with timestamps for all protocols
-- Unified START (purple) / STOP (red) action button per protocol
+- **SSH/SFTP** — client and server mode with file browser
+- **SMB** — server with Share Name, Comment, Workgroup, Valid Users, Guest access, Read-only
+- **FTP** — server via pyftpdlib with automatic `pkexec` elevation for port 21
+- **TFTP** — server for firmware transfers with network interface auto-detection
+- Client mode defaults to SSH; collapsible log panel with timestamps
 
 ### Vulnerability Scanner
-- **Nmap integration** for OS and service version detection
+- **Nmap** integration for OS and service version detection
 - **CVE search via NVD API** with CVSS severity badges
 - Supports Cisco, Huawei, MikroTik, Juniper and other vendors
 - MikroTik version discovery via SNMP OID
 - Export results to CSV
 
 ### Speed Test
-- **iPerf3 mode** - LAN/WAN throughput testing (client/server/reverse)
-- **fast.com mode** - Internet speed test via Netflix CDN
+- **iPerf3** — LAN/WAN throughput testing (client / server / reverse modes)
+- **fast.com** — internet speed test via Netflix CDN
 - Real-time throughput graph (bitrate + cumulative transfer)
 - Post-test latency measurement via ping
 - ISP and country detection via ip-api.com
@@ -127,6 +122,7 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 - **Power Analysis graph** — scrolling signal history with loss detection
 - **Wi-Fi heatmap** for signal strength visualization
 - Audio feedback (beep alarm) for signal loss events
+
 
 ## Requirements
 
@@ -148,7 +144,9 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, Tra
 | **nmcli** / **network-manager** | Wi-Fi scanning | Yes |
 | **nmap** | Vulnerability Scanner | Yes |
 | **iw** | Wi-Fi interface info | Yes |
-| **fast** / **fast-cli** | Speed Test via fast.com (Netflix CDN) | Optional |
+| **tigervnc** / `xtigervncviewer` | VNC remote desktop (Wayland) | Optional |
+| **freerdp** / `wlfreerdp` | RDP remote desktop (Wayland) | Optional |
+| **fast** / **fast-cli** | Speed Test via fast.com | Optional |
 | **python3-pyftpdlib** | Built-in FTP server | Optional |
 
 Install fast-cli via npm:
@@ -163,8 +161,9 @@ npm install -g fast-cli
 - **standard-telnetlib** — Telnet protocol support (Python 3.13+)
 
 > **Security Note**: Telnet transmits data without encryption, including passwords and sensitive information.
-> Use SSH whenever possible for remote connections. Telnet should only be used in trusted, isolated networks
+> Use SSH whenever possible. Telnet should only be used in trusted, isolated networks
 > or when connecting to devices that don't support SSH.
+
 
 ## Installation
 
@@ -204,7 +203,6 @@ sudo dpkg -i ../omnicom_1.6-1_all.deb
 
 ### Arch Linux / Manjaro (from AUR)
 
-Install using an AUR helper:
 ```bash
 yay -S omnicom
 # or
@@ -213,9 +211,9 @@ paru -S omnicom
 
 ### Arch Linux / Manjaro (from package file)
 
-1. Download the latest `.pkg.tar.zst` package from [releases](https://github.com/benjamimgois/omnicom/releases)
+1. Download the latest `.pkg.tar.zst` from [releases](https://github.com/benjamimgois/omnicom/releases)
 
-2. Install the package:
+2. Install:
 ```bash
 sudo pacman -U omnicom-1.6-1-any.pkg.tar.zst
 ```
@@ -240,25 +238,25 @@ flatpak run io.github.benjamimgois.omnicom
 
 ### Other Linux Distributions
 
-1. Install dependencies (if not already installed):
+1. Install dependencies:
 ```bash
 # Arch Linux / Manjaro
-sudo pacman -S python-pyqt6 qt6-serialport picocom openssh samba iperf3 traceroute mtr networkmanager nmap iw
-pip install pyte paramiko pysnmp
+sudo pacman -S python-pyqt6 qt6-serialport picocom openssh samba iperf3 traceroute mtr networkmanager nmap iw tigervnc freerdp
 
 # Fedora / RHEL
-sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom openssh samba iperf3 traceroute mtr NetworkManager nmap iw
-pip3 install pyte paramiko pysnmp
+sudo dnf install python3-pyqt6 python3-pyqt6-sip picocom openssh samba iperf3 traceroute mtr NetworkManager nmap iw tigervnc freerdp
 
-# Debian / Ubuntu (manual installation)
-sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom openssh-client samba samba-common-bin iperf3 traceroute mtr iw network-manager nmap
+# Debian / Ubuntu
+sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom openssh-client samba samba-common-bin iperf3 traceroute mtr iw network-manager nmap tigervnc-viewer freerdp3-wayland
+
+# Python dependencies
 pip3 install pyte paramiko pysnmp
 
 # Python 3.13+ users also need:
 pip3 install standard-telnetlib
 ```
 
-2. Make scripts executable:
+2. Make executable:
 ```bash
 chmod +x omnicom
 ```
@@ -268,9 +266,9 @@ chmod +x omnicom
 ./scripts/install.sh
 ```
 
+
 ## Usage
 
-Run the application:
 ```bash
 ./omnicom
 # or
@@ -279,95 +277,83 @@ python3 omnicom
 
 ### Serial Connection
 
-1. Select port type (USB or Serial toggle button)
-2. Choose specific port from the list
-3. Configure communication speed (main field)
-4. Adjust other parameters as needed
-5. Click "CONNECT"
-6. Enter root password when prompted in the embedded terminal
-7. The integrated terminal window will open with picocom running
+1. Select port type (USB or Serial toggle)
+2. Choose port from the list
+3. Configure baud rate and parameters
+4. Click **CONNECT**
+5. Enter root password when prompted
 
-### SSH Connection
+### Remote Access (SSH / Telnet / VNC / RDP)
 
-1. Click the SSH tab (computer icon)
-2. Select "SSH" protocol
-3. Enter host (IP address or hostname)
-4. Enter port (default: 22)
-5. Enter username
-6. Choose authentication method:
-   - **Password**: Enter password or leave blank to be prompted
-   - **SSH Key**: Browse and select your private key file
-7. (Optional) Save as profile for quick access
-8. Click "CONNECT SSH"
-
-### Telnet Connection
-
-1. Click the SSH tab (computer icon)
-2. Select "Telnet" protocol
-3. Enter host (IP address or hostname)
-4. Enter port (default: 23)
-5. Click "CONNECT TELNET"
-
-> **Note**: Telnet does not require authentication in the UI - credentials are typically
-> requested by the remote device after connection.
+1. Click the **Remote** tab
+2. Select protocol (SSH, Telnet, VNC or RDP)
+3. Enter host and port (auto-filled per protocol)
+4. Enter username and password (or select SSH key)
+5. (Optional) Save as profile for Quick Connect
+6. Click **CONNECT**
 
 ### IP Scanner
 
-1. Click the IP Scan tab
-2. Enter target network (e.g. 192.168.1.0)
-3. Select subnet mask (default: /24)
-4. Choose scan method (ICMP, TCP or UDP)
-5. Click "SCAN" — the button shows progress as "Scanning X%"
-6. Results appear in real-time with IP, status, latency and MAC vendor
-7. Export results to CSV or right-click for options
+1. Click the **IP Scan** tab
+2. Enter target network (e.g. `192.168.1.0`) and subnet mask
+3. Choose scan method (ICMP, TCP, UDP or ARP)
+4. Click **SCAN** — button shows progress percentage
+5. Export results to CSV
 
 ### SNMP Query
 
-1. Click the SNMP tab
-2. Enter host IP address
-3. Select SNMP version (v1 or v2c)
-4. Enter community string (default: public)
-5. Select query type (snmpwalk or snmpget)
-6. Enter OID (optional for walk, defaults to .1.3.6.1.2.1)
-7. Click "EXECUTE QUERY" — the button shows progress as "Walking X%"
-8. Results stream in real-time to the table with OID, Value and Type columns
+1. Click the **SNMP** tab
+2. Enter host IP, SNMP version and community string
+3. Select query type (GET, GETNEXT or WALK)
+4. Enter OID (optional for WALK, defaults to `.1.3.6.1.2.1`)
+5. Click **EXECUTE QUERY**
 
-### picocom Commands
+### File Transfer
 
-In the embedded terminal, use:
-- `Ctrl+A` `Ctrl+X` - Exit picocom
-- `Ctrl+A` `Ctrl+H` - Help with all commands
+1. Click the **Transfer** tab
+2. Select protocol (SSH/SFTP, SMB, FTP or TFTP)
+3. Choose Client or Server mode
+4. Configure connection/server parameters
+5. Click **CONNECT** or **START**
 
-You can also click the "DISCONNECT" button to close the connection.
+### picocom Commands (Serial tab)
+
+- `Ctrl+A` `Ctrl+X` — Exit picocom
+- `Ctrl+A` `Ctrl+H` — Show all picocom commands
+
 
 ## Permissions
 
-To avoid password prompts every time, add your user to the dialout group:
+To avoid password prompts for serial ports, add your user to the `dialout` group:
 ```bash
 sudo usermod -a -G dialout $USER
 ```
 
-After this, logout and login again to apply changes.
+Log out and back in to apply.
+
 
 ## Troubleshooting
 
 ### Port doesn't appear in list
-- Check if the device is connected
-- Run `ls -la /dev/ttyUSB* /dev/ttyS*` to see available ports
+- Check device is connected: `ls -la /dev/ttyUSB* /dev/ttyS*`
 - May need to load kernel modules
 
-### Permission denied
-- Make sure you're using sudo
-- Check if your user has sudo permissions
-- Or add your user to dialout group (see above)
+### Permission denied on serial port
+- Add user to dialout group (see above)
+
+### VNC / RDP not launching
+- Install `tigervnc` (for VNC) and `freerdp` (for RDP)
+- On Debian/Ubuntu: `sudo apt install tigervnc-viewer freerdp3-wayland`
+
 
 ## Links
 
-- **GitHub Repository**: https://github.com/benjamimgois/omnicom
+- **GitHub**: https://github.com/benjamimgois/omnicom
 - **AUR Package**: https://aur.archlinux.org/packages/omnicom
 - **Flathub**: https://flathub.org/apps/io.github.benjamimgois.omnicom
 - **Releases**: https://github.com/benjamimgois/omnicom/releases
 - **Issues**: https://github.com/benjamimgois/omnicom/issues
+
 
 ## License
 
@@ -375,9 +361,11 @@ This project is licensed under the **GNU General Public License v3.0** — see t
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
 
 ## Author
 

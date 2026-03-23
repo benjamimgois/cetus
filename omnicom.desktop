@@ -2,8 +2,10 @@
 Version=1.0
 Type=Application
 Name=Omnicom
-Comment=Network management and serial communication GUI
+GenericName=Network Management
+Comment=Network management tools
 Exec=/usr/bin/omnicom
 Icon=omnicom
 Terminal=false
-Categories=System;Network;Utility;
+Categories=Network;Internet;
+Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;
