@@ -18070,6 +18070,25 @@ class SerialTerminalGUI(QMainWindow):
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
+    def _on_save_password_toggled(self, state):
+        """When 'Save password' is checked, persist username + password to the active profile."""
+        profile_name = getattr(self, '_editing_profile_name', '') or getattr(self, '_pending_profile_name', '')
+        if not profile_name:
+            return
+        import base64, json
+        profiles = self.config.get_ssh_profiles()
+        for p in profiles:
+            if p.get('name') == profile_name:
+                if state == Qt.CheckState.Checked.value:
+                    pw = self.ssh_password.text()
+                    p['password'] = base64.b64encode(pw.encode()).decode() if pw else ''
+                    p['username'] = self.ssh_username.text()
+                else:
+                    p['password'] = ''
+                break
+        self.config.set('ssh_profiles', json.dumps(profiles))
+        self.refresh_ssh_profiles()
+
     def _edit_ssh_profile(self, profile):
         """Populate the Remote Connection form with the selected profile for editing."""
         # Expand the Remote Connection collapsible section if it is collapsed
@@ -18386,6 +18405,7 @@ class SerialTerminalGUI(QMainWindow):
                 QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
             )
         )
+        self.ssh_save_password.stateChanged.connect(self._on_save_password_toggled)
 
         _pw_row = QWidget()
         _pw_layout = QHBoxLayout(_pw_row)
@@ -20858,13 +20878,14 @@ class SerialTerminalGUI(QMainWindow):
                 if not password:
                     return
 
-                # Save password to profile if requested
+                # Save password and username to profile if requested
                 if _save_cb.isChecked() and self._pending_profile_name:
                     import base64
                     profiles = self.config.get_ssh_profiles()
                     for p in profiles:
                         if p.get('name') == self._pending_profile_name:
                             p['password'] = base64.b64encode(password.encode()).decode()
+                            p['username'] = username
                             break
                     import json
                     self.config.set('ssh_profiles', json.dumps(profiles))
