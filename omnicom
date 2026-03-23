@@ -18096,6 +18096,44 @@ class SerialTerminalGUI(QMainWindow):
         if _key_lbl:
             _key_lbl.setVisible(False)
 
+        # RDP resolution — only shown when RDP protocol is active
+        self.rdp_res_widget = QWidget()
+        _rdp_res_layout = QHBoxLayout(self.rdp_res_widget)
+        _rdp_res_layout.setContentsMargins(0, 0, 0, 0)
+        _rdp_res_layout.setSpacing(6)
+        self.rdp_resolution = QComboBox()
+        self.rdp_resolution.addItems([
+            "Fullscreen", "1920x1080", "1600x900", "1366x768",
+            "1280x800", "1280x720", "1024x768", "800x600", "Custom",
+        ])
+        self.rdp_resolution.setFixedWidth(130)
+        self.rdp_resolution.setStyleSheet(line_edit_style)
+        self.rdp_resolution.currentTextChanged.connect(self._on_rdp_resolution_changed)
+        self.rdp_custom_w = QLineEdit()
+        self.rdp_custom_w.setPlaceholderText("W")
+        self.rdp_custom_w.setFixedWidth(55)
+        self.rdp_custom_w.setStyleSheet(line_edit_style)
+        self.rdp_custom_w.setVisible(False)
+        _rdp_x_lbl = QLabel("×")
+        _rdp_x_lbl.setStyleSheet("color: #888888;")
+        _rdp_x_lbl.setVisible(False)
+        self._rdp_x_lbl = _rdp_x_lbl
+        self.rdp_custom_h = QLineEdit()
+        self.rdp_custom_h.setPlaceholderText("H")
+        self.rdp_custom_h.setFixedWidth(55)
+        self.rdp_custom_h.setStyleSheet(line_edit_style)
+        self.rdp_custom_h.setVisible(False)
+        _rdp_res_layout.addWidget(self.rdp_resolution)
+        _rdp_res_layout.addWidget(self.rdp_custom_w)
+        _rdp_res_layout.addWidget(_rdp_x_lbl)
+        _rdp_res_layout.addWidget(self.rdp_custom_h)
+        _rdp_res_layout.addStretch()
+        self.rdp_res_widget.setVisible(False)
+        ssh_layout.addRow("Resolution:", self.rdp_res_widget)
+        self._rdp_res_lbl = ssh_layout.labelForField(self.rdp_res_widget)
+        if self._rdp_res_lbl:
+            self._rdp_res_lbl.setVisible(False)
+
         # Save button inside Remote Connection
         self.save_profile_btn = QPushButton("Save")
         self.save_profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -19451,6 +19489,35 @@ class SerialTerminalGUI(QMainWindow):
             self.use_ssh_key.setChecked(False)
             self.ssh_key_widget.setVisible(False)
 
+        # RDP resolution row only shown for RDP
+        is_rdp = (protocol == 'RDP')
+        self.rdp_res_widget.setVisible(is_rdp)
+        if self._rdp_res_lbl:
+            self._rdp_res_lbl.setVisible(is_rdp)
+
+    def _on_rdp_resolution_changed(self, text):
+        """Show custom W×H fields only when 'Custom' is selected."""
+        is_custom = (text == "Custom")
+        self.rdp_custom_w.setVisible(is_custom)
+        self._rdp_x_lbl.setVisible(is_custom)
+        self.rdp_custom_h.setVisible(is_custom)
+
+    def _get_rdp_resolution(self):
+        """Return (width, height) or None for fullscreen."""
+        sel = self.rdp_resolution.currentText()
+        if sel == "Fullscreen":
+            return None
+        if sel == "Custom":
+            try:
+                return int(self.rdp_custom_w.text()), int(self.rdp_custom_h.text())
+            except ValueError:
+                return None
+        try:
+            w, h = sel.split('x')
+            return int(w), int(h)
+        except Exception:
+            return None
+
     def toggle_protocol(self, button):
         """Toggle between SSH and Telnet protocol"""
         if button == self.protocol_ssh_btn or self.ssh_current_protocol == "SSH":
@@ -19508,7 +19575,14 @@ class SerialTerminalGUI(QMainWindow):
             return
         # FreeRDP 3 uses /tls:seclevel:0 ; FreeRDP 2 uses /tls-seclevel:0
         tls_arg = '/tls:seclevel:0' if client.endswith('3') else '/tls-seclevel:0'
-        args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution', tls_arg]
+        resolution = self._get_rdp_resolution()
+        if resolution:
+            w, h = resolution
+            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
+                    f'/w:{w}', f'/h:{h}']
+        else:
+            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
+                    '/f']  # fullscreen
         if username:
             args.append(f'/u:{username}')
         if password:
