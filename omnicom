@@ -17714,6 +17714,8 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
+        edit_action    = menu.addAction("Edit profile")
+        menu.addSeparator()
         http_action    = menu.addAction("Open in Browser (HTTP)")
         https_action   = menu.addAction("Open in Browser (HTTPS)")
         menu.addSeparator()
@@ -17727,7 +17729,10 @@ class SerialTerminalGUI(QMainWindow):
 
         action = menu.exec(self.ssh_profiles_tree.viewport().mapToGlobal(pos))
 
-        if action == delete_action:
+        if action == edit_action:
+            self._edit_ssh_profile(profile)
+            return
+        elif action == delete_action:
             self.config.delete_ssh_profile(profile['name'])
             self.refresh_ssh_profiles()
             return
@@ -17758,6 +17763,36 @@ class SerialTerminalGUI(QMainWindow):
             self._start_traceroute()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
+
+    def _edit_ssh_profile(self, profile):
+        """Populate the Remote Connection form with the selected profile for editing."""
+        # Expand the Remote Connection collapsible section if present
+        if hasattr(self, 'ssh_rc_toggle_btn') and not self.ssh_rc_content.isVisible():
+            self.ssh_rc_toggle_btn.setChecked(True)
+            self.ssh_rc_content.setVisible(True)
+
+        protocol = profile.get('protocol', 'SSH')
+        self._ssh_protocol_btn_clicked(protocol)
+
+        self.ssh_host.setText(profile.get('host', ''))
+        self.ssh_port.setText(str(profile.get('port', '22')))
+        self.ssh_username.setText(profile.get('user', ''))
+
+        password = profile.get('password', '')
+        self.ssh_password.setText(password)
+        self.ssh_save_password.setChecked(bool(password))
+
+        vendor = profile.get('vendor', 'Default')
+        if hasattr(self, 'vendor_combo_btn'):
+            self.vendor_combo_btn.setText(vendor)
+        self._current_vendor = vendor
+
+        # Store original name/group so the Save dialog pre-fills them
+        self._editing_profile_name  = profile.get('name', '')
+        self._editing_profile_group = profile.get('group', 'Default')
+
+        # Scroll the form into view
+        self.ssh_host.setFocus()
 
     def _add_ip_to_ssh_list(self, ip):
         """Add a scanned IP to the SSH Quick Connect list under group Default."""
@@ -20013,11 +20048,18 @@ class SerialTerminalGUI(QMainWindow):
 
         name_edit = QLineEdit()
         name_edit.setPlaceholderText("e.g. SW_CORE")
+        # Pre-fill when editing an existing profile
+        _editing_name  = getattr(self, '_editing_profile_name', '')
+        _editing_group = getattr(self, '_editing_profile_group', '')
+        if _editing_name:
+            name_edit.setText(_editing_name)
         form.addRow("Profile name:", name_edit)
 
         group_combo = QComboBox()
         group_combo.setEditable(True)
         group_combo.addItems(existing_groups)
+        if _editing_group and _editing_group in existing_groups:
+            group_combo.setCurrentText(_editing_group)
         form.addRow("Group:", group_combo)
 
         vendor_combo = QComboBox()
@@ -20054,6 +20096,8 @@ class SerialTerminalGUI(QMainWindow):
             self.ssh_key_path.text() if auth_method == 'key' else '',
             protocol, group=group, password=saved_pw, vendor=vendor
         )
+        self._editing_profile_name  = ''
+        self._editing_profile_group = ''
         self.refresh_ssh_profiles()
         QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
 
