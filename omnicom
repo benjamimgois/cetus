@@ -18087,7 +18087,6 @@ class SerialTerminalGUI(QMainWindow):
                     p['password'] = ''
                 break
         self.config.set('ssh_profiles', json.dumps(profiles))
-        self.refresh_ssh_profiles()
 
     def _edit_ssh_profile(self, profile):
         """Populate the Remote Connection form with the selected profile for editing."""
@@ -18104,7 +18103,9 @@ class SerialTerminalGUI(QMainWindow):
 
         password = profile.get('password', '')
         self.ssh_password.setText(password)
+        self.ssh_save_password.blockSignals(True)
         self.ssh_save_password.setChecked(bool(password))
+        self.ssh_save_password.blockSignals(False)
 
         vendor = profile.get('vendor', 'Default')
         if hasattr(self, 'vendor_combo_btn'):
@@ -20257,6 +20258,7 @@ class SerialTerminalGUI(QMainWindow):
             # Restore saved password if present
             import base64
             saved_pw = profile.get('password', '')
+            self.ssh_save_password.blockSignals(True)
             if saved_pw:
                 try:
                     self.ssh_password.setText(base64.b64decode(saved_pw.encode()).decode())
@@ -20267,6 +20269,7 @@ class SerialTerminalGUI(QMainWindow):
             else:
                 self.ssh_password.clear()
                 self.ssh_save_password.setChecked(False)
+            self.ssh_save_password.blockSignals(False)
 
         port = profile.get('port', '22')
         protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
@@ -20890,7 +20893,9 @@ class SerialTerminalGUI(QMainWindow):
                     import json
                     self.config.set('ssh_profiles', json.dumps(profiles))
                     self.ssh_password.setText(password)
+                    self.ssh_save_password.blockSignals(True)
                     self.ssh_save_password.setChecked(True)
+                    self.ssh_save_password.blockSignals(False)
                     self.refresh_ssh_profiles()
 
         # Show connecting state in the button itself
