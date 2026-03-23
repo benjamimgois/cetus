@@ -872,6 +872,7 @@ class TerminalWidget(QTextEdit):
         self._in_scrollback_mode = False  # True when user is browsing history
         self._search_active = False  # True when search is active, freezes display updates
         self._in_alt_screen = False  # True when in alternate screen mode (nano, vim, htop…)
+        self._line_height_px: float = 0.0  # Exact px line-height to fill viewport with no gaps
 
         # State for stripping escape sequences not handled by pyte (DCS, SOS, PM, APC)
         self._in_unhandled_escape = False
@@ -980,7 +981,8 @@ class TerminalWidget(QTextEdit):
             for y in range(self.screen.lines):
                 screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns))
 
-        pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
+        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.2"
+        pre_open = f'<pre style="margin: 0; padding: 0; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
         if self._scrollback_cache:
             full_html = pre_open + self._scrollback_cache + '\n' + '\n'.join(screen_lines) + '</pre>'
         else:
@@ -1860,7 +1862,8 @@ class TerminalWidget(QTextEdit):
         if screen_lines is None:
             return
 
-        pre_open = '<pre style="margin: 0; padding: 0; line-height: 1.2; user-select: text; -webkit-user-select: text;">'
+        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.2"
+        pre_open = f'<pre style="margin: 0; padding: 0; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
         new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
 
         self.setUpdatesEnabled(False)
@@ -1940,6 +1943,9 @@ class TerminalWidget(QTextEdit):
         # real rendered line height was ~19.2px, causing row overflows.
         line_height = char_height * 1.2
         rows = max(10, int(available_height / line_height))
+        # Store the exact px height that divides the viewport evenly into `rows`
+        # so the HTML CSS can use it and leave no unused gap at the bottom.
+        self._line_height_px = available_height / rows
         with self._pyte_lock:
             if cols != self.screen.columns or rows != self.screen.lines:
                 self.screen.resize(rows, cols)
@@ -4185,7 +4191,7 @@ class SpeedTestWorker(QThread):
             self.error.emit("No results obtained.")
 
 
-class PingWorker(QThread):
+class _SimplePingWorker(QThread):
     """Run `ping -c 4 <host>` and return the average RTT in ms."""
     result = pyqtSignal(float)   # avg_ms
     error  = pyqtSignal(str)
@@ -7693,10 +7699,12 @@ class StickyNoteDialog(QDialog):
 class VendorReferenceDialog(QDialog):
     """Quick reference guide dialog for vendor commands"""
 
-    def __init__(self, vendor, reference_data, icon_path=None, parent=None):
+    def __init__(self, vendor, reference_data, icon_path=None, parent=None,
+                 send_command_callback=None):
         super().__init__(parent)
         self.vendor = vendor
         self.reference_data = reference_data
+        self._send_cmd_cb = send_command_callback  # callable(str) → sends to terminal
         self.setWindowTitle(f"{vendor} - Quick Reference")
         self.setMinimumSize(620, 500)
         self.resize(680, 600)
@@ -7803,6 +7811,27 @@ class VendorReferenceDialog(QDialog):
             for cmd, desc in commands:
                 row = QHBoxLayout()
                 row.setContentsMargins(8, 2, 8, 2)
+                row.setSpacing(6)
+
+                # Send-to-terminal button (only shown when a callback is available)
+                if self._send_cmd_cb is not None:
+                    send_btn = QToolButton()
+                    send_btn.setText("▶")
+                    send_btn.setFixedSize(24, 24)
+                    send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    send_btn.setToolTip("Send command to terminal")
+                    send_btn.setStyleSheet("""
+                        QToolButton {
+                            background-color: #313244; color: #a6e3a1;
+                            border: 1px solid #45475a; border-radius: 5px;
+                            font-size: 9pt; font-weight: bold;
+                        }
+                        QToolButton:hover { background-color: #45475a; color: #a6e3a1; }
+                        QToolButton:pressed { background-color: #585b70; }
+                    """)
+                    _cmd = cmd  # capture for lambda
+                    send_btn.clicked.connect(lambda checked, c=_cmd: self._send_cmd_cb(c + '\n'))
+                    row.addWidget(send_btn)
 
                 cmd_label = QLabel(cmd)
                 cmd_label.setStyleSheet(
@@ -9010,7 +9039,10 @@ class TerminalDialog(QWidget):
         vendor = self._current_vendor
         reference_data = self.get_vendor_reference().get(vendor, {})
         icon_path = self.get_vendor_icon_path(vendor)
-        dialog = VendorReferenceDialog(vendor, reference_data, icon_path, parent=self)
+        dialog = VendorReferenceDialog(
+            vendor, reference_data, icon_path, parent=self,
+            send_command_callback=self.terminal.send_input.emit,
+        )
         dialog.show()
 
     def open_sticky_note(self):
@@ -21215,7 +21247,7 @@ class SerialTerminalGUI(QMainWindow):
         if not host:
             return
         self.stat_ping.setText("…")
-        self._ping_worker = PingWorker(host)
+        self._ping_worker = _SimplePingWorker(host)
         self._ping_worker.result.connect(lambda ms: self.stat_ping.setText(f"{ms:.1f} ms"))
         self._ping_worker.error.connect(lambda _e: self.stat_ping.setText("—"))
         self._ping_worker.start()
@@ -21320,7 +21352,7 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_run_btn.setText("SPEED TEST")
         # Ping fast.com to fill the latency card
         self.stat_ping.setText("…")
-        self._st_ping_worker = PingWorker('fast.com')
+        self._st_ping_worker = _SimplePingWorker('fast.com')
         self._st_ping_worker.result.connect(lambda ms: self.stat_ping.setText(f"{ms:.1f} ms"))
         self._st_ping_worker.error.connect(lambda _: self.stat_ping.setText("—"))
         self._st_ping_worker.start()
