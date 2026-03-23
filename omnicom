@@ -18064,11 +18064,30 @@ class SerialTerminalGUI(QMainWindow):
             "QCheckBox::indicator:checked { background: #4CAF50; border-color: #4CAF50; }"
         )
 
+        _show_pw_btn = QToolButton()
+        _show_pw_btn.setText("👁")
+        _show_pw_btn.setFixedSize(28, 28)
+        _show_pw_btn.setCheckable(True)
+        _show_pw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _show_pw_btn.setToolTip("Show / hide password")
+        _show_pw_btn.setStyleSheet("""
+            QToolButton { background: #e0e0e0; border: 1px solid #cccccc;
+                          border-radius: 5px; font-size: 13px; }
+            QToolButton:hover   { background: #d0d0d0; }
+            QToolButton:checked { background: #c8e6c9; border-color: #81c784; }
+        """)
+        _show_pw_btn.toggled.connect(
+            lambda on: self.ssh_password.setEchoMode(
+                QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
+            )
+        )
+
         _pw_row = QWidget()
         _pw_layout = QHBoxLayout(_pw_row)
         _pw_layout.setContentsMargins(0, 0, 0, 0)
-        _pw_layout.setSpacing(8)
+        _pw_layout.setSpacing(6)
         _pw_layout.addWidget(self.ssh_password)
+        _pw_layout.addWidget(_show_pw_btn)
         _pw_layout.addWidget(self.ssh_save_password)
         ssh_layout.addRow("Password:", _pw_row)
 
@@ -18158,10 +18177,20 @@ class SerialTerminalGUI(QMainWindow):
         self.rdp_custom_h.setFixedWidth(55)
         self.rdp_custom_h.setStyleSheet(line_edit_style)
         self.rdp_custom_h.setVisible(False)
+        _rdp_depth_lbl = QLabel("Colors:")
+        _rdp_depth_lbl.setStyleSheet("color: #555555; font-size: 9pt;")
+        self.rdp_color_depth = QComboBox()
+        self.rdp_color_depth.addItems(["32 bit", "24 bit", "16 bit", "15 bit", "8 bit"])
+        self.rdp_color_depth.setFixedWidth(80)
+        self.rdp_color_depth.setStyleSheet(line_edit_style)
+
         _rdp_res_layout.addWidget(self.rdp_resolution)
         _rdp_res_layout.addWidget(self.rdp_custom_w)
         _rdp_res_layout.addWidget(_rdp_x_lbl)
         _rdp_res_layout.addWidget(self.rdp_custom_h)
+        _rdp_res_layout.addSpacing(12)
+        _rdp_res_layout.addWidget(_rdp_depth_lbl)
+        _rdp_res_layout.addWidget(self.rdp_color_depth)
         _rdp_res_layout.addStretch()
         self.rdp_res_widget.setVisible(False)
         ssh_layout.addRow("Resolution:", self.rdp_res_widget)
@@ -19609,12 +19638,14 @@ class SerialTerminalGUI(QMainWindow):
 
         tls_arg = '/tls:seclevel:0' if client.endswith('3') else '/tls-seclevel:0'
         resolution = self._get_rdp_resolution()
+        depth = int(self.rdp_color_depth.currentText().split()[0])  # "32 bit" → 32
         if resolution:
             w, h = resolution
             args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
-                    f'/w:{w}', f'/h:{h}']
+                    f'/w:{w}', f'/h:{h}', f'/bpp:{depth}']
         else:
-            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg, '/f']
+            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
+                    '/f', f'/bpp:{depth}']
         if username:
             args.append(f'/u:{username}')
         if password:
