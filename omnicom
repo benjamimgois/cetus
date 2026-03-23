@@ -325,7 +325,7 @@ def load_svg_icon_dual(path, size=16, color_off='#555555', color_on='#ffffff'):
         return None
     icon = QIcon()
     for qt_state, color in ((QIcon.State.Off, color_off), (QIcon.State.On, color_on)):
-        svg = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_src)
+        svg = re.sub(r'fill="(?!none\b|transparent\b)[^"]*"', f'fill="{color}"', svg_src)
         renderer = QSvgRenderer(svg.encode())
         if not renderer.isValid():
             continue
@@ -11217,7 +11217,7 @@ class SerialTerminalGUI(QMainWindow):
         srv_proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
         srv_proto_row.addWidget(srv_proto_lbl)
         _proto_icons = {
-            'SSH':  self.get_icon_path('ssh_icon.svg'),
+            'SSH':  self.get_icon_path('ssh2.svg'),
             'SMB':  self.get_icon_path('smb.svg'),
             'FTP':  self.get_icon_path('ftp.svg'),
             'TFTP': self.get_icon_path('TFTP.svg'),
@@ -11829,7 +11829,7 @@ class SerialTerminalGUI(QMainWindow):
         cli_proto_row.setContentsMargins(0, 0, 0, 0)
         cli_proto_row.setSpacing(4)
         _proto_icons = {
-            'SSH':  self.get_icon_path('ssh_icon.svg'),
+            'SSH':  self.get_icon_path('ssh2.svg'),
             'SMB':  self.get_icon_path('smb.svg'),
             'FTP':  self.get_icon_path('ftp.svg'),
             'TFTP': self.get_icon_path('TFTP.svg'),
@@ -17865,7 +17865,7 @@ class SerialTerminalGUI(QMainWindow):
         """
 
         _ra_proto_icons = {
-            'SSH':    self.get_icon_path('ssh_icon.svg'),
+            'SSH':    self.get_icon_path('ssh2.svg'),
             'Telnet': self.get_icon_path('telnet.svg'),
             'VNC':    self.get_icon_path('vnc.svg'),
             'RDP':    self.get_icon_path('rdp.svg'),
