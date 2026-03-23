@@ -18072,10 +18072,9 @@ class SerialTerminalGUI(QMainWindow):
 
     def _edit_ssh_profile(self, profile):
         """Populate the Remote Connection form with the selected profile for editing."""
-        # Expand the Remote Connection collapsible section if present
-        if hasattr(self, 'ssh_rc_toggle_btn') and not self.ssh_rc_content.isVisible():
-            self.ssh_rc_toggle_btn.setChecked(True)
-            self.ssh_rc_content.setVisible(True)
+        # Expand the Remote Connection collapsible section if it is collapsed
+        if hasattr(self, 'ssh_rc_content') and not self.ssh_rc_content.isVisible():
+            self._toggle_ssh_remote_connection()
 
         protocol = profile.get('protocol', 'SSH')
         self._ssh_protocol_btn_clicked(protocol)
