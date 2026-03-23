@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Transformed by: SVG Repo Mixer Tools -->
+
+<svg
+   width="795"
+   height="760.88599"
+   viewBox="0 0 31.8 30.435451"
+   fill="#000000"
+   version="1.1"
+   id="svg2"
+   sodipodi:docname="remote.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.70975843"
+     inkscape:cx="340.25661"
+     inkscape:cy="405.0674"
+     inkscape:window-width="1920"
+     inkscape:window-height="1012"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2" />
+  <g
+     id="SVGRepo_bgCarrier"
+     stroke-width="0" />
+  <g
+     id="SVGRepo_tracerCarrier"
+     stroke-linecap="round"
+     stroke-linejoin="round" />
+  <g
+     id="SVGRepo_iconCarrier"
+     transform="matrix(0.41344956,0,0,0.41344956,0.78900081,0.45085763)">
+    <g
+       fill="none"
+       fill-rule="evenodd"
+       id="g2">
+      <path
+         d="M 0,0 H 32 V 32 H 0 Z"
+         id="path1" />
+      <path
+         d="M 32,3 V 25 H 20 v 3 h 3 c 0.552285,0 1,0.447715 1,1 0,0.552285 -0.447715,1 -1,1 H 9 C 8.4477153,30 8,29.552285 8,29 8,28.447715 8.4477153,28 9,28 h 3 V 25 H 0 V 3 Z M 18,28 v -3 h -4 v 3 z M 30,5 H 2 v 18 h 28 z"
+         fill="#ffffff"
+         fill-rule="nonzero"
+         id="path2" />
+    </g>
+  </g>
+  <g
+     id="SVGRepo_iconCarrier-6"
+     transform="matrix(0.41344956,0,0,0.41344956,14.511094,9.5970091)">
+    <g
+       fill="none"
+       fill-rule="evenodd"
+       id="g2-7">
+      <path
+         d="M 0,0 H 32 V 32 H 0 Z"
+         id="path1-5" />
+      <path
+         d="M 32,3 V 25 H 20 v 3 h 3 c 0.552285,0 1,0.447715 1,1 0,0.552285 -0.447715,1 -1,1 H 9 C 8.4477153,30 8,29.552285 8,29 8,28.447715 8.4477153,28 9,28 h 3 V 25 H 0 V 3 Z M 18,28 v -3 h -4 v 3 z M 30,5 H 2 v 18 h 28 z"
+         fill="#ffffff"
+         fill-rule="nonzero"
+         id="path2-3" />
+    </g>
+  </g>
+  <text
+     xml:space="preserve"
+     style="font-weight:bold;font-size:8.04183px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0335076"
+     x="-0.3526006"
+     y="30.002794"
+     id="text2"><tspan
+       sodipodi:role="line"
+       id="tspan2"
+       style="fill:#ffffff;stroke-width:0.0335076"
+       x="-0.3526006"
+       y="30.002794">REMOTE</tspan></text>
+  <g
+     id="SVGRepo_iconCarrier-5"
+     transform="matrix(0.27103889,0,0,0.39080849,16.256342,3.9093002)"
+     style="fill:#ffffff">
+    <path
+       d="M 9.66411,6.8359 3.414,0.585785 0.585571,3.41421 6.83568,9.66432 4.00002,12.5 l 1.5,1.5 H 14 V 5.49999 l -1.5,-1.5 z"
+       fill="#ffffff"
+       id="path1-6"
+       style="fill:#ffffff" />
+  </g>
+  <g
+     id="SVGRepo_iconCarrier-5-9"
+     transform="matrix(-0.27103889,0,0,-0.39080849,12.335675,20.60915)"
+     style="fill:#ffffff">
+    <path
+       d="M 9.66411,6.8359 3.414,0.585785 0.585571,3.41421 6.83568,9.66432 4.00002,12.5 l 1.5,1.5 H 14 V 5.49999 l -1.5,-1.5 z"
+       fill="#ffffff"
+       id="path1-6-1"
+       style="fill:#ffffff" />
+  </g>
+</svg>
