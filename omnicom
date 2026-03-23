@@ -19487,18 +19487,22 @@ class SerialTerminalGUI(QMainWindow):
 
     def _launch_rdp(self, host, port, username, password):
         """Launch an RDP client.
-        Priority: wlfreerdp (FreeRDP 3.x, Wayland-native) → xfreerdp (XWayland fallback).
+        Search order: sdl-freerdp3 (FreeRDP 3 SDL, recommended)
+                      → xfreerdp3 / wlfreerdp3 (FreeRDP 3, Arch/Fedora naming)
+                      → wlfreerdp → xfreerdp (FreeRDP 2/3, Debian/Ubuntu naming).
         """
         import shutil, subprocess
-        for client in ('wlfreerdp', 'xfreerdp'):
+        for client in ('sdl-freerdp3', 'xfreerdp3', 'wlfreerdp3', 'wlfreerdp', 'xfreerdp'):
             if shutil.which(client):
                 break
         else:
             QMessageBox.critical(self, "RDP Error",
                 "No RDP client found.\n\n"
-                "Install FreeRDP 3 (Wayland-native):\n"
+                "Arch Linux:\n"
+                "  sudo pacman -S freerdp\n\n"
+                "Debian / Ubuntu (Wayland-native):\n"
                 "  sudo apt install freerdp3-wayland\n"
-                "or FreeRDP 2:\n"
+                "Debian / Ubuntu (X11):\n"
                 "  sudo apt install freerdp2-x11")
             return
         args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution']
