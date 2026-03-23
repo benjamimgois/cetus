@@ -19512,8 +19512,14 @@ class SerialTerminalGUI(QMainWindow):
         if username:
             args.append(f'/u:{username}')
         if password:
-            args.append(f'/p:{password}')
-        subprocess.Popen(args)
+            # Pass password via stdin (/from-stdin) to avoid exposure in the
+            # process list that would happen with /p:<password>.
+            args.append('/from-stdin')
+            proc = subprocess.Popen(args, stdin=subprocess.PIPE)
+            proc.stdin.write(password.encode() + b'\n')
+            proc.stdin.close()
+        else:
+            subprocess.Popen(args)
 
     def browse_ssh_key(self):
         """Open file dialog to select SSH private key"""
