@@ -11126,11 +11126,13 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn = QPushButton("Client")
         self._ft_mode_client_btn.setCheckable(True)
         self._ft_mode_client_btn.setChecked(True)
+        self._ft_mode_client_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ft_mode_client_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
         )
         self._ft_mode_server_btn = QPushButton("Server")
         self._ft_mode_server_btn.setCheckable(True)
+        self._ft_mode_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ft_mode_server_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
@@ -11199,6 +11201,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setCheckable(True)
             _pb.setFixedWidth(90)
             _pb.setFixedHeight(24)
+            _pb.setCursor(Qt.CursorShape.PointingHandCursor)
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             if _proto_icons.get(_proto):
@@ -11240,6 +11243,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self.tftp_directory = QLineEdit()
         self.tftp_directory.setFixedWidth(combo_width)
+        self.tftp_directory.setPlaceholderText("/path/to/directory")
         default_tftp_dir = os.environ.get('HOME', str(Path.home()))
         self.tftp_directory.setText(default_tftp_dir)
         self.tftp_directory.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -11809,6 +11813,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setCheckable(True)
             _pb.setFixedWidth(90)
             _pb.setFixedHeight(24)
+            _pb.setCursor(Qt.CursorShape.PointingHandCursor)
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             if _proto_icons.get(_proto):
@@ -11839,12 +11844,14 @@ class SerialTerminalGUI(QMainWindow):
 
         self._ft_user_input = QLineEdit()
         self._ft_user_input.setFixedWidth(200)
+        self._ft_user_input.setPlaceholderText("username")
         self._ft_user_input.setStyleSheet(field_style)
         conn_form.addRow("Username:", self._ft_user_input)
 
         self._ft_pass_input = QLineEdit()
         self._ft_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._ft_pass_input.setFixedWidth(200)
+        self._ft_pass_input.setPlaceholderText("password")
         self._ft_pass_input.setStyleSheet(field_style)
         conn_form.addRow("Password:", self._ft_pass_input)
 
@@ -12805,6 +12812,10 @@ class SerialTerminalGUI(QMainWindow):
         _conn_h.addWidget(_img_widget)
         conn_group.setLayout(_conn_h)
         conn_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        conn_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(conn_group)
 
         # Query group
@@ -12886,6 +12897,10 @@ class SerialTerminalGUI(QMainWindow):
 
         query_group.setLayout(query_layout)
         query_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        query_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(query_group)
 
         # Results
@@ -13009,6 +13024,10 @@ class SerialTerminalGUI(QMainWindow):
         self._enable_table_tooltips(self.snmp_results_table)
         self.snmp_results_group.setLayout(results_layout)
         self.snmp_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        self.snmp_results_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(self.snmp_results_group, 1)
 
         # Execute button (full-width at bottom)
@@ -18222,6 +18241,9 @@ class SerialTerminalGUI(QMainWindow):
                 border-radius: 8px;
                 margin-top: 15px;
                 padding-top: 18px;
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-bottom: 6px;
                 background-color: #ffffff;
                 color: #2c2c2c;
             }
@@ -18363,6 +18385,40 @@ class SerialTerminalGUI(QMainWindow):
                 border-radius: 6px;
                 padding: 5px 8px;
                 font-size: 9pt;
+            }
+            QScrollBar:vertical {
+                background: #f0f0f0;
+                width: 8px;
+                border: none;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #c8c8c8;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a0a0a0;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar:horizontal {
+                background: #f0f0f0;
+                height: 8px;
+                border: none;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #c8c8c8;
+                border-radius: 4px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #a0a0a0;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
             }
         """)
 
@@ -20519,11 +20575,13 @@ class SerialTerminalGUI(QMainWindow):
         self._test_mode_speedtest_btn = QPushButton("Speed Test")
         self._test_mode_speedtest_btn.setCheckable(True)
         self._test_mode_speedtest_btn.setChecked(True)
+        self._test_mode_speedtest_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._test_mode_speedtest_btn.setStyleSheet(
             _btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
         )
         self._test_mode_iperf_btn = QPushButton("iPerf3")
         self._test_mode_iperf_btn.setCheckable(True)
+        self._test_mode_iperf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._test_mode_iperf_btn.setStyleSheet(
             _btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
@@ -20688,6 +20746,7 @@ class SerialTerminalGUI(QMainWindow):
             btn.setCheckable(True)
             btn.setFixedWidth(90)
             btn.setFixedHeight(24)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(_toggle_style(BROWN))
             btn.clicked.connect(lambda _checked, p=proto: self._iperf_proto_clicked(p))
             self._iperf_proto_btns[proto] = btn
@@ -20745,6 +20804,10 @@ class SerialTerminalGUI(QMainWindow):
 
         cfg_group.setLayout(cfg_layout)
         cfg_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        cfg_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(cfg_group)
 
         # ── Statistics group (shared by both modes) ────────────────────
@@ -20787,6 +20850,10 @@ class SerialTerminalGUI(QMainWindow):
 
         stats_group.setLayout(stats_layout)
         stats_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        stats_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(stats_group)
 
         # ── Graph group ────────────────────────────────────────────────
@@ -20796,6 +20863,10 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_graph = IperfGraphWidget()
         graph_layout.addWidget(self.iperf_graph)
         graph_group.setLayout(graph_layout)
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        graph_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(graph_group, 2)
 
         # ── Speed Test info bar (below graph, speedtest mode only) ────
