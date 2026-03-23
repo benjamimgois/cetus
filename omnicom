@@ -18257,6 +18257,11 @@ class SerialTerminalGUI(QMainWindow):
 
     def get_icon_path(self, icon_name):
         """Get the path to an icon from assets/icons for different installation types"""
+        # Local repo assets take priority so in-repo changes are always reflected
+        # without requiring a system-wide reinstall.
+        assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
+        if os.path.exists(assets_path):
+            return assets_path
         # Check for Flatpak
         flatpak_path = f'/app/share/io.github.benjamimgois.omnicom/icons/{icon_name}'
         if os.path.exists(flatpak_path):
@@ -18271,10 +18276,6 @@ class SerialTerminalGUI(QMainWindow):
         system_path = f'/usr/share/omnicom/icons/{icon_name}'
         if os.path.exists(system_path):
             return system_path
-        # Local installation or development - assets/icons
-        assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
-        if os.path.exists(assets_path):
-            return assets_path
         # Legacy: root directory
         root_path = os.path.join(os.path.dirname(__file__), icon_name)
         if os.path.exists(root_path):
