@@ -19506,8 +19506,9 @@ class SerialTerminalGUI(QMainWindow):
                 "Debian / Ubuntu (X11):\n"
                 "  sudo apt install freerdp2-x11")
             return
-        args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution',
-                '/tls-seclevel:0']
+        # FreeRDP 3 uses /tls:seclevel:0 ; FreeRDP 2 uses /tls-seclevel:0
+        tls_arg = '/tls:seclevel:0' if client.endswith('3') else '/tls-seclevel:0'
+        args = [client, f'/v:{host}:{port}', '/cert:ignore', '/dynamic-resolution', tls_arg]
         if username:
             args.append(f'/u:{username}')
         if password:
