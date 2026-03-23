@@ -311,6 +311,33 @@ def load_svg_icon(path, size=40):
     return None
 
 
+def load_svg_icon_dual(path, size=16, color_off='#555555', color_on='#ffffff'):
+    """Load SVG as dual-state QIcon: dark when unchecked (Off), white when checked (On).
+    Designed for toggle buttons with light unchecked / colored checked backgrounds."""
+    if not path or not os.path.exists(path):
+        return None
+    if not SVG_AVAILABLE:
+        return load_svg_icon(path, size)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            svg_src = f.read()
+    except OSError:
+        return None
+    icon = QIcon()
+    for qt_state, color in ((QIcon.State.Off, color_off), (QIcon.State.On, color_on)):
+        svg = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_src)
+        renderer = QSvgRenderer(svg.encode())
+        if not renderer.isValid():
+            continue
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        icon.addPixmap(pixmap, QIcon.Mode.Normal, qt_state)
+    return icon if not icon.isNull() else None
+
+
 def get_network_interfaces():
     """Get list of network interfaces with their IP addresses"""
     interfaces = []
@@ -11205,7 +11232,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             if _proto_icons.get(_proto):
-                _pb.setIcon(load_svg_icon(_proto_icons[_proto], 14))
+                _pb.setIcon(load_svg_icon_dual(_proto_icons[_proto], 14))
                 _pb.setIconSize(QSize(14, 14))
             self._ft_srv_proto_btns[_proto] = _pb
             srv_proto_row.addWidget(_pb)
@@ -11817,7 +11844,7 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
             if _proto_icons.get(_proto):
-                _pb.setIcon(load_svg_icon(_proto_icons[_proto], 14))
+                _pb.setIcon(load_svg_icon_dual(_proto_icons[_proto], 14))
                 _pb.setIconSize(QSize(14, 14))
             self._ft_cli_proto_btns[_proto] = _pb
             cli_proto_row.addWidget(_pb)
@@ -17837,12 +17864,22 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
+        _ra_proto_icons = {
+            'SSH':    self.get_icon_path('ssh_icon.svg'),
+            'Telnet': self.get_icon_path('telnet.svg'),
+            'VNC':    self.get_icon_path('vnc.svg'),
+            'RDP':    self.get_icon_path('rdp.svg'),
+        }
+
         self.protocol_ssh_btn = QPushButton("SSH")
         self.protocol_ssh_btn.setCheckable(True)
         self.protocol_ssh_btn.setChecked(True)
         self.protocol_ssh_btn.setFixedWidth(90)
         self.protocol_ssh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_ssh_btn.setStyleSheet(protocol_btn_style)
+        if _ra_proto_icons['SSH']:
+            self.protocol_ssh_btn.setIcon(load_svg_icon_dual(_ra_proto_icons['SSH'], 14))
+            self.protocol_ssh_btn.setIconSize(QSize(14, 14))
         self.protocol_ssh_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("SSH"))
 
         self.protocol_telnet_btn = QPushButton("Telnet")
@@ -17850,6 +17887,9 @@ class SerialTerminalGUI(QMainWindow):
         self.protocol_telnet_btn.setFixedWidth(90)
         self.protocol_telnet_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_telnet_btn.setStyleSheet(protocol_btn_style)
+        if _ra_proto_icons['Telnet']:
+            self.protocol_telnet_btn.setIcon(load_svg_icon_dual(_ra_proto_icons['Telnet'], 14))
+            self.protocol_telnet_btn.setIconSize(QSize(14, 14))
         self.protocol_telnet_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("Telnet"))
 
         self.protocol_vnc_btn = QPushButton("VNC")
@@ -17857,6 +17897,9 @@ class SerialTerminalGUI(QMainWindow):
         self.protocol_vnc_btn.setFixedWidth(90)
         self.protocol_vnc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_vnc_btn.setStyleSheet(protocol_btn_style)
+        if _ra_proto_icons['VNC']:
+            self.protocol_vnc_btn.setIcon(load_svg_icon_dual(_ra_proto_icons['VNC'], 14))
+            self.protocol_vnc_btn.setIconSize(QSize(14, 14))
         self.protocol_vnc_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("VNC"))
 
         self.protocol_rdp_btn = QPushButton("RDP")
@@ -17864,6 +17907,9 @@ class SerialTerminalGUI(QMainWindow):
         self.protocol_rdp_btn.setFixedWidth(90)
         self.protocol_rdp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.protocol_rdp_btn.setStyleSheet(protocol_btn_style)
+        if _ra_proto_icons['RDP']:
+            self.protocol_rdp_btn.setIcon(load_svg_icon_dual(_ra_proto_icons['RDP'], 14))
+            self.protocol_rdp_btn.setIconSize(QSize(14, 14))
         self.protocol_rdp_btn.clicked.connect(lambda: self._ssh_protocol_btn_clicked("RDP"))
 
         protocol_layout.addWidget(self.protocol_ssh_btn)
