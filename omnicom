@@ -431,7 +431,7 @@ class FlatComboButton(QPushButton):
         }
         QMenu::item:selected {
             background-color: #e8e8e8;
-            border-radius: 4px;
+            border-radius: 6px;
         }
         QMenu::item:checked {
             color: #1976d2;
@@ -987,7 +987,7 @@ class TerminalWidget(QTextEdit):
                 background-color: #1e1e2e;
                 color: #cdd6f4;
                 border: 1px solid #585b70;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
@@ -5066,7 +5066,7 @@ class WifiChannelChart(QWidget):
                 background-color: #1A1F2E;
                 color: #AABBCC;
                 border: 1px solid #3A4460;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 6px;
                 font-size: 9pt;
             }
@@ -7765,7 +7765,7 @@ class VendorReferenceDialog(QDialog):
                 cmd_label = QLabel(cmd)
                 cmd_label.setStyleSheet(
                     "color: #f9e2af; font-family: 'Monospace'; font-size: 10pt; "
-                    "background-color: #313244; border-radius: 4px; padding: 3px 6px;"
+                    "background-color: #313244; border-radius: 6px; padding: 3px 6px;"
                 )
                 cmd_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 cmd_label.setMinimumWidth(280)
@@ -8658,7 +8658,7 @@ class TerminalDialog(QWidget):
             }
             QMenu::item:selected {
                 background-color: #3a3a3a;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QMenu::item:checked {
                 color: #64b5f6;
@@ -8683,7 +8683,7 @@ class TerminalDialog(QWidget):
         self.quickref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.quickref_btn.setToolTip("Quick reference guide")
         self.quickref_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 4px; padding: 2px; background-color: transparent; }
+            QPushButton { border: none; border-radius: 6px; padding: 2px; background-color: transparent; }
             QPushButton:hover { background-color: #3a3a3a; }
             QPushButton:pressed { background-color: #4a4a4a; }
         """)
@@ -8701,7 +8701,7 @@ class TerminalDialog(QWidget):
         self.stickynote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stickynote_btn.setToolTip("Device quick note")
         self.stickynote_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 4px; padding: 2px; background-color: transparent; }
+            QPushButton { border: none; border-radius: 6px; padding: 2px; background-color: transparent; }
             QPushButton:hover { background-color: #3a3a3a; }
             QPushButton:pressed { background-color: #4a4a4a; }
         """)
@@ -8762,7 +8762,7 @@ class TerminalDialog(QWidget):
                 background-color: #3a3a3a;
                 color: #e0e0e0;
                 border: 1px solid #5a5a5a;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-size: 10pt;
                 min-width: 0px;
                 padding: 2px;
@@ -9532,7 +9532,7 @@ class FileTextEditor(QDialog):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3c3c3c;
-                border-radius: 4px;
+                border-radius: 6px;
                 selection-background-color: #264f78;
             }
         """)
@@ -9733,7 +9733,7 @@ class TerminalTabbedWindow(QMainWindow):
         self._tile_btn.setToolTip("Grid mode (up to 4 simultaneous terminals)")
         self._tile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tile_btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 4px; }"
+            "QToolButton { border: none; background: transparent; border-radius: 6px; padding: 4px; }"
             "QToolButton:hover { background: #2a2a2a; }"
             "QToolButton:checked { background: #1a3a4a; }"
         )
@@ -9925,7 +9925,7 @@ class TerminalTabbedWindow(QMainWindow):
         exit_btn.setToolTip("Exit grid view")
         exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         exit_btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent; border-radius: 4px; padding: 2px; }"
+            "QToolButton { border: none; background: transparent; border-radius: 6px; padding: 2px; }"
             "QToolButton:hover { background: #2a2a2a; }"
         )
         exit_btn.clicked.connect(exit_callback or self._exit_tiled_mode)
@@ -10672,7 +10672,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {{
                 background-color: #d8d8d8;
                 border: 1px solid #b0b0b0;
-                border-radius: 4px;
+                border-radius: 6px;
                 color: #444444;
                 font-size: 9pt;
                 padding: 3px 10px;
@@ -10995,6 +10995,10 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         self.connect_btn.clicked.connect(self.connect)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.connect_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.connect_btn)
 
         page.setLayout(main_layout)
@@ -11013,7 +11017,7 @@ class SerialTerminalGUI(QMainWindow):
                 QPushButton {{
                     background-color: #d8d8d8;
                     border: 1px solid #b0b0b0;
-                    border-radius: 4px;
+                    border-radius: 6px;
                     color: #444444;
                     font-size: 9pt;
                     padding: 3px 10px;
@@ -11183,6 +11187,12 @@ class SerialTerminalGUI(QMainWindow):
         srv_proto_lbl = QLabel("Protocol:")
         srv_proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
         srv_proto_row.addWidget(srv_proto_lbl)
+        _proto_icons = {
+            'SSH':  self.get_icon_path('ssh_icon.svg'),
+            'SMB':  self.get_icon_path('smb.svg'),
+            'FTP':  self.get_icon_path('ftp.svg'),
+            'TFTP': self.get_icon_path('TFTP.svg'),
+        }
         self._ft_srv_proto_btns = {}
         for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
             _pb = QPushButton(_proto)
@@ -11191,6 +11201,9 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setFixedHeight(24)
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
+            if _proto_icons.get(_proto):
+                _pb.setIcon(load_svg_icon(_proto_icons[_proto], 14))
+                _pb.setIconSize(QSize(14, 14))
             self._ft_srv_proto_btns[_proto] = _pb
             srv_proto_row.addWidget(_pb)
         self._ft_srv_proto_btns['SSH'].setChecked(True)
@@ -11740,7 +11753,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {
                 background-color: #f5f5f5;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QPushButton:hover { background-color: #e8e8e8; border: 1px solid #b0b0b0; }
             QPushButton:pressed { background-color: #d8d8d8; }
@@ -11784,6 +11797,12 @@ class SerialTerminalGUI(QMainWindow):
         cli_proto_row = QHBoxLayout()
         cli_proto_row.setContentsMargins(0, 0, 0, 0)
         cli_proto_row.setSpacing(4)
+        _proto_icons = {
+            'SSH':  self.get_icon_path('ssh_icon.svg'),
+            'SMB':  self.get_icon_path('smb.svg'),
+            'FTP':  self.get_icon_path('ftp.svg'),
+            'TFTP': self.get_icon_path('TFTP.svg'),
+        }
         self._ft_cli_proto_btns = {}
         for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
             _pb = QPushButton(_proto)
@@ -11792,6 +11811,9 @@ class SerialTerminalGUI(QMainWindow):
             _pb.setFixedHeight(24)
             _pb.setStyleSheet(_toggle_style(PURPLE))
             _pb.clicked.connect(lambda _c, p=_proto: self._ft_proto_changed(p))
+            if _proto_icons.get(_proto):
+                _pb.setIcon(load_svg_icon(_proto_icons[_proto], 14))
+                _pb.setIconSize(QSize(14, 14))
             self._ft_cli_proto_btns[_proto] = _pb
             cli_proto_row.addWidget(_pb)
         self._ft_cli_proto_btns['SSH'].setChecked(True)
@@ -11968,7 +11990,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {
                 background-color: #252535;
                 border: 1px solid #333345;
-                border-radius: 4px;
+                border-radius: 6px;
                 color: #78909C;
                 font-size: 8pt;
                 font-weight: bold;
@@ -12031,6 +12053,10 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #4A148C;
             }
         """)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.tftp_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.tftp_btn)
 
         # ── Status/duration timer ────────────────────────────────────────
@@ -12078,7 +12104,7 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_network_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12153,7 +12179,7 @@ class SerialTerminalGUI(QMainWindow):
         method_btn_style = """
             QPushButton {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12226,7 +12252,7 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_ports_input.setStyleSheet("""
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12277,7 +12303,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #f5f5f5;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -12488,6 +12514,10 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         self.scan_btn.clicked.connect(self._start_scan)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.scan_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.scan_btn)
 
         page.setLayout(main_layout)
@@ -12520,7 +12550,7 @@ class SerialTerminalGUI(QMainWindow):
         snmp_line_edit_style = """
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12594,7 +12624,7 @@ class SerialTerminalGUI(QMainWindow):
         version_btn_style = """
             QPushButton {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12741,7 +12771,7 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_device_img.setFixedSize(160, 80)
         self.snmp_device_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.snmp_device_img.setStyleSheet(
-            "border: 1px solid #e0e0e0; border-radius: 4px; background: #fafafa;")
+            "border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa;")
         self.snmp_device_img.setToolTip("Click to enlarge")
         self.snmp_device_img.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snmp_device_img.installEventFilter(self)
@@ -12794,7 +12824,7 @@ class SerialTerminalGUI(QMainWindow):
         type_btn_style = """
             QPushButton {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -12920,7 +12950,7 @@ class SerialTerminalGUI(QMainWindow):
                 color: #333333;
                 font-weight: bold;
                 font-size: 9pt;
-                border-radius: 4px;
+                border-radius: 6px;
             }
         """)
         index_panel_layout.addWidget(family_tree_label)
@@ -12956,7 +12986,7 @@ class SerialTerminalGUI(QMainWindow):
             QLineEdit {
                 background-color: #e8e8e8;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 6px;
                 color: #333333;
                 font-size: 9pt;
@@ -13005,6 +13035,10 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.snmp_execute_btn.clicked.connect(self.execute_snmp_query)
         self.snmp_execute_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.snmp_execute_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.snmp_execute_btn)
 
         page.setLayout(main_layout)
@@ -13030,7 +13064,7 @@ class SerialTerminalGUI(QMainWindow):
         traceroute_line_edit_style = """
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -13079,7 +13113,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #f5f5f5;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -13176,7 +13210,7 @@ class SerialTerminalGUI(QMainWindow):
         # Method selector (ICMP/TCP/UDP) — toggle buttons in tab cyan colour
         _tr_method_btn_style = """
             QPushButton {
-                border: 1px solid #d0d0d0; border-radius: 4px;
+                border: 1px solid #d0d0d0; border-radius: 6px;
                 padding: 4px 12px; background-color: #f5f5f5;
                 color: #333333; font-size: 9pt; font-weight: normal;
             }
@@ -13266,7 +13300,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #e0e0e0;
                 color: #333333;
                 border: 1px solid #bdbdbd;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 3px 10px;
                 font-size: 9pt;
             }
@@ -13314,7 +13348,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #f5f5f5;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -13595,6 +13629,10 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         self.traceroute_btn.clicked.connect(self._start_traceroute)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.traceroute_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.traceroute_btn)
 
         page.setLayout(main_layout)
@@ -14375,7 +14413,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
@@ -14476,7 +14514,7 @@ class SerialTerminalGUI(QMainWindow):
 
         combo_style = """
             QComboBox {
-                border: 1px solid #d0d0d0; border-radius: 4px;
+                border: 1px solid #d0d0d0; border-radius: 6px;
                 padding: 2px 8px; background-color: #f5f5f5;
                 color: #333333; font-size: 9pt;
             }
@@ -14516,7 +14554,7 @@ class SerialTerminalGUI(QMainWindow):
         refresh_iface_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_iface_btn.setStyleSheet("""
             QPushButton { background-color: #e0e0e0; border: 1px solid #bdbdbd;
-                          border-radius: 4px; }
+                          border-radius: 6px; }
             QPushButton:hover { background-color: #bdbdbd; }
         """)
         refresh_iface_btn.clicked.connect(self._wifi_refresh_interfaces)
@@ -14524,7 +14562,7 @@ class SerialTerminalGUI(QMainWindow):
         _toggle_style = """
             QPushButton {
                 background-color: #3a3a4a; border: 1px solid #555566;
-                border-radius: 4px; color: #8b949e; font-size: 8pt;
+                border-radius: 6px; color: #8b949e; font-size: 8pt;
                 padding: 2px 12px; min-width: 64px;
             }
             QPushButton:checked {
@@ -14819,7 +14857,7 @@ class SerialTerminalGUI(QMainWindow):
         _close_btn_style = """
             QPushButton {
                 background-color: rgba(20,20,30,180);
-                color: #8b949e; border: none; border-radius: 4px;
+                color: #8b949e; border: none; border-radius: 6px;
                 font-size: 9pt; font-weight: bold;
             }
             QPushButton:hover { background-color: rgba(200,40,40,200); color: white; }
@@ -14864,7 +14902,7 @@ class SerialTerminalGUI(QMainWindow):
         """
         _scale_lbl_style = (
             "color: white; font-size: 9pt; font-weight: bold; "
-            "background-color: rgba(15, 15, 25, 210); border-radius: 4px; "
+            "background-color: rgba(15, 15, 25, 210); border-radius: 6px; "
             "border: 1px solid rgba(233,30,99,160); padding: 0px 4px;"
         )
 
@@ -14952,6 +14990,10 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.wifi_scan_btn.clicked.connect(self._start_wifi_scan)
 
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.wifi_scan_btn.setGraphicsEffect(_btn_shadow)
         btn_row.addWidget(self.wifi_export_btn)
         btn_row.addWidget(self.wifi_scan_btn, 1)
 
@@ -15840,7 +15882,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
@@ -15918,7 +15960,7 @@ class SerialTerminalGUI(QMainWindow):
         layout = QVBoxLayout(dialog)
         tabs = QTabWidget()
         tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #30363d; border-radius: 4px; }
+            QTabWidget::pane { border: 1px solid #30363d; border-radius: 6px; }
             QTabBar::tab { background: #161b22; color: #8b949e; padding: 8px 16px; border: 1px solid #30363d; border-bottom: none; }
             QTabBar::tab:selected { background: #0d1117; color: #c9d1e0; border-top: 2px solid #58a6ff; font-weight: bold; }
         """)
@@ -16093,7 +16135,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 3px 8px;
                 font-size: 9pt;
             }
@@ -16111,7 +16153,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 8px;
                 font-size: 9pt;
             }
@@ -16170,7 +16212,7 @@ class SerialTerminalGUI(QMainWindow):
         ok_btn.setStyleSheet("""
             QPushButton {
                 background-color: #00BCD4; color: #ffffff;
-                border: none; border-radius: 4px; padding: 6px 12px; font-size: 9pt;
+                border: none; border-radius: 6px; padding: 6px 12px; font-size: 9pt;
             }
             QPushButton:hover { background-color: #0097A7; }
         """)
@@ -16180,7 +16222,7 @@ class SerialTerminalGUI(QMainWindow):
         cancel_btn.setStyleSheet("""
             QPushButton {
                 background-color: #e0e0e0; color: #333333;
-                border: none; border-radius: 4px; padding: 6px 12px; font-size: 9pt;
+                border: none; border-radius: 6px; padding: 6px 12px; font-size: 9pt;
             }
             QPushButton:hover { background-color: #bdbdbd; }
         """)
@@ -16206,7 +16248,7 @@ class SerialTerminalGUI(QMainWindow):
                 self.traceroute_proxy_btn.setStyleSheet("""
                     QPushButton {
                         background-color: #00BCD4; color: #ffffff;
-                        border: none; border-radius: 4px;
+                        border: none; border-radius: 6px;
                         padding: 3px 10px; font-size: 9pt;
                     }
                     QPushButton:hover { background-color: #0097A7; }
@@ -16216,7 +16258,7 @@ class SerialTerminalGUI(QMainWindow):
                 self.traceroute_proxy_btn.setStyleSheet("""
                     QPushButton {
                         background-color: #e0e0e0; color: #333333;
-                        border: 1px solid #bdbdbd; border-radius: 4px;
+                        border: 1px solid #bdbdbd; border-radius: 6px;
                         padding: 3px 10px; font-size: 9pt;
                     }
                     QPushButton:hover { background-color: #bdbdbd; }
@@ -17029,7 +17071,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #E91E63;
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: bold;
             }
@@ -17078,11 +17120,11 @@ class SerialTerminalGUI(QMainWindow):
             QProgressBar {
                 background-color: #e0e0e0;
                 border: none;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QProgressBar::chunk {
                 background-color: #ef5350;
-                border-radius: 4px;
+                border-radius: 6px;
             }
         """)
         return bar
@@ -17464,7 +17506,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
@@ -17537,7 +17579,7 @@ class SerialTerminalGUI(QMainWindow):
             menu.setStyleSheet("""
                 QMenu {
                     background-color: #ffffff; color: #333333;
-                    border: 1px solid #d0d0d0; border-radius: 4px; padding: 4px;
+                    border: 1px solid #d0d0d0; border-radius: 6px; padding: 4px;
                 }
                 QMenu::item { padding: 6px 20px; border-radius: 3px; }
                 QMenu::item:selected { background-color: #e8e8e8; }
@@ -17562,7 +17604,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #ffffff;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px;
             }
             QMenu::item {
@@ -17725,7 +17767,7 @@ class SerialTerminalGUI(QMainWindow):
         line_edit_style = """
             QLineEdit {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 2px 8px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -17758,7 +17800,7 @@ class SerialTerminalGUI(QMainWindow):
         protocol_btn_style = """
             QPushButton {
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 background-color: #f5f5f5;
                 color: #333333;
@@ -17923,7 +17965,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {
                 background-color: #e0e0e0;
                 border: 1px solid #bdbdbd;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QPushButton:hover {
                 background-color: #d0d0d0;
@@ -18088,6 +18130,10 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.ssh_connect_btn.clicked.connect(self.connect_ssh)
         self.ssh_connect_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.ssh_connect_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.ssh_connect_btn)
 
         page.setLayout(main_layout)
@@ -18184,7 +18230,7 @@ class SerialTerminalGUI(QMainWindow):
                 left: 15px;
                 padding: 0 8px;
                 color: #2c2c2c;
-                font-size: 11pt;
+                font-size: 10pt;
                 font-weight: bold;
                 background-color: #ffffff;
             }
@@ -18255,6 +18301,27 @@ class SerialTerminalGUI(QMainWindow):
             }
             QFormLayout QLabel {
                 color: #4a4a4a;
+                font-size: 9pt;
+            }
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                background-color: #fafafa;
+                color: #2c2c2c;
+                font-size: 9pt;
+                padding: 2px 8px;
+            }
+            QLineEdit:hover {
+                border-color: #a0a0a0;
+                background-color: #ffffff;
+            }
+            QCheckBox {
+                spacing: 5px;
+                font-size: 9pt;
+                color: #2c2c2c;
+            }
+            QCheckBox:hover {
+                color: #1a1a1a;
             }
             QDialog, QMessageBox, QInputDialog {
                 background-color: palette(window);
@@ -18293,7 +18360,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #424242;
                 color: #ffffff;
                 border: none;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 5px 8px;
                 font-size: 9pt;
             }
@@ -19352,7 +19419,7 @@ class SerialTerminalGUI(QMainWindow):
             }
             QMenu::item {
                 padding: 6px 12px;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QMenu::item:selected {
                 background-color: #2196F3;
@@ -19989,7 +20056,7 @@ class SerialTerminalGUI(QMainWindow):
         profile = item.data(0, Qt.ItemDataRole.UserRole)
         _menu_style = """
             QMenu { background-color: #ffffff; color: #333333;
-                border: 1px solid #d0d0d0; border-radius: 4px; padding: 4px; }
+                border: 1px solid #d0d0d0; border-radius: 6px; padding: 4px; }
             QMenu::item { padding: 6px 20px; border-radius: 3px; }
             QMenu::item:selected { background-color: #e8e8e8; }
             QMenu::separator { height: 1px; background-color: #d0d0d0; margin: 4px 8px; }
@@ -20391,7 +20458,7 @@ class SerialTerminalGUI(QMainWindow):
                 QPushButton {{
                     background-color: #d8d8d8;
                     border: 1px solid #b0b0b0;
-                    border-radius: 4px;
+                    border-radius: 6px;
                     color: #444444;
                     font-size: 9pt;
                     padding: 3px 10px;
@@ -20410,7 +20477,7 @@ class SerialTerminalGUI(QMainWindow):
         # ── Shared field styles ────────────────────────────────────────
         field_style = f"""
             QLineEdit {{
-                border: 1px solid #d0d0d0; border-radius: 4px;
+                border: 1px solid #d0d0d0; border-radius: 6px;
                 padding: 2px 8px; background-color: #f5f5f5;
                 color: #333333; font-size: 9pt;
             }}
@@ -20419,7 +20486,7 @@ class SerialTerminalGUI(QMainWindow):
         """
         spin_style = f"""
             QSpinBox {{
-                border: 1px solid #d0d0d0; border-radius: 4px;
+                border: 1px solid #d0d0d0; border-radius: 6px;
                 padding: 2px 4px; background-color: #f5f5f5;
                 color: #333333; font-size: 9pt;
             }}
@@ -20521,7 +20588,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {{
                 background-color: #e0e0e0;
                 border: 1px solid #b0b0b0;
-                border-radius: 4px;
+                border-radius: 6px;
                 color: #333333;
                 font-size: 9pt;
                 font-weight: normal;
@@ -20579,7 +20646,7 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #f5f5f5;
                 color: #333333;
                 border: 1px solid #d0d0d0;
-                border-radius: 4px;
+                border-radius: 6px;
             }
             QPushButton:hover  { background-color: #e8e8e8; border-color: #b0b0b0; }
             QPushButton:pressed { background-color: #d8d8d8; }
@@ -20783,7 +20850,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton {
                 background-color: #252535;
                 border: 1px solid #333345;
-                border-radius: 4px;
+                border-radius: 6px;
                 color: #78909C;
                 font-size: 8pt;
                 font-weight: bold;
@@ -20844,6 +20911,10 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self.iperf_run_btn.clicked.connect(self._speedtest_run)   # default = Speed Test
         self.iperf_run_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self.iperf_run_btn.setGraphicsEffect(_btn_shadow)
         main_layout.addWidget(self.iperf_run_btn)
 
         page.setLayout(main_layout)
