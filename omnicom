@@ -871,6 +871,7 @@ class TerminalWidget(QTextEdit):
         self._render_needed = True  # Dirty flag to avoid redundant setHtml calls
         self._in_scrollback_mode = False  # True when user is browsing history
         self._search_active = False  # True when search is active, freezes display updates
+        self._in_alt_screen = False  # True when in alternate screen mode (nano, vim, htop…)
 
         # State for stripping escape sequences not handled by pyte (DCS, SOS, PM, APC)
         self._in_unhandled_escape = False
@@ -1233,6 +1234,13 @@ class TerminalWidget(QTextEdit):
             t1 = _t.perf_counter()
             self._dbg_feed_strip_ms += (t1 - t0) * 1000
 
+        # Detect alternate-screen mode (full-screen TUIs: nano, vim, htop …)
+        # ESC[?1049h → enter alt screen   ESC[?1049l → leave alt screen
+        if '\x1b[?1049h' in text:
+            self._in_alt_screen = True
+        if '\x1b[?1049l' in text:
+            self._in_alt_screen = False
+
         if text:
             # Cap feed size so the lock is held for at most ~22ms per call.
             # pyte is pure-Python (~735 KB/s measured). 16KB ≈ 22ms → lock free
@@ -1261,6 +1269,10 @@ class TerminalWidget(QTextEdit):
         """Feed text to pyte terminal emulator (main-thread path, e.g. local echo)."""
         text = self._strip_unhandled_sequences(text)
         if text:
+            if '\x1b[?1049h' in text:
+                self._in_alt_screen = True
+            if '\x1b[?1049l' in text:
+                self._in_alt_screen = False
             with self._pyte_lock:
                 self.stream.feed(text)
             self._render_needed = True
@@ -1859,12 +1871,13 @@ class TerminalWidget(QTextEdit):
         self.setTextCursor(cursor)
 
         # Scroll to follow output.
-        # Normally we scroll to maximum so new output at the bottom stays visible.
-        # Exception: when the cursor is on line 0 (e.g. immediately after `clear`),
-        # sub-pixel rounding can make maximum a few pixels > 0, which is enough to
-        # push line 0 just above the visible area.  In that case scroll to 0 instead.
+        # • Alternate screen (nano, vim, htop …): always show from the top — the TUI
+        #   owns the full viewport and positions its own cursor.
+        # • After `clear` (cursor_y == 0): scroll to top to avoid sub-pixel rounding
+        #   pushing line 0 just above the visible area.
+        # • Normal live output: scroll to bottom so new lines stay visible.
         scrollbar = self.verticalScrollBar()
-        if cursor_y == 0:
+        if self._in_alt_screen or cursor_y == 0:
             scrollbar.setValue(0)
         else:
             scrollbar.setValue(scrollbar.maximum())
@@ -1920,10 +1933,12 @@ class TerminalWidget(QTextEdit):
         available_width = viewport.width()
         available_height = viewport.height()
         cols = max(40, int(available_width / char_width))
-        # CSS line-height:1.2 is applied to the CSS font-size (pt * screen_dpi / 72),
-        # not to Qt's em (ascent+descent). Use the same formula to stay in sync.
-        css_font_px = self.font().pointSizeF() * self.logicalDpiY() / 72.0
-        line_height = css_font_px * 1.2
+        # Qt's HTML renderer interprets CSS `line-height: 1.2` as
+        # fm.height() * 1.2, where fm.height() = ascent + descent (the full
+        # bounding-box height of the font, NOT the CSS pt→px conversion).
+        # Using css_font_px = pointSizeF * dpi / 72 gave ~16px where the
+        # real rendered line height was ~19.2px, causing row overflows.
+        line_height = char_height * 1.2
         rows = max(10, int(available_height / line_height))
         with self._pyte_lock:
             if cols != self.screen.columns or rows != self.screen.lines:
