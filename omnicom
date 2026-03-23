@@ -18181,7 +18181,7 @@ class SerialTerminalGUI(QMainWindow):
         _rdp_depth_lbl.setStyleSheet("color: #555555; font-size: 9pt;")
         self.rdp_color_depth = QComboBox()
         self.rdp_color_depth.addItems(["32 bit", "24 bit", "16 bit", "15 bit", "8 bit"])
-        self.rdp_color_depth.setFixedWidth(80)
+        self.rdp_color_depth.setFixedWidth(105)
         self.rdp_color_depth.setStyleSheet(line_edit_style)
 
         _rdp_res_layout.addWidget(self.rdp_resolution)
@@ -19671,22 +19671,42 @@ class SerialTerminalGUI(QMainWindow):
                 self._proc = process
 
             def run(self):
-                error_msg = ''
+                import time, threading
+                stderr_lines = []
                 connected = False
-                for line in self._proc.stderr:
-                    line = line.rstrip()
-                    # Connection established — framebuffer ready
-                    if 'gdi_init_ex' in line and 'Local framebuffer' in line:
+
+                # Read stderr in a daemon thread — piped stderr is block-buffered
+                # and would only be readable after the process exits if read inline.
+                def _drain():
+                    for ln in self._proc.stderr:
+                        stderr_lines.append(ln.rstrip())
+                threading.Thread(target=_drain, daemon=True).start()
+
+                start = time.time()
+                while self._proc.poll() is None:
+                    # Detect framebuffer ready in the lines collected so far
+                    if not connected:
+                        for ln in list(stderr_lines):
+                            if 'gdi_init_ex' in ln and 'Local framebuffer' in ln:
+                                connected = True
+                                self.connected.emit()
+                                break
+                    # Fallback: if still running after 20 s, assume connected
+                    if not connected and time.time() - start > 20:
                         connected = True
                         self.connected.emit()
-                    # SDL client reports errors via [handleShow]
-                    if '[ERROR]' in line and '[handleShow]' in line:
-                        msg = line.split('[handleShow]:')[-1].strip()
-                        if msg:
-                            error_msg = msg
-                self._proc.wait()
-                if self._proc.returncode != 0 and not connected:
-                    self.failed.emit(error_msg or "RDP connection failed (unknown error).")
+                    time.sleep(0.4)
+
+                # Process has ended — only report error if it never connected
+                if not connected:
+                    error_msg = ''
+                    for ln in stderr_lines:
+                        if '[ERROR]' in ln and '[handleShow]' in ln:
+                            msg = ln.split('[handleShow]:')[-1].strip()
+                            if msg:
+                                error_msg = msg
+                    if self._proc.returncode != 0:
+                        self.failed.emit(error_msg or "RDP connection failed (unknown error).")
                 self.done.emit()
 
         monitor = _RdpMonitor(proc)
