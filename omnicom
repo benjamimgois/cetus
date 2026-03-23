@@ -19589,10 +19589,8 @@ class SerialTerminalGUI(QMainWindow):
         subprocess.Popen([viewer, f'{host}::{port}'])
 
     def _launch_rdp(self, host, port, username, password):
-        """Launch an RDP client.
-        Search order: sdl-freerdp3 (FreeRDP 3 SDL, recommended)
-                      → xfreerdp3 / wlfreerdp3 (FreeRDP 3, Arch/Fedora naming)
-                      → wlfreerdp → xfreerdp (FreeRDP 2/3, Debian/Ubuntu naming).
+        """Launch an RDP client with connecting feedback and error reporting.
+        Search order: sdl-freerdp3 → xfreerdp3 / wlfreerdp3 → wlfreerdp → xfreerdp.
         """
         import shutil, subprocess
         for client in ('sdl-freerdp3', 'xfreerdp3', 'wlfreerdp3', 'wlfreerdp', 'xfreerdp'):
@@ -19608,7 +19606,7 @@ class SerialTerminalGUI(QMainWindow):
                 "Debian / Ubuntu (X11):\n"
                 "  sudo apt install freerdp2-x11")
             return
-        # FreeRDP 3 uses /tls:seclevel:0 ; FreeRDP 2 uses /tls-seclevel:0
+
         tls_arg = '/tls:seclevel:0' if client.endswith('3') else '/tls-seclevel:0'
         resolution = self._get_rdp_resolution()
         if resolution:
@@ -19616,13 +19614,71 @@ class SerialTerminalGUI(QMainWindow):
             args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
                     f'/w:{w}', f'/h:{h}']
         else:
-            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg,
-                    '/f']  # fullscreen
+            args = [client, f'/v:{host}:{port}', '/cert:ignore', tls_arg, '/f']
         if username:
             args.append(f'/u:{username}')
         if password:
             args.append(f'/p:{password}')
-        subprocess.Popen(args)
+
+        proc = subprocess.Popen(args, stderr=subprocess.PIPE,
+                                stdout=subprocess.DEVNULL, text=True)
+
+        # Visual feedback: disable button and show "Connecting…"
+        btn = self.ssh_connect_btn
+        original_text = btn.text()
+        btn.setText("Connecting RDP…")
+        btn.setEnabled(False)
+
+        # Monitor stderr in a thread; report errors back on the main thread
+        class _RdpMonitor(QThread):
+            connected = pyqtSignal()
+            failed    = pyqtSignal(str)
+            done      = pyqtSignal()
+
+            def __init__(self, process):
+                super().__init__()
+                self._proc = process
+
+            def run(self):
+                error_msg = ''
+                connected = False
+                for line in self._proc.stderr:
+                    line = line.rstrip()
+                    # Connection established — framebuffer ready
+                    if 'gdi_init_ex' in line and 'Local framebuffer' in line:
+                        connected = True
+                        self.connected.emit()
+                    # SDL client reports errors via [handleShow]
+                    if '[ERROR]' in line and '[handleShow]' in line:
+                        msg = line.split('[handleShow]:')[-1].strip()
+                        if msg:
+                            error_msg = msg
+                self._proc.wait()
+                if self._proc.returncode != 0 and not connected:
+                    self.failed.emit(error_msg or "RDP connection failed (unknown error).")
+                self.done.emit()
+
+        monitor = _RdpMonitor(proc)
+
+        def _on_connected():
+            btn.setText(original_text)
+            btn.setEnabled(True)
+
+        def _on_failed(msg):
+            btn.setText(original_text)
+            btn.setEnabled(True)
+            QMessageBox.critical(self, "RDP Connection Error", msg)
+
+        def _on_done():
+            btn.setText(original_text)
+            btn.setEnabled(True)
+
+        monitor.connected.connect(_on_connected)
+        monitor.failed.connect(_on_failed)
+        monitor.done.connect(_on_done)
+        monitor.start()
+        # Keep reference so thread isn't GC'd
+        self._rdp_monitor = monitor
 
     def browse_ssh_key(self):
         """Open file dialog to select SSH private key"""
