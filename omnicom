@@ -15018,14 +15018,18 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:hover { border-color: #999aaa; }
         """
 
+        def _wifi_ico(name):
+            p = self.get_icon_path(f'wifi_{name}.svg')
+            return load_svg_icon_dual(p, 14, '#8b949e', '#ffffff') if p else None
+
         # Band selector: 3 exclusive toggle buttons
         self.wifi_band_btn_24  = QPushButton("2.4 GHz")
         self.wifi_band_btn_5   = QPushButton("5 GHz")
         self.wifi_band_btn_both= QPushButton("Both")
-        for _btn, _tip in [
-            (self.wifi_band_btn_24,   "Show 2.4 GHz channels only"),
-            (self.wifi_band_btn_5,    "Show 5 GHz channels only"),
-            (self.wifi_band_btn_both, "Show both bands simultaneously"),
+        for _btn, _tip, _ico_name in [
+            (self.wifi_band_btn_24,   "Show 2.4 GHz channels only",       '24ghz'),
+            (self.wifi_band_btn_5,    "Show 5 GHz channels only",         '5ghz'),
+            (self.wifi_band_btn_both, "Show both bands simultaneously",   'both'),
         ]:
             _btn.setCheckable(True)
             _btn.setFixedWidth(90)
@@ -15033,6 +15037,10 @@ class SerialTerminalGUI(QMainWindow):
             _btn.setCursor(Qt.CursorShape.PointingHandCursor)
             _btn.setToolTip(_tip)
             _btn.setStyleSheet(_toggle_style)
+            _ico = _wifi_ico(_ico_name)
+            if _ico:
+                _btn.setIcon(_ico)
+                _btn.setIconSize(QSize(14, 14))
         self.wifi_band_btn_5.setChecked(True)    # default: 5 GHz
 
         def _on_band_btn(btn):
@@ -15061,6 +15069,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_channel_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_toggle_channel_btn.setToolTip("Show/hide channel graph")
+        _ico = _wifi_ico('spectrum')
+        if _ico:
+            self.wifi_toggle_channel_btn.setIcon(_ico)
+            self.wifi_toggle_channel_btn.setIconSize(QSize(14, 14))
 
         self.wifi_toggle_history_btn = QPushButton("Power")
         self.wifi_toggle_history_btn.setCheckable(True)
@@ -15070,6 +15082,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_history_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_toggle_history_btn.setToolTip("Show/hide signal history")
+        _ico = _wifi_ico('power')
+        if _ico:
+            self.wifi_toggle_history_btn.setIcon(_ico)
+            self.wifi_toggle_history_btn.setIconSize(QSize(14, 14))
 
         # ── Single flat grid ──────────────────────────────────────────────────
         config_grid_widget = QWidget()
@@ -15105,6 +15121,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_toggle_heatmap_btn.setStyleSheet(_toggle_style)
         self.wifi_toggle_heatmap_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_toggle_heatmap_btn.setToolTip("Show/hide waterfall heatmap")
+        _ico = _wifi_ico('heatmap')
+        if _ico:
+            self.wifi_toggle_heatmap_btn.setIcon(_ico)
+            self.wifi_toggle_heatmap_btn.setIconSize(QSize(14, 14))
 
         graphs_cell = QWidget()
         graphs_cell_layout = QHBoxLayout(graphs_cell)
@@ -15123,6 +15143,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_noise_btn.setStyleSheet(_toggle_style)
         self.wifi_noise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_noise_btn.setToolTip("Overlay animated white noise on spectrum")
+        _ico = _wifi_ico('noise')
+        if _ico:
+            self.wifi_noise_btn.setIcon(_ico)
+            self.wifi_noise_btn.setIconSize(QSize(14, 14))
 
         self.wifi_glow_btn = QPushButton("Glow")
         self.wifi_glow_btn.setCheckable(True)
@@ -15132,6 +15156,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_glow_btn.setStyleSheet(_toggle_style)
         self.wifi_glow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_glow_btn.setToolTip("Show neon glow burst at signal peaks")
+        _ico = _wifi_ico('glow')
+        if _ico:
+            self.wifi_glow_btn.setIcon(_ico)
+            self.wifi_glow_btn.setIconSize(QSize(14, 14))
 
         self.wifi_scanlines_btn = QPushButton("Scanlines")
         self.wifi_scanlines_btn.setCheckable(True)
@@ -15141,6 +15169,10 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_scanlines_btn.setStyleSheet(_toggle_style)
         self.wifi_scanlines_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.wifi_scanlines_btn.setToolTip("CRT scanlines overlay (retro style)")
+        _ico = _wifi_ico('scanlines')
+        if _ico:
+            self.wifi_scanlines_btn.setIcon(_ico)
+            self.wifi_scanlines_btn.setIconSize(QSize(14, 14))
 
         effects_cell = QWidget()
         effects_layout = QHBoxLayout(effects_cell)
@@ -15421,6 +15453,10 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:disabled { color: #aaaaaa; }
         """)
         self.wifi_export_btn.clicked.connect(self._wifi_export_csv)
+        _ico = load_svg_icon_dual(self.get_icon_path('wifi_export.svg'), 16, '#555555', '#555555')
+        if _ico:
+            self.wifi_export_btn.setIcon(_ico)
+            self.wifi_export_btn.setIconSize(QSize(16, 16))
 
         self.wifi_scan_btn = QPushButton("SCAN")
         self.wifi_scan_btn.setMinimumHeight(40)
@@ -15436,6 +15472,10 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:disabled { background-color: #757575; }
         """)
         self.wifi_scan_btn.clicked.connect(self._start_wifi_scan)
+        _ico = load_svg_icon_dual(self.get_icon_path('wifi_scan.svg'), 20, '#ffffff', '#ffffff')
+        if _ico:
+            self.wifi_scan_btn.setIcon(_ico)
+            self.wifi_scan_btn.setIconSize(QSize(20, 20))
 
         _btn_shadow = QGraphicsDropShadowEffect()
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)

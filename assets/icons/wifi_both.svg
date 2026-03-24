@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Left half arcs -->
+  <path d="M2 13 A10 10 0 0 1 12 9" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <path d="M4.5 16.5 A7 7 0 0 1 12 14" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <!-- Right half arcs -->
+  <path d="M12 9 A10 10 0 0 1 22 13" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 14 A7 7 0 0 1 19.5 16.5" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <!-- Dot -->
+  <circle cx="12" cy="20" r="1.5" fill="#555555"/>
+</svg>
