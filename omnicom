@@ -326,6 +326,7 @@ def load_svg_icon_dual(path, size=16, color_off='#555555', color_on='#ffffff'):
     icon = QIcon()
     for qt_state, color in ((QIcon.State.Off, color_off), (QIcon.State.On, color_on)):
         svg = re.sub(r'fill="(?!none\b|transparent\b)[^"]*"', f'fill="{color}"', svg_src)
+        svg = re.sub(r'stroke="(?!none\b|transparent\b)[^"]*"', f'stroke="{color}"', svg)
         renderer = QSvgRenderer(svg.encode())
         if not renderer.isValid():
             continue
@@ -12521,34 +12522,29 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        self.scan_method_icmp_btn = QPushButton("ICMP")
-        self.scan_method_icmp_btn.setCheckable(True)
-        self.scan_method_icmp_btn.setChecked(True)
-        self.scan_method_icmp_btn.setFixedWidth(90)
-        self.scan_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_method_icmp_btn.setStyleSheet(method_btn_style)
-        self.scan_method_icmp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ICMP"))
+        def _proto_icon(name, color_on='#ffffff'):
+            p = self.get_icon_path(f'proto_{name.lower()}.svg')
+            return load_svg_icon_dual(p, 16, '#555555', color_on) if p else None
 
-        self.scan_method_tcp_btn = QPushButton("TCP")
-        self.scan_method_tcp_btn.setCheckable(True)
-        self.scan_method_tcp_btn.setFixedWidth(90)
-        self.scan_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_method_tcp_btn.setStyleSheet(method_btn_style)
-        self.scan_method_tcp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("TCP"))
-
-        self.scan_method_udp_btn = QPushButton("UDP")
-        self.scan_method_udp_btn.setCheckable(True)
-        self.scan_method_udp_btn.setFixedWidth(90)
-        self.scan_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_method_udp_btn.setStyleSheet(method_btn_style)
-        self.scan_method_udp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("UDP"))
-
-        self.scan_method_arp_btn = QPushButton("ARP")
-        self.scan_method_arp_btn.setCheckable(True)
-        self.scan_method_arp_btn.setFixedWidth(90)
-        self.scan_method_arp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_method_arp_btn.setStyleSheet(method_btn_style)
-        self.scan_method_arp_btn.clicked.connect(lambda: self._scan_method_btn_clicked("ARP"))
+        _scan_color_on = '#ef5350'
+        for _proto, _attr, _checked, _cb in [
+            ('ICMP', 'scan_method_icmp_btn', True,  lambda: self._scan_method_btn_clicked("ICMP")),
+            ('TCP',  'scan_method_tcp_btn',  False, lambda: self._scan_method_btn_clicked("TCP")),
+            ('UDP',  'scan_method_udp_btn',  False, lambda: self._scan_method_btn_clicked("UDP")),
+            ('ARP',  'scan_method_arp_btn',  False, lambda: self._scan_method_btn_clicked("ARP")),
+        ]:
+            _b = QPushButton(_proto)
+            _b.setCheckable(True)
+            _b.setChecked(_checked)
+            _b.setFixedWidth(90)
+            _b.setCursor(Qt.CursorShape.PointingHandCursor)
+            _b.setStyleSheet(method_btn_style)
+            _ico = _proto_icon(_proto, '#ffffff')
+            if _ico:
+                _b.setIcon(_ico)
+                _b.setIconSize(QSize(16, 16))
+            _b.clicked.connect(_cb)
+            setattr(self, _attr, _b)
 
         method_layout.addWidget(self.scan_method_icmp_btn)
         method_layout.addWidget(self.scan_method_tcp_btn)
@@ -13561,36 +13557,28 @@ class SerialTerminalGUI(QMainWindow):
         _tr_method_layout.setContentsMargins(0, 0, 0, 0)
         _tr_method_layout.setSpacing(4)
 
-        self.traceroute_method_icmp_btn = QPushButton("ICMP")
-        self.traceroute_method_icmp_btn.setCheckable(True)
-        self.traceroute_method_icmp_btn.setChecked(True)
-        self.traceroute_method_icmp_btn.setFixedWidth(90)
-        self.traceroute_method_icmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_method_icmp_btn.setStyleSheet(_tr_method_btn_style)
+        def _tr_proto_icon(name):
+            p = self.get_icon_path(f'proto_{name}.svg')
+            return load_svg_icon_dual(p, 16, '#555555', '#ffffff') if p else None
 
-        self.traceroute_method_tcp_btn = QPushButton("TCP")
-        self.traceroute_method_tcp_btn.setCheckable(True)
-        self.traceroute_method_tcp_btn.setFixedWidth(90)
-        self.traceroute_method_tcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_method_tcp_btn.setStyleSheet(_tr_method_btn_style)
-
-        self.traceroute_method_udp_btn = QPushButton("UDP")
-        self.traceroute_method_udp_btn.setCheckable(True)
-        self.traceroute_method_udp_btn.setFixedWidth(90)
-        self.traceroute_method_udp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_method_udp_btn.setStyleSheet(_tr_method_btn_style)
-
-        self.traceroute_method_pingicmp_btn = QPushButton("Ping ICMP")
-        self.traceroute_method_pingicmp_btn.setCheckable(True)
-        self.traceroute_method_pingicmp_btn.setFixedWidth(90)
-        self.traceroute_method_pingicmp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_method_pingicmp_btn.setStyleSheet(_tr_method_btn_style)
-
-        self.traceroute_method_pingtcp_btn = QPushButton("Ping TCP")
-        self.traceroute_method_pingtcp_btn.setCheckable(True)
-        self.traceroute_method_pingtcp_btn.setFixedWidth(90)
-        self.traceroute_method_pingtcp_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.traceroute_method_pingtcp_btn.setStyleSheet(_tr_method_btn_style)
+        for _proto, _attr, _checked, _icon_key in [
+            ('ICMP',      'traceroute_method_icmp_btn',     True,  'icmp'),
+            ('TCP',       'traceroute_method_tcp_btn',      False, 'tcp'),
+            ('UDP',       'traceroute_method_udp_btn',      False, 'udp'),
+            ('Ping ICMP', 'traceroute_method_pingicmp_btn', False, 'icmp'),
+            ('Ping TCP',  'traceroute_method_pingtcp_btn',  False, 'tcp'),
+        ]:
+            _b = QPushButton(_proto)
+            _b.setCheckable(True)
+            _b.setChecked(_checked)
+            _b.setFixedWidth(90)
+            _b.setCursor(Qt.CursorShape.PointingHandCursor)
+            _b.setStyleSheet(_tr_method_btn_style)
+            _ico = _tr_proto_icon(_icon_key)
+            if _ico:
+                _b.setIcon(_ico)
+                _b.setIconSize(QSize(16, 16))
+            setattr(self, _attr, _b)
 
         self._traceroute_method_btns = {
             'ICMP': self.traceroute_method_icmp_btn,
