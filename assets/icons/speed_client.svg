@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Laptop screen -->
+  <rect x="3" y="4" width="14" height="10" rx="1.5" stroke="#555555" stroke-width="2" fill="none"/>
+  <!-- Laptop base -->
+  <path d="M1 15 h18 l-2 3 H3 Z" stroke="#555555" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <!-- Outgoing arrow -->
+  <line x1="19" y1="9" x2="23" y2="9" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="21,7 23,9 21,11" stroke="#555555" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

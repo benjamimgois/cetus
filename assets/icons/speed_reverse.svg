@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Arrow going right (normal direction) -->
+  <line x1="3" y1="8" x2="19" y2="8" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="15,5 19,8 15,11" stroke="#555555" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Arrow going left (reverse direction) -->
+  <line x1="21" y1="16" x2="5" y2="16" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="9,13 5,16 9,19" stroke="#555555" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

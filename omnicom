@@ -21338,13 +21338,18 @@ class SerialTerminalGUI(QMainWindow):
         proto_lbl.setFixedWidth(56)
         proto_lbl.setStyleSheet(lbl_style)
         self._iperf_proto_btns = {}
-        for proto in ('TCP', 'UDP'):
+        for proto, _icokey in (('TCP', 'proto_tcp'), ('UDP', 'proto_udp')):
             btn = QPushButton(proto)
             btn.setCheckable(True)
             btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(_toggle_style(BROWN))
+            _p = self.get_icon_path(f'{_icokey}.svg')
+            _ico = load_svg_icon_dual(_p, 16, '#555555', '#ffffff') if _p else None
+            if _ico:
+                btn.setIcon(_ico)
+                btn.setIconSize(QSize(16, 16))
             btn.clicked.connect(lambda _checked, p=proto: self._iperf_proto_clicked(p))
             self._iperf_proto_btns[proto] = btn
             row2.addWidget(btn)
@@ -21382,12 +21387,17 @@ class SerialTerminalGUI(QMainWindow):
         row3 = QHBoxLayout()
         row3.setSpacing(6)
         self._iperf_mode_btns = {}
-        for mode in ('Client', 'Server', 'Reverse'):
+        for mode, _icokey in (('Client', 'speed_client'), ('Server', 'speed_server'), ('Reverse', 'speed_reverse')):
             btn = QPushButton(mode)
             btn.setCheckable(True)
             btn.setFixedWidth(90)
             btn.setFixedHeight(24)
             btn.setStyleSheet(_toggle_style(BROWN))
+            _p = self.get_icon_path(f'{_icokey}.svg')
+            _ico = load_svg_icon_dual(_p, 16, '#555555', '#ffffff') if _p else None
+            if _ico:
+                btn.setIcon(_ico)
+                btn.setIconSize(QSize(16, 16))
             btn.clicked.connect(lambda _c, m=mode: self._iperf_mode_clicked(m))
             self._iperf_mode_btns[mode] = btn
             row3.addWidget(btn)
