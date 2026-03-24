@@ -10539,6 +10539,10 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_connect_time = None
         self._ft_local_path = os.path.expanduser('~')
         self._ft_remote_path = '/'
+        self._ft_local_history = [os.path.expanduser('~')]
+        self._ft_local_history_idx = 0
+        self._ft_remote_history = ['/']
+        self._ft_remote_history_idx = 0
         self._ftp_srv_process = None
         self._smb_srv_service = 'smb'
         self._pending_profile_name = None
@@ -12204,9 +12208,43 @@ class SerialTerminalGUI(QMainWindow):
         # LEFT: local tree
         local_col = QVBoxLayout()
         local_col.setSpacing(2)
+
+        _local_top = QHBoxLayout()
+        _local_top.setContentsMargins(0, 0, 0, 0)
+        _local_top.setSpacing(4)
         local_header = QLabel("Local Computer")
         local_header.setStyleSheet("font-size: 9pt; font-weight: bold; color: #333333;")
-        local_col.addWidget(local_header)
+        _local_top.addWidget(local_header)
+        _local_top.addStretch()
+        _nav_btn_style = """
+            QPushButton {
+                background: #f0f0f0; border: 1px solid #cccccc;
+                border-radius: 4px; font-size: 11pt; color: #444444;
+                padding: 0px 4px; min-width: 24px; min-height: 20px;
+            }
+            QPushButton:hover { background: #e0e0e0; border-color: #aaaaaa; }
+            QPushButton:pressed { background: #d0d0d0; }
+            QPushButton:disabled { color: #bbbbbb; border-color: #e0e0e0; }
+        """
+        self._ft_local_back_btn = QPushButton("‹")
+        self._ft_local_back_btn.setToolTip("Back")
+        self._ft_local_back_btn.setStyleSheet(_nav_btn_style)
+        self._ft_local_back_btn.setEnabled(False)
+        self._ft_local_back_btn.clicked.connect(self._ft_local_go_back)
+        self._ft_local_fwd_btn = QPushButton("›")
+        self._ft_local_fwd_btn.setToolTip("Forward")
+        self._ft_local_fwd_btn.setStyleSheet(_nav_btn_style)
+        self._ft_local_fwd_btn.setEnabled(False)
+        self._ft_local_fwd_btn.clicked.connect(self._ft_local_go_forward)
+        self._ft_local_home_btn = QPushButton("⌂")
+        self._ft_local_home_btn.setToolTip("Home directory")
+        self._ft_local_home_btn.setStyleSheet(_nav_btn_style)
+        self._ft_local_home_btn.clicked.connect(lambda: self._ft_navigate_local(os.path.expanduser('~')))
+        _local_top.addWidget(self._ft_local_back_btn)
+        _local_top.addWidget(self._ft_local_fwd_btn)
+        _local_top.addWidget(self._ft_local_home_btn)
+        local_col.addLayout(_local_top)
+
         self._ft_local_path_label = QLabel(self._ft_local_path)
         self._ft_local_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
         self._ft_local_path_label.setWordWrap(True)
@@ -12268,9 +12306,33 @@ class SerialTerminalGUI(QMainWindow):
         # RIGHT: remote tree
         remote_col = QVBoxLayout()
         remote_col.setSpacing(2)
+
+        _remote_top = QHBoxLayout()
+        _remote_top.setContentsMargins(0, 0, 0, 0)
+        _remote_top.setSpacing(4)
         remote_header = QLabel("Remote Computer")
         remote_header.setStyleSheet("font-size: 9pt; font-weight: bold; color: #333333;")
-        remote_col.addWidget(remote_header)
+        _remote_top.addWidget(remote_header)
+        _remote_top.addStretch()
+        self._ft_remote_back_btn = QPushButton("‹")
+        self._ft_remote_back_btn.setToolTip("Back")
+        self._ft_remote_back_btn.setStyleSheet(_nav_btn_style)
+        self._ft_remote_back_btn.setEnabled(False)
+        self._ft_remote_back_btn.clicked.connect(self._ft_remote_go_back)
+        self._ft_remote_fwd_btn = QPushButton("›")
+        self._ft_remote_fwd_btn.setToolTip("Forward")
+        self._ft_remote_fwd_btn.setStyleSheet(_nav_btn_style)
+        self._ft_remote_fwd_btn.setEnabled(False)
+        self._ft_remote_fwd_btn.clicked.connect(self._ft_remote_go_forward)
+        self._ft_remote_home_btn = QPushButton("⌂")
+        self._ft_remote_home_btn.setToolTip("Home directory")
+        self._ft_remote_home_btn.setStyleSheet(_nav_btn_style)
+        self._ft_remote_home_btn.clicked.connect(self._ft_remote_go_home)
+        _remote_top.addWidget(self._ft_remote_back_btn)
+        _remote_top.addWidget(self._ft_remote_fwd_btn)
+        _remote_top.addWidget(self._ft_remote_home_btn)
+        remote_col.addLayout(_remote_top)
+
         self._ft_remote_path_label = QLabel("/")
         self._ft_remote_path_label.setStyleSheet("font-size: 8pt; color: #555555;")
         self._ft_remote_path_label.setWordWrap(True)
@@ -19560,6 +19622,10 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_btn.setText("DISCONNECT")
         self._ft_remote_path = '/'
         self._ft_remote_path_label.setText('/')
+        self._ft_remote_history = ['/']
+        self._ft_remote_history_idx = 0
+        self._ft_remote_back_btn.setEnabled(False)
+        self._ft_remote_fwd_btn.setEnabled(False)
         self._ft_refresh_remote('/')
         self._ft_refresh_local()
         self._ft_status_timer.start(1000)
@@ -19683,7 +19749,7 @@ class SerialTerminalGUI(QMainWindow):
         is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if is_dir and path:
-            self._ft_refresh_local(path)
+            self._ft_navigate_local(path)
         elif path and os.path.splitext(path)[1].lower() in _TEXT_EXTENSIONS:
             try:
                 with open(path, 'r', errors='replace') as f:
@@ -19703,7 +19769,7 @@ class SerialTerminalGUI(QMainWindow):
         is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if is_dir and path and self._ft_conn:
-            self._ft_refresh_remote(path)
+            self._ft_navigate_remote(path)
         elif path and self._ft_conn and os.path.splitext(path)[1].lower() in _TEXT_EXTENSIONS:
             try:
                 import io
@@ -19910,11 +19976,17 @@ class SerialTerminalGUI(QMainWindow):
         item = self._ft_local_tree.itemAt(pos)
         menu = QMenu(self)
 
+        upload_act = rename_act = delete_act = None
+        path = name = None
+        is_dir = False
+
         if item:
             path = item.data(0, Qt.ItemDataRole.UserRole)
             is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
             name = os.path.basename(path) if path else ''
             if name and name != '..':
+                if self._ft_conn and not is_dir:
+                    upload_act = menu.addAction("Upload")
                 rename_act = menu.addAction("Rename")
                 delete_act = menu.addAction("Delete")
                 menu.addSeparator()
@@ -19941,7 +20013,11 @@ class SerialTerminalGUI(QMainWindow):
         if not item or not path or name == '..':
             return
 
-        if action == rename_act:
+        if upload_act and action == upload_act:
+            remote_path = self._ft_remote_path.rstrip('/') + '/' + name
+            self._ft_start_transfer('upload', path, remote_path, name)
+
+        elif rename_act and action == rename_act:
             new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=name)
             new_name = new_name.strip()
             if not ok or not new_name or new_name == name:
@@ -19953,7 +20029,7 @@ class SerialTerminalGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not rename: {e}")
 
-        elif action == delete_act:
+        elif delete_act and action == delete_act:
             reply = QMessageBox.question(self, "Confirm Delete",
                 f"Delete {'folder' if is_dir else 'file'} '{name}'?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -19968,6 +20044,73 @@ class SerialTerminalGUI(QMainWindow):
                 self._ft_refresh_local()
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not delete: {e}")
+
+    # ── Local navigation helpers ──────────────────────────────────────
+
+    def _ft_navigate_local(self, path):
+        """Navigate local tree to path, updating history."""
+        if not os.path.isdir(path):
+            return
+        # Truncate forward history
+        self._ft_local_history = self._ft_local_history[:self._ft_local_history_idx + 1]
+        if not self._ft_local_history or self._ft_local_history[-1] != path:
+            self._ft_local_history.append(path)
+            self._ft_local_history_idx = len(self._ft_local_history) - 1
+        self._ft_refresh_local(path)
+        self._ft_local_back_btn.setEnabled(self._ft_local_history_idx > 0)
+        self._ft_local_fwd_btn.setEnabled(self._ft_local_history_idx < len(self._ft_local_history) - 1)
+
+    def _ft_local_go_back(self):
+        if self._ft_local_history_idx > 0:
+            self._ft_local_history_idx -= 1
+            self._ft_refresh_local(self._ft_local_history[self._ft_local_history_idx])
+            self._ft_local_back_btn.setEnabled(self._ft_local_history_idx > 0)
+            self._ft_local_fwd_btn.setEnabled(True)
+
+    def _ft_local_go_forward(self):
+        if self._ft_local_history_idx < len(self._ft_local_history) - 1:
+            self._ft_local_history_idx += 1
+            self._ft_refresh_local(self._ft_local_history[self._ft_local_history_idx])
+            self._ft_local_fwd_btn.setEnabled(self._ft_local_history_idx < len(self._ft_local_history) - 1)
+            self._ft_local_back_btn.setEnabled(True)
+
+    # ── Remote navigation helpers ─────────────────────────────────────
+
+    def _ft_navigate_remote(self, path):
+        """Navigate remote tree to path, updating history."""
+        self._ft_remote_history = self._ft_remote_history[:self._ft_remote_history_idx + 1]
+        if not self._ft_remote_history or self._ft_remote_history[-1] != path:
+            self._ft_remote_history.append(path)
+            self._ft_remote_history_idx = len(self._ft_remote_history) - 1
+        self._ft_refresh_remote(path)
+        self._ft_remote_back_btn.setEnabled(self._ft_remote_history_idx > 0)
+        self._ft_remote_fwd_btn.setEnabled(self._ft_remote_history_idx < len(self._ft_remote_history) - 1)
+
+    def _ft_remote_go_back(self):
+        if self._ft_remote_history_idx > 0:
+            self._ft_remote_history_idx -= 1
+            self._ft_refresh_remote(self._ft_remote_history[self._ft_remote_history_idx])
+            self._ft_remote_back_btn.setEnabled(self._ft_remote_history_idx > 0)
+            self._ft_remote_fwd_btn.setEnabled(True)
+
+    def _ft_remote_go_forward(self):
+        if self._ft_remote_history_idx < len(self._ft_remote_history) - 1:
+            self._ft_remote_history_idx += 1
+            self._ft_refresh_remote(self._ft_remote_history[self._ft_remote_history_idx])
+            self._ft_remote_fwd_btn.setEnabled(self._ft_remote_history_idx < len(self._ft_remote_history) - 1)
+            self._ft_remote_back_btn.setEnabled(True)
+
+    def _ft_remote_go_home(self):
+        """Go to remote home directory (~)."""
+        if not self._ft_conn:
+            return
+        home = '/'
+        try:
+            if 'sftp' in self._ft_conn:
+                home = self._ft_conn['sftp'].normalize('.')
+        except Exception:
+            pass
+        self._ft_navigate_remote(home)
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
