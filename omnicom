@@ -20497,15 +20497,35 @@ class SerialTerminalGUI(QMainWindow):
             name_edit.setText(_editing_name)
         form.addRow("Profile name:", name_edit)
 
+        _NEW_GROUP_ITEM = "＋ New Group…"
         group_combo = QComboBox()
-        group_combo.setEditable(True)
+        group_combo.setMinimumWidth(180)
         group_combo.addItems(existing_groups)
+        group_combo.addItem(_NEW_GROUP_ITEM)
         if _editing_group and _editing_group in existing_groups:
             group_combo.setCurrentText(_editing_group)
-        group_combo.lineEdit().setPlaceholderText("Select or type a new group name…")
+
+        def _on_group_changed(idx):
+            if group_combo.itemText(idx) != _NEW_GROUP_ITEM:
+                return
+            group_combo.blockSignals(True)
+            try:
+                name_input, ok = QInputDialog.getText(dlg, "New Group", "Group name:")
+                name_input = name_input.strip()
+                if ok and name_input:
+                    insert_pos = group_combo.count() - 1
+                    group_combo.insertItem(insert_pos, name_input)
+                    group_combo.setCurrentIndex(insert_pos)
+                else:
+                    group_combo.setCurrentIndex(0)
+            finally:
+                group_combo.blockSignals(False)
+
+        group_combo.currentIndexChanged.connect(_on_group_changed)
         form.addRow("Group:", group_combo)
 
         vendor_combo = QComboBox()
+        vendor_combo.setMinimumWidth(180)
         vendor_combo.addItems(self.VENDOR_LIST)
         # Pre-select vendor currently active in the terminal (if any)
         current_vendor = getattr(self, '_pending_vendor', None) or 'Default'
@@ -20527,7 +20547,9 @@ class SerialTerminalGUI(QMainWindow):
         if not name:
             QMessageBox.warning(self, "Warning", "Profile name cannot be empty")
             return
-        group  = group_combo.currentText().strip() or 'Default'
+        group  = group_combo.currentText().strip()
+        if not group or group == _NEW_GROUP_ITEM:
+            group = 'Default'
         vendor = vendor_combo.currentText()
 
         auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
