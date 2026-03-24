@@ -13166,27 +13166,24 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        self.snmp_type_walk_btn = QPushButton("WALK")
-        self.snmp_type_walk_btn.setCheckable(True)
-        self.snmp_type_walk_btn.setChecked(True)
-        self.snmp_type_walk_btn.setFixedWidth(90)
-        self.snmp_type_walk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.snmp_type_walk_btn.setStyleSheet(type_btn_style)
-        self.snmp_type_walk_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpwalk"))
-
-        self.snmp_type_get_btn = QPushButton("GET")
-        self.snmp_type_get_btn.setCheckable(True)
-        self.snmp_type_get_btn.setFixedWidth(90)
-        self.snmp_type_get_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.snmp_type_get_btn.setStyleSheet(type_btn_style)
-        self.snmp_type_get_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpget"))
-
-        self.snmp_type_getnext_btn = QPushButton("GETNEXT")
-        self.snmp_type_getnext_btn.setCheckable(True)
-        self.snmp_type_getnext_btn.setFixedWidth(90)
-        self.snmp_type_getnext_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.snmp_type_getnext_btn.setStyleSheet(type_btn_style)
-        self.snmp_type_getnext_btn.clicked.connect(lambda: self._snmp_type_btn_clicked("snmpgetnext"))
+        for _label, _attr, _checked, _snmpcmd, _icokey in [
+            ('WALK',    'snmp_type_walk_btn',    True,  'snmpwalk',    'snmp_walk'),
+            ('GET',     'snmp_type_get_btn',     False, 'snmpget',     'snmp_get'),
+            ('GETNEXT', 'snmp_type_getnext_btn', False, 'snmpgetnext', 'snmp_getnext'),
+        ]:
+            _b = QPushButton(_label)
+            _b.setCheckable(True)
+            _b.setChecked(_checked)
+            _b.setFixedWidth(90)
+            _b.setCursor(Qt.CursorShape.PointingHandCursor)
+            _b.setStyleSheet(type_btn_style)
+            _p = self.get_icon_path(f'{_icokey}.svg')
+            _ico = load_svg_icon_dual(_p, 16, '#555555', '#ffffff') if _p else None
+            if _ico:
+                _b.setIcon(_ico)
+                _b.setIconSize(QSize(16, 16))
+            _b.clicked.connect(lambda _c, _cmd=_snmpcmd: self._snmp_type_btn_clicked(_cmd))
+            setattr(self, _attr, _b)
 
         type_layout.addWidget(self.snmp_type_walk_btn)
         type_layout.addWidget(self.snmp_type_get_btn)
