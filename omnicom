@@ -11033,106 +11033,111 @@ class SerialTerminalGUI(QMainWindow):
 
         # Port configuration group
         port_group = QGroupBox("Port Configuration")
-        port_outer = QHBoxLayout()
-        port_outer.setContentsMargins(8, 5, 8, 6)
-        port_outer.setSpacing(12)
+        port_outer = QVBoxLayout()
+        port_outer.setContentsMargins(12, 8, 12, 10)
+        port_outer.setSpacing(8)
 
-        # Left: Type and Port form fields (horizontal layout)
-        port_form_widget = QWidget()
-        port_layout = QHBoxLayout()
-        port_layout.setSpacing(12)
-        port_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Different widths for type and port fields
         port_field_width = 200
-
-        # Port type — toggle buttons (USB / Serial) in the Serial tab blue colour
         _SERIAL_COLOR = '#2196F3'
         _port_type_style = f"""
             QPushButton {{
-                background-color: #d8d8d8;
-                border: 1px solid #b0b0b0;
-                border-radius: 6px;
-                color: #444444;
-                font-size: 9pt;
-                padding: 3px 10px;
+                background-color: #d8d8d8; border: 1px solid #b0b0b0;
+                border-radius: 6px; color: #444444; font-size: 9pt; padding: 3px 10px;
             }}
             QPushButton:checked {{
-                background-color: {_SERIAL_COLOR};
-                border-color: {_SERIAL_COLOR};
-                color: white;
-                font-weight: bold;
+                background-color: {_SERIAL_COLOR}; border-color: {_SERIAL_COLOR};
+                color: white; font-weight: bold;
             }}
-            QPushButton:hover:!checked {{
-                background-color: #c8c8c8;
-            }}
+            QPushButton:hover:!checked {{ background-color: #c8c8c8; }}
         """
-        type_container = QWidget()
-        type_layout = QHBoxLayout()
-        type_layout.setContentsMargins(0, 0, 0, 0)
-        type_layout.setSpacing(4)
-        type_label = QLabel("Type:")
-        type_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        type_layout.addWidget(type_label)
+
+        def _lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet("color: #555555;")
+            return l
+
+        # ── Row 1: Type  Port  Debug ──────────────────────────────────────────
+        _row1 = QHBoxLayout()
+        _row1.setSpacing(6)
+        _row1.addWidget(_lbl("Type:"))
         self._port_type_btns = {}
         for _ptype in ('USB', 'Serial'):
             _btn = QPushButton(_ptype)
             _btn.setCheckable(True)
-            _btn.setFixedWidth(90)
+            _btn.setFixedWidth(70)
             _btn.setFixedHeight(26)
             _btn.setStyleSheet(_port_type_style)
             _btn.setToolTip("Select the type of serial port")
             _btn.clicked.connect(lambda _c, t=_ptype: self._port_type_clicked(t))
             self._port_type_btns[_ptype] = _btn
-            type_layout.addWidget(_btn)
+            _row1.addWidget(_btn)
         self._port_type_btns['USB'].setChecked(True)
-        type_container.setLayout(type_layout)
-
-        # Port
-        port_container = QWidget()
-        port_inner_layout = QHBoxLayout()
-        port_inner_layout.setContentsMargins(0, 0, 0, 0)
-        port_inner_layout.setSpacing(6)
-        port_label = QLabel("Port:")
-        port_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        _row1.addSpacing(20)
+        _row1.addWidget(_lbl("Port:"))
         self.port = FlatComboButton()
         self.port.setFixedWidth(port_field_width)
         self.port.setToolTip("Select the serial port to connect")
-        port_inner_layout.addWidget(port_label)
-        port_inner_layout.addWidget(self.port)
-        port_container.setLayout(port_inner_layout)
-
-        port_layout.addWidget(type_container)
-        port_layout.addWidget(port_container)
-        port_form_widget.setLayout(port_layout)
-        port_outer.addWidget(port_form_widget)
-        port_outer.addStretch()
-
-        # Right: Debug Mode checkbox
+        _row1.addWidget(self.port)
+        _row1.addStretch()
         self.debug_checkbox = QCheckBox("Debug Mode")
         self.debug_checkbox.setToolTip("Simulate Cisco router — enable to test terminal without a real device")
         self.debug_checkbox.setStyleSheet("""
-            QCheckBox {
-                color: #606060;
-                font-size: 9pt;
-                spacing: 4px;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-                border: 1px solid #d0d0d0;
-                border-radius: 3px;
-                background-color: #f5f5f5;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #2196F3;
-                border-color: #2196F3;
-            }
-            QCheckBox::indicator:hover {
-                border-color: #2196F3;
-            }
+            QCheckBox { color: #606060; font-size: 9pt; spacing: 4px; }
+            QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #d0d0d0;
+                border-radius: 3px; background-color: #f5f5f5; }
+            QCheckBox::indicator:checked { background-color: #2196F3; border-color: #2196F3; }
+            QCheckBox::indicator:hover   { border-color: #2196F3; }
         """)
-        port_outer.addWidget(self.debug_checkbox, 0, Qt.AlignmentFlag.AlignVCenter)
+        _row1.addWidget(self.debug_checkbox, 0, Qt.AlignmentFlag.AlignVCenter)
+        port_outer.addLayout(_row1)
+
+        # ── Separator ─────────────────────────────────────────────────────────
+        _sep = QFrame()
+        _sep.setFrameShape(QFrame.Shape.HLine)
+        _sep.setStyleSheet("QFrame { color: #dddddd; }")
+        port_outer.addWidget(_sep)
+
+        # ── Comm params: Baud Rate / Config / Flow Control stacked ───────────
+        _comm_form = QFormLayout()
+        _comm_form.setSpacing(4)
+        _comm_form.setContentsMargins(0, 0, 0, 0)
+        _comm_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self.baudrate = FlatComboButton()
+        self.baudrate.addItems([
+            '300', '1200', '2400', '4800', '9600', '19200',
+            '38400', '57600', '115200', '230400', '460800', '921600'
+        ])
+        self.baudrate.setCurrentText('9600')
+        self.baudrate.setFixedWidth(combo_width)
+        self.baudrate.setToolTip("Communication speed in bits per second")
+        self.baudrate.setStyleSheet("""
+            QComboBox { border: 2px solid #2196F3; background-color: #E3F2FD; }
+            QComboBox:hover { border: 2px solid #1976D2; background-color: #BBDEFB; }
+        """)
+        _comm_form.addRow(_lbl("Baud Rate:"), self.baudrate)
+
+        self.serial_config = FlatComboButton()
+        self.serial_config.addItems(['8N1', '8E1', '8O1', '8N2', '7N1', '7E1', '7O1'])
+        self.serial_config.setCurrentText('8N1')
+        self.serial_config.setFixedWidth(combo_width)
+        self.serial_config.setToolTip(
+            "Serial frame format: Data bits + Parity (N=None, E=Even, O=Odd) + Stop bits\n"
+            "Default: 8N1 (8 data bits, no parity, 1 stop bit)"
+        )
+        _comm_form.addRow(_lbl("Config:"), self.serial_config)
+
+        self.flow = FlatComboButton()
+        self.flow.addItems(['None', 'Hardware (RTS/CTS)', 'Software (XON/XOFF)'])
+        self.flow.setCurrentText('None')
+        self.flow.setFixedWidth(combo_width)
+        self.flow.setToolTip("Flow control method (usually None)")
+        _comm_form.addRow(_lbl("Flow Control:"), self.flow)
+
+        _comm_row = QHBoxLayout()
+        _comm_row.addLayout(_comm_form)
+        _comm_row.addStretch()
+        port_outer.addLayout(_comm_row)
 
         port_group.setLayout(port_outer)
 
@@ -11145,74 +11150,6 @@ class SerialTerminalGUI(QMainWindow):
         port_group.setGraphicsEffect(shadow1)
 
         main_layout.addWidget(port_group)
-
-        # Communication parameters group
-        comm_group = QGroupBox("Communication Parameters")
-        comm_layout = QFormLayout()
-        comm_layout.setVerticalSpacing(4)
-        comm_layout.setContentsMargins(8, 5, 8, 6)
-        comm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        comm_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        # Baud Rate - MAIN FIELD (highlighted)
-        velocity_label = QLabel("Baud Rate:")
-        velocity_font = QFont("Sans Serif", 9, QFont.Weight.Bold)
-        velocity_label.setFont(velocity_font)
-        velocity_label.setStyleSheet("color: #1976D2;")
-
-        self.baudrate = FlatComboButton()
-        self.baudrate.addItems([
-            '300', '1200', '2400', '4800', '9600', '19200',
-            '38400', '57600', '115200', '230400', '460800', '921600'
-        ])
-        self.baudrate.setCurrentText('9600')
-        self.baudrate.setFixedWidth(combo_width)
-        self.baudrate.setToolTip("Communication speed in bits per second")
-        self.baudrate.setStyleSheet("""
-            QComboBox {
-                border: 2px solid #2196F3;
-                background-color: #E3F2FD;
-            }
-            QComboBox:hover {
-                border: 2px solid #1976D2;
-                background-color: #BBDEFB;
-            }
-        """)
-        comm_layout.addRow(velocity_label, self.baudrate)
-
-        # Serial config (data bits + parity + stop bits combined)
-        self.serial_config = FlatComboButton()
-        self.serial_config.addItems([
-            '8N1', '8E1', '8O1', '8N2',
-            '7N1', '7E1', '7O1',
-        ])
-        self.serial_config.setCurrentText('8N1')
-        self.serial_config.setFixedWidth(combo_width)
-        self.serial_config.setToolTip(
-            "Serial frame format: Data bits + Parity (N=None, E=Even, O=Odd) + Stop bits\n"
-            "Default: 8N1 (8 data bits, no parity, 1 stop bit)"
-        )
-        comm_layout.addRow("Config:", self.serial_config)
-
-        # Flow control
-        self.flow = FlatComboButton()
-        self.flow.addItems(['None', 'Hardware (RTS/CTS)', 'Software (XON/XOFF)'])
-        self.flow.setCurrentText('None')
-        self.flow.setFixedWidth(combo_width)
-        self.flow.setToolTip("Flow control method (usually None)")
-        comm_layout.addRow("Flow Control:", self.flow)
-
-        comm_group.setLayout(comm_layout)
-
-        # Add shadow effect to comm group
-        shadow2 = QGraphicsDropShadowEffect()
-        shadow2.setBlurRadius(15)
-        shadow2.setXOffset(0)
-        shadow2.setYOffset(2)
-        shadow2.setColor(QColor(0, 0, 0, 30))
-        comm_group.setGraphicsEffect(shadow2)
-
-        main_layout.addWidget(comm_group)
 
         # === Quick Connect (Saved Profiles) ===
         profiles_group = QGroupBox("Quick Connect")
@@ -20282,13 +20219,7 @@ class SerialTerminalGUI(QMainWindow):
         protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
         self._ssh_protocol_btn_clicked(protocol)
 
-        # Read vendor from the icon button in the tree
-        vendor_widget = self.ssh_profiles_tree.itemWidget(item, 5)
-        if vendor_widget:
-            btn = vendor_widget.findChild(QPushButton)
-            self._pending_vendor = btn.property('vendor') if btn else 'Default'
-        else:
-            self._pending_vendor = 'Default'
+        self._pending_vendor = profile.get('vendor', 'Default')
 
         QApplication.processEvents()
         QTimer.singleShot(100, self.connect_ssh)
@@ -20333,12 +20264,7 @@ class SerialTerminalGUI(QMainWindow):
             protocol = profile.get('protocol') or ('Telnet' if port == '23' else 'SSH')
             self._ssh_protocol_btn_clicked(protocol)
 
-            vendor_widget = self.ssh_profiles_tree.itemWidget(item, 5)
-            if vendor_widget:
-                btn = vendor_widget.findChild(QPushButton)
-                self._pending_vendor = btn.property('vendor') if btn else 'Default'
-            else:
-                self._pending_vendor = profile.get('vendor', 'Default')
+            self._pending_vendor = profile.get('vendor', 'Default')
 
             QApplication.processEvents()
             self.connect_ssh()
