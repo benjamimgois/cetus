@@ -18401,10 +18401,10 @@ class SerialTerminalGUI(QMainWindow):
         _show_pw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         _show_pw_btn.setToolTip("Show / hide password")
         _show_pw_btn.setStyleSheet("""
-            QToolButton { background: #e0e0e0; border: 1px solid #cccccc;
-                          border-radius: 5px; font-size: 13px; }
-            QToolButton:hover   { background: #d0d0d0; }
-            QToolButton:checked { background: #c8e6c9; border-color: #81c784; }
+            QToolButton { background: transparent; border: 1px solid #aaaaaa;
+                          border-radius: 5px; font-size: 15px; color: #333333; }
+            QToolButton:hover   { background: #e8e8e8; border-color: #888888; }
+            QToolButton:checked { background: #e8f5e9; border-color: #81c784; color: #2e7d32; }
         """)
         _show_pw_btn.toggled.connect(
             lambda on: self.ssh_password.setEchoMode(
@@ -18417,8 +18417,10 @@ class SerialTerminalGUI(QMainWindow):
         _pw_layout = QHBoxLayout(_pw_row)
         _pw_layout.setContentsMargins(0, 0, 0, 0)
         _pw_layout.setSpacing(6)
+        _pw_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         _pw_layout.addWidget(self.ssh_password)
         _pw_layout.addWidget(_show_pw_btn)
+        self.ssh_save_password.setFixedHeight(self.ssh_password.sizeHint().height())
         _pw_layout.addWidget(self.ssh_save_password)
         ssh_layout.addRow("Password:", _pw_row)
 
@@ -20500,6 +20502,7 @@ class SerialTerminalGUI(QMainWindow):
         group_combo.addItems(existing_groups)
         if _editing_group and _editing_group in existing_groups:
             group_combo.setCurrentText(_editing_group)
+        group_combo.lineEdit().setPlaceholderText("Select or type a new group name…")
         form.addRow("Group:", group_combo)
 
         vendor_combo = QComboBox()
