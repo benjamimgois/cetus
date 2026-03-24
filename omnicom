@@ -18099,9 +18099,14 @@ class SerialTerminalGUI(QMainWindow):
 
         self.ssh_host.setText(profile.get('host', ''))
         self.ssh_port.setText(str(profile.get('port', '22')))
-        self.ssh_username.setText(profile.get('user', ''))
+        self.ssh_username.setText(profile.get('username', ''))
 
-        password = profile.get('password', '')
+        import base64
+        raw_pw = profile.get('password', '')
+        try:
+            password = base64.b64decode(raw_pw.encode()).decode() if raw_pw else ''
+        except Exception:
+            password = raw_pw
         self.ssh_password.setText(password)
         self.ssh_save_password.blockSignals(True)
         self.ssh_save_password.setChecked(bool(password))
