@@ -8,4 +8,5 @@ Exec=/usr/bin/omnicom
 Icon=omnicom
 Terminal=false
 Categories=Network;Internet;
+StartupWMClass=omnicom
 Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;

@@ -21923,6 +21923,8 @@ class SerialTerminalGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setApplicationName("omnicom")
+    app.setDesktopFileName("omnicom")
 
     # Set default font
     font = QFont("Sans Serif", 9)

@@ -10,3 +10,4 @@ Terminal=false
 Categories=Network;Internet;
 Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;picocom;tty;uart;
 StartupNotify=true
+StartupWMClass=omnicom
