@@ -1935,8 +1935,21 @@ class TerminalWidget(QTextEdit):
         if screen_lines is None:
             return
 
+        # Update widget stylesheet if root mode changed since last render
+        if getattr(self, '_applied_root_mode', None) != self._root_mode:
+            fg = '#ff4444' if self._root_mode else '#e0e0e0'
+            self.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: #0a0a0a;
+                    color: {fg};
+                    border: none;
+                }}
+            """)
+            self._applied_root_mode = self._root_mode
+
         _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.2"
-        pre_open = f'<pre style="margin: 0; padding: 0; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
+        _fg = '#ff4444' if self._root_mode else '#e0e0e0'
+        pre_open = f'<pre style="margin: 0; padding: 0; color: {_fg}; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
         new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
 
         self.setUpdatesEnabled(False)
