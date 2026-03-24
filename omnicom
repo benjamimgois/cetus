@@ -12276,6 +12276,8 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_remote_tree.setStyleSheet(remote_tree_style)
         self._ft_remote_tree.setAlternatingRowColors(True)
         self._ft_remote_tree.itemDoubleClicked.connect(self._ft_remote_double_clicked)
+        self._ft_remote_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._ft_remote_tree.customContextMenuRequested.connect(self._ft_remote_context_menu)
         remote_col.addWidget(self._ft_remote_tree, 1)
         browser_h.addLayout(remote_col, 1)
 
@@ -12528,10 +12530,10 @@ class SerialTerminalGUI(QMainWindow):
 
         _scan_color_on = '#ef5350'
         for _proto, _attr, _checked, _cb in [
+            ('ARP',  'scan_method_arp_btn',  False, lambda: self._scan_method_btn_clicked("ARP")),
             ('ICMP', 'scan_method_icmp_btn', True,  lambda: self._scan_method_btn_clicked("ICMP")),
             ('TCP',  'scan_method_tcp_btn',  False, lambda: self._scan_method_btn_clicked("TCP")),
             ('UDP',  'scan_method_udp_btn',  False, lambda: self._scan_method_btn_clicked("UDP")),
-            ('ARP',  'scan_method_arp_btn',  False, lambda: self._scan_method_btn_clicked("ARP")),
         ]:
             _b = QPushButton(_proto)
             _b.setCheckable(True)
@@ -12546,10 +12548,10 @@ class SerialTerminalGUI(QMainWindow):
             _b.clicked.connect(_cb)
             setattr(self, _attr, _b)
 
+        method_layout.addWidget(self.scan_method_arp_btn)
         method_layout.addWidget(self.scan_method_icmp_btn)
         method_layout.addWidget(self.scan_method_tcp_btn)
         method_layout.addWidget(self.scan_method_udp_btn)
-        method_layout.addWidget(self.scan_method_arp_btn)
         method_layout.addStretch()
         method_widget.setLayout(method_layout)
         scan_layout.addRow("Method:", method_widget)
@@ -19744,9 +19746,104 @@ class SerialTerminalGUI(QMainWindow):
             self._ft_refresh_remote()
             host = self._ft_host_input.text().strip()
             self._ft_status_label.setText(f"● Connected to {host} — {msg}")
+            self._ft_status_label.setStyleSheet("color: #388e3c; font-size: 9pt;")
         else:
-            self._ft_status_label.setText(f"✗ Transfer failed: {msg}")
+            lower = msg.lower()
+            if 'permission' in lower or 'denied' in lower or '[errno 13]' in lower:
+                self._ft_status_label.setText(f"⛔ Permission denied — cannot write to remote directory")
+                QMessageBox.warning(self, "Permission Denied",
+                    "You do not have permission to write to this directory on the remote system.\n\n"
+                    f"Details: {msg}")
+            else:
+                self._ft_status_label.setText(f"✗ Transfer failed: {msg}")
             self._ft_status_label.setStyleSheet("color: #f44336; font-size: 9pt;")
+
+    def _ft_remote_context_menu(self, pos):
+        if not self._ft_conn:
+            return
+        item = self._ft_remote_tree.itemAt(pos)
+        menu = QMenu(self)
+
+        if item:
+            is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            path = item.data(0, Qt.ItemDataRole.UserRole)
+            if not is_dir:
+                dl_act = menu.addAction("Download")
+            rename_act = menu.addAction("Rename")
+            delete_act = menu.addAction("Delete")
+            menu.addSeparator()
+
+        new_folder_act = menu.addAction("New Folder")
+
+        action = menu.exec(self._ft_remote_tree.viewport().mapToGlobal(pos))
+        if not action:
+            return
+
+        if action == new_folder_act:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            name = name.strip()
+            if not ok or not name:
+                return
+            new_path = self._ft_remote_path.rstrip('/') + '/' + name
+            try:
+                if 'sftp' in self._ft_conn:
+                    self._ft_conn['sftp'].mkdir(new_path)
+                elif 'ftp' in self._ft_conn:
+                    self._ft_conn['ftp'].mkd(new_path)
+                self._ft_refresh_remote()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not create folder: {e}")
+            return
+
+        if not item:
+            return
+
+        if action == rename_act:
+            old_name = os.path.basename(path)
+            new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=old_name)
+            new_name = new_name.strip()
+            if not ok or not new_name or new_name == old_name:
+                return
+            new_path = os.path.dirname(path).rstrip('/') + '/' + new_name
+            try:
+                if 'sftp' in self._ft_conn:
+                    self._ft_conn['sftp'].rename(path, new_path)
+                elif 'ftp' in self._ft_conn:
+                    self._ft_conn['ftp'].rename(path, new_path)
+                self._ft_refresh_remote()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not rename: {e}")
+
+        elif action == delete_act:
+            name = os.path.basename(path)
+            reply = QMessageBox.question(self, "Confirm Delete",
+                f"Delete {'folder' if is_dir else 'file'} '{name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                if 'sftp' in self._ft_conn:
+                    if is_dir:
+                        self._ft_conn['sftp'].rmdir(path)
+                    else:
+                        self._ft_conn['sftp'].remove(path)
+                elif 'ftp' in self._ft_conn:
+                    if is_dir:
+                        self._ft_conn['ftp'].rmd(path)
+                    else:
+                        self._ft_conn['ftp'].delete(path)
+                self._ft_refresh_remote()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not delete: {e}")
+
+        elif not is_dir and action == dl_act:
+            filename = os.path.basename(path)
+            local_path = os.path.join(self._ft_local_path, filename)
+            self.tftp_btn.setEnabled(False)
+            self._ft_status_label.setText(f"Downloading {filename}...")
+            self._ft_transfer_worker = FileTransferWorker('download', self._ft_protocol, self._ft_conn, local_path, path)
+            self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
+            self._ft_transfer_worker.start()
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
