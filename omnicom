@@ -6281,7 +6281,7 @@ class FileListWorker(QThread):
 
 
 class FileTransferWorker(QThread):
-    progress = pyqtSignal(int)
+    progress = pyqtSignal(int, int, int)   # percent, bytes_done, bytes_total
     finished = pyqtSignal(bool, str)
 
     def __init__(self, direction, protocol, conn_data, local_path, remote_path, parent=None):
@@ -6296,7 +6296,7 @@ class FileTransferWorker(QThread):
 
     def _progress_cb(self, done, total):
         if total:
-            self.progress.emit(int(done * 100 / total))
+            self.progress.emit(int(done * 100 / total), int(done), int(total))
 
     def run(self):
         try:
@@ -6314,7 +6314,7 @@ class FileTransferWorker(QThread):
                 else:
                     with open(self._local, 'wb') as f:
                         ftp.retrbinary(f'RETR {self._remote}', f.write)
-            self.progress.emit(100)
+            self.progress.emit(100, 0, 0)
             self.finished.emit(True, "Transfer complete")
         except Exception as e:
             self.finished.emit(False, str(e))
@@ -12096,19 +12096,27 @@ class SerialTerminalGUI(QMainWindow):
                     port = str(profile.get('port', 22))
                     user = profile.get('username', '')
                     proto = profile.get('protocol', 'SSH')
+                    raw_pw = profile.get('password', '')
+                    try:
+                        import base64 as _b64
+                        password = _b64.b64decode(raw_pw.encode()).decode() if raw_pw else ''
+                    except Exception:
+                        password = raw_pw
                     if name and host:
                         action = menu.addAction(f"{name}  —  {host}")
-                        action.setData((host, port, user, proto))
+                        action.setData((host, port, user, proto, password))
             else:
                 no_action = menu.addAction("No SSH profiles saved")
                 no_action.setEnabled(False)
             chosen = menu.exec(_ft_quick_btn.mapToGlobal(_ft_quick_btn.rect().bottomLeft()))
             if chosen and chosen.data():
-                host, port, user, proto = chosen.data()
+                host, port, user, proto, password = chosen.data()
                 self._ft_host_input.setText(host)
                 self._ft_port_input.setText(port)
                 if user:
                     self._ft_user_input.setText(user)
+                if password:
+                    self._ft_pass_input.setText(password)
                 # Switch protocol toggle to match profile
                 if proto in self._ft_cli_proto_btns:
                     self._ft_proto_changed(proto)
@@ -12214,6 +12222,8 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_local_tree.setStyleSheet(local_tree_style)
         self._ft_local_tree.setAlternatingRowColors(True)
         self._ft_local_tree.itemDoubleClicked.connect(self._ft_local_double_clicked)
+        self._ft_local_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._ft_local_tree.customContextMenuRequested.connect(self._ft_local_context_menu)
         local_col.addWidget(self._ft_local_tree, 1)
         browser_h.addLayout(local_col, 1)
 
@@ -12287,6 +12297,25 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_status_label = QLabel("Not connected")
         self._ft_status_label.setStyleSheet("color: #888888; font-size: 9pt;")
         browser_outer.addWidget(self._ft_status_label)
+
+        self._ft_progress_bar = QProgressBar()
+        self._ft_progress_bar.setRange(0, 100)
+        self._ft_progress_bar.setValue(0)
+        self._ft_progress_bar.setFixedHeight(14)
+        self._ft_progress_bar.setVisible(False)
+        self._ft_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #c0c0c0; border-radius: 6px;
+                background: #f0f0f0; text-align: center; font-size: 8pt;
+            }
+            QProgressBar::chunk { background: #9C27B0; border-radius: 5px; }
+        """)
+        browser_outer.addWidget(self._ft_progress_bar)
+
+        self._ft_progress_info = QLabel()
+        self._ft_progress_info.setStyleSheet("color: #555555; font-size: 8pt;")
+        self._ft_progress_info.setVisible(False)
+        browser_outer.addWidget(self._ft_progress_info)
 
         browser_group.setLayout(browser_outer)
 
@@ -19580,7 +19609,8 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_local_path = path
         self._ft_local_path_label.setText(path)
         self._ft_local_tree.clear()
-        _dir_icon  = self.style().standardIcon(self.style().StandardPixmap.SP_DirIcon)
+        _folder_svg = self.get_icon_path('folder_yellow.svg')
+        _dir_icon  = load_svg_icon(_folder_svg, 16) or self.style().standardIcon(self.style().StandardPixmap.SP_DirIcon)
         _file_icon = self.style().standardIcon(self.style().StandardPixmap.SP_FileIcon)
         _up_icon   = self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogToParent)
         try:
@@ -19628,7 +19658,8 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_remote_path_label.setText(path)
         self._ft_remote_tree.clear()
         from datetime import datetime
-        _dir_icon  = self.style().standardIcon(self.style().StandardPixmap.SP_DirIcon)
+        _folder_svg = self.get_icon_path('folder_yellow.svg')
+        _dir_icon  = load_svg_icon(_folder_svg, 16) or self.style().standardIcon(self.style().StandardPixmap.SP_DirIcon)
         _file_icon = self.style().standardIcon(self.style().StandardPixmap.SP_FileIcon)
         _up_icon   = self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogToParent)
         if path not in ('/', ''):
@@ -19713,11 +19744,7 @@ class SerialTerminalGUI(QMainWindow):
         local_path = item.data(0, Qt.ItemDataRole.UserRole)
         filename = os.path.basename(local_path)
         remote_path = self._ft_remote_path.rstrip('/') + '/' + filename
-        self.tftp_btn.setEnabled(False)
-        self._ft_status_label.setText(f"Uploading {filename}...")
-        self._ft_transfer_worker = FileTransferWorker('upload', self._ft_protocol, self._ft_conn, local_path, remote_path)
-        self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
-        self._ft_transfer_worker.start()
+        self._ft_start_transfer('upload', local_path, remote_path, filename)
 
     def _ft_download(self):
         if not self._ft_conn:
@@ -19733,14 +19760,52 @@ class SerialTerminalGUI(QMainWindow):
         remote_path = item.data(0, Qt.ItemDataRole.UserRole)
         filename = os.path.basename(remote_path)
         local_path = os.path.join(self._ft_local_path, filename)
+        self._ft_start_transfer('download', local_path, remote_path, filename)
+
+    def _ft_start_transfer(self, direction, local_path, remote_path, filename):
+        import time
         self.tftp_btn.setEnabled(False)
-        self._ft_status_label.setText(f"Downloading {filename}...")
-        self._ft_transfer_worker = FileTransferWorker('download', self._ft_protocol, self._ft_conn, local_path, remote_path)
+        verb = "Uploading" if direction == 'upload' else "Downloading"
+        self._ft_status_label.setText(f"{verb} {filename}...")
+        self._ft_status_label.setStyleSheet("color: #555555; font-size: 9pt;")
+        self._ft_progress_bar.setValue(0)
+        self._ft_progress_bar.setVisible(True)
+        self._ft_progress_info.setText("")
+        self._ft_progress_info.setVisible(True)
+        self._ft_transfer_start = time.time()
+        self._ft_transfer_worker = FileTransferWorker(direction, self._ft_protocol, self._ft_conn, local_path, remote_path)
+        self._ft_transfer_worker.progress.connect(self._ft_on_transfer_progress)
         self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
         self._ft_transfer_worker.start()
 
+    def _ft_on_transfer_progress(self, percent, done, total):
+        import time
+        self._ft_progress_bar.setValue(percent)
+        elapsed = time.time() - self._ft_transfer_start
+        if done > 0 and elapsed > 0.1:
+            speed = done / elapsed
+            if speed >= 1024 * 1024:
+                speed_str = f"{speed / 1024 / 1024:.1f} MB/s"
+            elif speed >= 1024:
+                speed_str = f"{speed / 1024:.1f} KB/s"
+            else:
+                speed_str = f"{speed:.0f} B/s"
+            if total > 0 and speed > 0:
+                remaining = (total - done) / speed
+                if remaining >= 60:
+                    eta_str = f"{int(remaining // 60)}m {int(remaining % 60)}s"
+                else:
+                    eta_str = f"{int(remaining)}s"
+                self._ft_progress_info.setText(f"{percent}%  —  {speed_str}  —  ETA {eta_str}")
+            else:
+                self._ft_progress_info.setText(f"{percent}%  —  {speed_str}")
+        else:
+            self._ft_progress_info.setText(f"{percent}%")
+
     def _ft_on_transfer_done(self, success, msg):
         self.tftp_btn.setEnabled(True)
+        self._ft_progress_bar.setVisible(False)
+        self._ft_progress_info.setVisible(False)
         if success:
             self._ft_refresh_local()
             self._ft_refresh_remote()
@@ -19839,11 +19904,70 @@ class SerialTerminalGUI(QMainWindow):
         elif not is_dir and action == dl_act:
             filename = os.path.basename(path)
             local_path = os.path.join(self._ft_local_path, filename)
-            self.tftp_btn.setEnabled(False)
-            self._ft_status_label.setText(f"Downloading {filename}...")
-            self._ft_transfer_worker = FileTransferWorker('download', self._ft_protocol, self._ft_conn, local_path, path)
-            self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
-            self._ft_transfer_worker.start()
+            self._ft_start_transfer('download', local_path, path, filename)
+
+    def _ft_local_context_menu(self, pos):
+        item = self._ft_local_tree.itemAt(pos)
+        menu = QMenu(self)
+
+        if item:
+            path = item.data(0, Qt.ItemDataRole.UserRole)
+            is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            name = os.path.basename(path) if path else ''
+            if name and name != '..':
+                rename_act = menu.addAction("Rename")
+                delete_act = menu.addAction("Delete")
+                menu.addSeparator()
+
+        new_folder_act = menu.addAction("New Folder")
+
+        action = menu.exec(self._ft_local_tree.viewport().mapToGlobal(pos))
+        if not action:
+            return
+
+        if action == new_folder_act:
+            folder_name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            folder_name = folder_name.strip()
+            if not ok or not folder_name:
+                return
+            new_path = os.path.join(self._ft_local_path, folder_name)
+            try:
+                os.makedirs(new_path, exist_ok=False)
+                self._ft_refresh_local()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not create folder: {e}")
+            return
+
+        if not item or not path or name == '..':
+            return
+
+        if action == rename_act:
+            new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=name)
+            new_name = new_name.strip()
+            if not ok or not new_name or new_name == name:
+                return
+            new_path = os.path.join(os.path.dirname(path), new_name)
+            try:
+                os.rename(path, new_path)
+                self._ft_refresh_local()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not rename: {e}")
+
+        elif action == delete_act:
+            reply = QMessageBox.question(self, "Confirm Delete",
+                f"Delete {'folder' if is_dir else 'file'} '{name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                if is_dir:
+                    import shutil
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+                self._ft_refresh_local()
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not delete: {e}")
 
     def build_picocom_command(self):
         """Build the picocom command with configured parameters"""
