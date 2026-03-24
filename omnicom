@@ -1912,14 +1912,18 @@ class TerminalWidget(QTextEdit):
             cursor_x = self.screen.cursor.x
             cursor_y = self.screen.cursor.y
 
-            # Detect root session: scan visible text for "root@" prompt pattern.
-            _vis = ''
-            _scan_cols = min(80, self.screen.columns)
-            for _y in range(self.screen.lines):
-                _lb = self.screen.buffer[_y]
+            # Detect root session by checking only the cursor line and the line
+            # immediately above it (the active prompt area). Scanning the entire
+            # screen would cause false positives from historical root@ output
+            # that is still visible after exiting root.
+            _prompt_text = ''
+            _scan_cols = min(120, self.screen.columns)
+            for _chk_y in range(max(0, cursor_y - 1), min(self.screen.lines, cursor_y + 1)):
+                _lb = self.screen.buffer[_chk_y]
                 for _x in range(_scan_cols):
-                    _vis += _lb[_x].data
-            _new_root = 'root@' in _vis
+                    _prompt_text += _lb[_x].data
+                _prompt_text += '\n'
+            _new_root = 'root@' in _prompt_text
             if _new_root != self._root_mode:
                 self._root_mode = _new_root
                 self._render_needed = True
