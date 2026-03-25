@@ -262,10 +262,10 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox
+    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox, QColorDialog
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
 
 try:
     from PyQt6.QtSvg import QSvgRenderer
@@ -7710,7 +7710,7 @@ class PingGraphWidget(QWidget):
 
 
 class _QuickNoteEditor(QTextEdit):
-    """QTextEdit with right-click option to insert a device/timestamp marker."""
+    """QTextEdit with formatting helpers for the Quick Notes dialog."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -7721,18 +7721,38 @@ class _QuickNoteEditor(QTextEdit):
         self._device_name = name
         self._device_ip   = ip
 
-    def contextMenuEvent(self, event):
-        menu = self.createStandardContextMenu()
-        menu.exec(event.globalPos())
-
     def _insert_marker(self):
         from datetime import datetime
-        now   = datetime.now()
-        name  = self._device_name or '—'
-        ip    = self._device_ip   or '—'
-        stamp = now.strftime('%Y-%m-%d  %H:%M')
+        now    = datetime.now()
+        name   = self._device_name or '—'
+        ip     = self._device_ip   or '—'
+        stamp  = now.strftime('%Y-%m-%d  %H:%M')
         marker = f'\n── {name}  {ip}  {stamp} ──\n'
         self.textCursor().insertText(marker)
+
+    def _toggle_bold(self):
+        fmt = self.currentCharFormat()
+        weight = QFont.Weight.Normal if fmt.fontWeight() == QFont.Weight.Bold else QFont.Weight.Bold
+        self.setFontWeight(weight)
+
+    def _toggle_bullet(self):
+        cursor = self.textCursor()
+        lst = cursor.currentList()
+        if lst:
+            # Remove bullet: reset block to default
+            block_fmt = cursor.blockFormat()
+            block_fmt.setIndent(0)
+            cursor.setBlockFormat(block_fmt)
+            cursor.setBlockCharFormat(QTextCharFormat())
+        else:
+            list_fmt = QTextListFormat()
+            list_fmt.setStyle(QTextListFormat.Style.ListDisc)
+            cursor.createList(list_fmt)
+
+    def _pick_color(self):
+        color = QColorDialog.getColor(self.textColor(), self, 'Text colour')
+        if color.isValid():
+            self.setTextColor(color)
 
 
 class StickyNoteDialog(QDialog):
@@ -7743,8 +7763,8 @@ class StickyNoteDialog(QDialog):
         super().__init__(parent)
         self._config = config
         self.setWindowTitle('Quick Notes')
-        self.setMinimumSize(320, 260)
-        self.resize(360, 300)
+        self.setMinimumSize(400, 340)
+        self.resize(460, 420)
         self.setWindowFlags(
             self.windowFlags() |
             Qt.WindowType.WindowStaysOnTopHint
@@ -7796,6 +7816,57 @@ class StickyNoteDialog(QDialog):
         title_widget.setFixedHeight(28)
         layout.addWidget(title_widget)
 
+        # ── Formatting toolbar ────────────────────────────────────────────────
+        _tb_btn_style = """
+            QPushButton {
+                background-color: #FFF176;
+                color: #3e2723;
+                border: none;
+                border-right: 1px solid #F9A825;
+                font-size: 11pt;
+                font-weight: bold;
+                min-width: 32px;
+                max-width: 44px;
+                height: 26px;
+                padding: 0 6px;
+            }
+            QPushButton:hover   { background-color: #ffe566; }
+            QPushButton:pressed { background-color: #F9A825; }
+        """
+        toolbar = QWidget()
+        toolbar.setFixedHeight(28)
+        toolbar.setStyleSheet('background-color: #FFF176; border-bottom: 1px solid #F9A825;')
+        tb_layout = QHBoxLayout(toolbar)
+        tb_layout.setContentsMargins(4, 1, 4, 1)
+        tb_layout.setSpacing(0)
+
+        self._bold_btn   = QPushButton('B')
+        self._bold_btn.setToolTip('Bold')
+        self._bold_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._bold_btn.setStyleSheet(_tb_btn_style + 'QPushButton { font-style: normal; }')
+        self._bold_btn.clicked.connect(lambda: self._editor._toggle_bold())
+
+        bullet_btn = QPushButton('•  List')
+        bullet_btn.setToolTip('Bullet list')
+        bullet_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bullet_btn.setStyleSheet(_tb_btn_style)
+        bullet_btn.clicked.connect(lambda: self._editor._toggle_bullet())
+
+        color_btn = QPushButton('A')
+        color_btn.setToolTip('Text colour')
+        color_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        color_btn.setStyleSheet(_tb_btn_style + """
+            QPushButton { text-decoration: underline; color: #e53935;
+                          border-right: none; }
+        """)
+        color_btn.clicked.connect(lambda: self._editor._pick_color())
+
+        tb_layout.addWidget(self._bold_btn)
+        tb_layout.addWidget(bullet_btn)
+        tb_layout.addWidget(color_btn)
+        tb_layout.addStretch()
+        layout.addWidget(toolbar)
+
         self._editor = _QuickNoteEditor()
         self._editor.setPlaceholderText('Write your notes here…')
         self._editor.setStyleSheet("""
@@ -7820,7 +7891,11 @@ class StickyNoteDialog(QDialog):
         """)
 
         if config:
-            self._editor.setPlainText(config.get_quick_notes())
+            saved = config.get_quick_notes()
+            if saved.strip().startswith('<'):
+                self._editor.setHtml(saved)
+            else:
+                self._editor.setPlainText(saved)
 
         self._editor.set_device_info(device_name, device_ip)
 
@@ -7836,7 +7911,7 @@ class StickyNoteDialog(QDialog):
 
     def _save(self):
         if self._config:
-            self._config.set_quick_notes(self._editor.toPlainText())
+            self._config.set_quick_notes(self._editor.toHtml())
 
 
 class VendorReferenceDialog(QDialog):
