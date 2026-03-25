@@ -7759,15 +7759,24 @@ class _QuickNoteEditor(QTextEdit):
         ]
         menu = QMenu(self)
         menu.setStyleSheet("""
-            QMenu { background: #FFF9C4; border: 1px solid #F9A825; padding: 4px; }
-            QMenu::item { padding: 4px 10px; border-radius: 4px; }
+            QMenu {
+                background: #FFF9C4;
+                border: 1px solid #F9A825;
+                padding: 4px;
+            }
+            QMenu::item {
+                color: #3e2723;
+                padding: 5px 14px 5px 8px;
+                border-radius: 4px;
+                font-size: 10pt;
+            }
             QMenu::item:selected { background: #ffe566; }
         """)
         for hex_color, label in _colors:
-            action = menu.addAction(f'● {label}')
-            action.setData(hex_color)
-            # Colour the bullet via rich text isn't possible in QAction,
-            # so style each entry via font color workaround:
+            # Build a small coloured square as icon
+            pix = QPixmap(14, 14)
+            pix.fill(QColor(hex_color))
+            action = menu.addAction(QIcon(pix), label)
             action.triggered.connect(lambda checked, c=hex_color: self.setTextColor(QColor(c)))
         pos = btn_ref.mapToGlobal(btn_ref.rect().bottomLeft()) if btn_ref else self.cursor().pos()
         menu.exec(pos)
