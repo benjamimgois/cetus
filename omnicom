@@ -262,7 +262,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox, QColorDialog
+    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
@@ -7749,10 +7749,28 @@ class _QuickNoteEditor(QTextEdit):
             list_fmt.setStyle(QTextListFormat.Style.ListDisc)
             cursor.createList(list_fmt)
 
-    def _pick_color(self):
-        color = QColorDialog.getColor(self.textColor(), self, 'Text colour')
-        if color.isValid():
-            self.setTextColor(color)
+    def _pick_color(self, btn_ref=None):
+        _colors = [
+            ('#3e2723', 'Black'),
+            ('#e53935', 'Red'),
+            ('#1565C0', 'Blue'),
+            ('#2E7D32', 'Green'),
+            ('#F9A825', 'Yellow'),
+        ]
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background: #FFF9C4; border: 1px solid #F9A825; padding: 4px; }
+            QMenu::item { padding: 4px 10px; border-radius: 4px; }
+            QMenu::item:selected { background: #ffe566; }
+        """)
+        for hex_color, label in _colors:
+            action = menu.addAction(f'● {label}')
+            action.setData(hex_color)
+            # Colour the bullet via rich text isn't possible in QAction,
+            # so style each entry via font color workaround:
+            action.triggered.connect(lambda checked, c=hex_color: self.setTextColor(QColor(c)))
+        pos = btn_ref.mapToGlobal(btn_ref.rect().bottomLeft()) if btn_ref else self.cursor().pos()
+        menu.exec(pos)
 
 
 class StickyNoteDialog(QDialog):
@@ -7859,7 +7877,7 @@ class StickyNoteDialog(QDialog):
             QPushButton { text-decoration: underline; color: #e53935;
                           border-right: none; }
         """)
-        color_btn.clicked.connect(lambda: self._editor._pick_color())
+        color_btn.clicked.connect(lambda: self._editor._pick_color(color_btn))
 
         tb_layout.addWidget(self._bold_btn)
         tb_layout.addWidget(bullet_btn)
