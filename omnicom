@@ -1923,7 +1923,17 @@ class TerminalWidget(QTextEdit):
                 for _x in range(_scan_cols):
                     _prompt_text += _lb[_x].data
                 _prompt_text += '\n'
-            _new_root = 'root@' in _prompt_text
+            _has_root_prompt    = 'root@' in _prompt_text
+            _has_any_user_prompt = bool(re.search(r'\w+@\w', _prompt_text))
+            if _has_root_prompt:
+                _new_root = True
+            elif _has_any_user_prompt:
+                # Non-root user@host prompt visible → exit root mode
+                _new_root = False
+            else:
+                # No user@host prompt (e.g., interactive question / SSH auth)
+                # — keep current state to avoid flickering
+                _new_root = self._root_mode
             if _new_root != self._root_mode:
                 self._root_mode = _new_root
                 self._render_needed = True
