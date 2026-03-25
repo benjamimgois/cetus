@@ -7788,7 +7788,7 @@ class StickyNoteDialog(QDialog):
             QPushButton:hover { background-color: #e69a00; }
             QPushButton:pressed { background-color: #cc8800; }
         """)
-        marker_btn.clicked.connect(self._editor._insert_marker)
+        marker_btn.clicked.connect(lambda: self._editor._insert_marker())
         title_row.addWidget(marker_btn)
 
         title_widget = QWidget()
