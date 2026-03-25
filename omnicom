@@ -752,24 +752,13 @@ class ConfigManager:
         profiles = [p for p in self.get_serial_profiles() if p.get('name') != name]
         self.set('serial_profiles', json.dumps(profiles))
 
-    def get_device_note(self, host):
-        """Return the sticky note text for a given host (empty string if none)."""
-        notes = {}
-        try:
-            notes = json.loads(self.get('device_notes') or '{}')
-        except Exception:
-            pass
-        return notes.get(host, '')
+    def get_quick_notes(self):
+        """Return the shared quick notes text."""
+        return self.get('quick_notes') or ''
 
-    def set_device_note(self, host, text):
-        """Persist the sticky note text for a given host."""
-        notes = {}
-        try:
-            notes = json.loads(self.get('device_notes') or '{}')
-        except Exception:
-            pass
-        notes[host] = text
-        self.set('device_notes', json.dumps(notes))
+    def set_quick_notes(self, text):
+        """Persist the shared quick notes text."""
+        self.set('quick_notes', text)
 
 
 class _CursorOverlay(QWidget):
@@ -7720,17 +7709,45 @@ class PingGraphWidget(QWidget):
         painter.end()
 
 
-class StickyNoteDialog(QDialog):
-    """Floating sticky-note editor associated with a specific device (host).
-    Text is auto-saved 600 ms after the last keystroke — no save button needed."""
+class _QuickNoteEditor(QTextEdit):
+    """QTextEdit with right-click option to insert a device/timestamp marker."""
 
-    def __init__(self, host, config, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._host = host
+        self._device_name = ''
+        self._device_ip   = ''
+
+    def set_device_info(self, name, ip):
+        self._device_name = name
+        self._device_ip   = ip
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        act = menu.addAction('📍  Insert device marker')
+        act.triggered.connect(self._insert_marker)
+        menu.exec(event.globalPos())
+
+    def _insert_marker(self):
+        from datetime import datetime
+        now   = datetime.now()
+        name  = self._device_name or '—'
+        ip    = self._device_ip   or '—'
+        stamp = now.strftime('%Y-%m-%d  %H:%M')
+        marker = f'\n── {name}  {ip}  {stamp} ──\n'
+        self.textCursor().insertText(marker)
+
+
+class StickyNoteDialog(QDialog):
+    """Shared floating quick-notes editor.
+    Single note shared across all devices — right-click to insert a device marker."""
+
+    def __init__(self, config, device_name='', device_ip='', parent=None):
+        super().__init__(parent)
         self._config = config
-        self.setWindowTitle(f"Note — {host}" if host else "Quick Note")
-        self.setMinimumSize(280, 220)
-        self.resize(320, 260)
+        self.setWindowTitle('Quick Notes')
+        self.setMinimumSize(320, 260)
+        self.resize(360, 300)
         self.setWindowFlags(
             self.windowFlags() |
             Qt.WindowType.WindowStaysOnTopHint
@@ -7740,8 +7757,7 @@ class StickyNoteDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Title bar
-        title_bar = QLabel(f"  📌  {host}" if host else "  📌  Quick Note")
+        title_bar = QLabel('  📌  Quick Notes')
         title_bar.setFixedHeight(28)
         title_bar.setStyleSheet("""
             QLabel {
@@ -7756,9 +7772,8 @@ class StickyNoteDialog(QDialog):
         """)
         layout.addWidget(title_bar)
 
-        # Text area
-        self._editor = QTextEdit()
-        self._editor.setPlaceholderText("Escreve a tua nota aqui…")
+        self._editor = _QuickNoteEditor()
+        self._editor.setPlaceholderText('Write your notes here…')
         self._editor.setStyleSheet("""
             QTextEdit {
                 background-color: #FFF9C4;
@@ -7780,20 +7795,24 @@ class StickyNoteDialog(QDialog):
             }
         """)
 
-        # Load existing note
-        if config and host:
-            self._editor.setPlainText(config.get_device_note(host))
+        if config:
+            self._editor.setPlainText(config.get_quick_notes())
 
-        # Auto-save timer: saves 600 ms after last keystroke
+        self._editor.set_device_info(device_name, device_ip)
+
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(600)
         self._save_timer.timeout.connect(self._save)
         self._editor.textChanged.connect(self._save_timer.start)
 
+    def set_device_info(self, name, ip):
+        """Update current device context (called when active terminal changes)."""
+        self._editor.set_device_info(name, ip)
+
     def _save(self):
-        if self._config and self._host:
-            self._config.set_device_note(self._host, self._editor.toPlainText())
+        if self._config:
+            self._config.set_quick_notes(self._editor.toPlainText())
 
 
 class VendorReferenceDialog(QDialog):
@@ -8068,7 +8087,8 @@ class TerminalDialog(QWidget):
         self.telnet_read_thread = None
         self.telnet_running = False
         self.connection_type = 'serial'
-        self._note_host = ''       # set by set_connection_status; used as notes key
+        self._note_name = ''       # profile name of current device
+        self._note_ip   = ''       # IP of current device
         self._sticky_note_dlg = None  # open StickyNoteDialog instance (if any)
 
         self.init_ui()
@@ -8116,7 +8136,7 @@ class TerminalDialog(QWidget):
             return root_path
         return None
 
-    def set_connection_status(self, user='', host='', color='#4caf50', connected=True):
+    def set_connection_status(self, user='', host='', color='#4caf50', connected=True, name=''):
         """Update the status bar to reflect the current connection state."""
         if connected:
             self._conn_dot.setStyleSheet(f"color: {color}; font-size: 9pt; background: transparent;")
@@ -8124,12 +8144,10 @@ class TerminalDialog(QWidget):
             self._conn_label.setText(label)
             self._conn_label.setStyleSheet("color: #c8c8c8; font-size: 8pt; background: transparent;")
             self._session_start_time = time.monotonic()
-            if host and host != self._note_host:
-                self._note_host = host
-                # Update open sticky note window title/content if already open
-                if self._sticky_note_dlg and self._sticky_note_dlg.isVisible():
-                    self._sticky_note_dlg.close()
-                    self._sticky_note_dlg = None
+            self._note_name = name or host
+            self._note_ip   = host
+            if self._sticky_note_dlg and self._sticky_note_dlg.isVisible():
+                self._sticky_note_dlg.set_device_info(self._note_name, self._note_ip)
         else:
             self._conn_dot.setStyleSheet("color: #e53935; font-size: 9pt; background: transparent;")
             self._conn_label.setText("Session terminated")
@@ -9120,7 +9138,7 @@ class TerminalDialog(QWidget):
         self.stickynote_btn.setFixedSize(36, 36)
         self.stickynote_btn.setFlat(True)
         self.stickynote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.stickynote_btn.setToolTip("Device quick note")
+        self.stickynote_btn.setToolTip("Quick notes")
         self.stickynote_btn.setStyleSheet("""
             QPushButton { border: none; border-radius: 6px; padding: 2px; background-color: transparent; }
             QPushButton:hover { background-color: #3a3a3a; }
@@ -9396,15 +9414,16 @@ class TerminalDialog(QWidget):
         dialog.show()
 
     def open_sticky_note(self):
-        """Open (or bring to front) the sticky note for the current device."""
-        # Reuse existing window if still open
+        """Open (or bring to front) the shared Quick Notes window."""
         if self._sticky_note_dlg and self._sticky_note_dlg.isVisible():
+            self._sticky_note_dlg.set_device_info(self._note_name, self._note_ip)
             self._sticky_note_dlg.raise_()
             self._sticky_note_dlg.activateWindow()
             return
         self._sticky_note_dlg = StickyNoteDialog(
-            host=self._note_host,
             config=self.config,
+            device_name=self._note_name,
+            device_ip=self._note_ip,
             parent=self,
         )
         self._sticky_note_dlg.show()
@@ -21349,7 +21368,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.connection_type = 'telnet'
             tab_label = profile_name or f"Telnet: {host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
-            terminal_dialog.set_connection_status(host=host_info[0], color=color)
+            terminal_dialog.set_connection_status(host=host_info[0], color=color, name=tab_label)
         else:  # SSH
             terminal_dialog.ssh_client = client
             terminal_dialog.ssh_channel = channel
@@ -21358,7 +21377,7 @@ class SerialTerminalGUI(QMainWindow):
             tab_label = profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
             terminal_dialog.setWindowTitle(f"Omnicom Terminal - {tab_label}")
             terminal_dialog.set_connection_status(
-                user=host_info[2], host=host_info[0], color=color
+                user=host_info[2], host=host_info[0], color=color, name=tab_label
             )
 
         # ── Profile banner (coloured label inside the terminal widget) ───────
