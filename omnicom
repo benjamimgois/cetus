@@ -7723,9 +7723,6 @@ class _QuickNoteEditor(QTextEdit):
 
     def contextMenuEvent(self, event):
         menu = self.createStandardContextMenu()
-        menu.addSeparator()
-        act = menu.addAction('📍  Insert device marker')
-        act.triggered.connect(self._insert_marker)
         menu.exec(event.globalPos())
 
     def _insert_marker(self):
@@ -7757,6 +7754,10 @@ class StickyNoteDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(0)
+
         title_bar = QLabel('  📌  Quick Notes')
         title_bar.setFixedHeight(28)
         title_bar.setStyleSheet("""
@@ -7767,10 +7768,33 @@ class StickyNoteDialog(QDialog):
                 font-weight: bold;
                 padding-left: 6px;
                 border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
             }
         """)
-        layout.addWidget(title_bar)
+        title_row.addWidget(title_bar, 1)
+
+        marker_btn = QPushButton('📍')
+        marker_btn.setFixedSize(28, 28)
+        marker_btn.setFlat(True)
+        marker_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        marker_btn.setToolTip('Insert device marker')
+        marker_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F9A825;
+                color: #3e2723;
+                border: none;
+                font-size: 13pt;
+                border-top-right-radius: 6px;
+            }
+            QPushButton:hover { background-color: #e69a00; }
+            QPushButton:pressed { background-color: #cc8800; }
+        """)
+        marker_btn.clicked.connect(self._editor._insert_marker)
+        title_row.addWidget(marker_btn)
+
+        title_widget = QWidget()
+        title_widget.setLayout(title_row)
+        title_widget.setFixedHeight(28)
+        layout.addWidget(title_widget)
 
         self._editor = _QuickNoteEditor()
         self._editor.setPlaceholderText('Write your notes here…')
