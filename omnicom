@@ -1327,6 +1327,23 @@ class TerminalWidget(QTextEdit):
             'security', 'zones', 'policies', 'nat', 'chassis', 'system', 'services'
         ]
 
+        # TP-Link TL-SG series (IOS-like CLI)
+        tplink = common + [
+            'interface', 'vlan', 'no', 'show', 'end', 'exit', 'hostname', 'description',
+            'switchport', 'general', 'allowed', 'tagged', 'untagged', 'pvid',
+            'gigabitEthernet', 'tengigabitEthernet', 'port-channel',
+            'ip', 'address', 'address-alloc', 'dhcp', 'route',
+            'spanning-tree', 'mode', 'rstp', 'mstp', 'stp', 'max-hops', 'priority',
+            'snmp-server', 'community', 'read-only', 'read-write', 'viewDefault',
+            'system-time', 'ntp', 'dst', 'jumbo-size',
+            'user', 'name', 'privilege', 'admin', 'secret',
+            'serial_port', 'baud_rate', 'write', 'save', 'copy',
+            'running-config', 'startup-config', 'tftp', 'firmware',
+            'port-security', 'mac-address', 'storm-control', 'broadcast',
+            'lacp', 'link-aggregation', 'lldp', 'cdp',
+            'logging', 'trap', 'enable', 'disable', 'ipv6',
+        ]
+
         # D-Link specific
         dlink = common + [
             'create', 'delete', 'config', 'show', 'enable', 'disable', 'vlan',
@@ -1534,6 +1551,7 @@ class TerminalWidget(QTextEdit):
             'H3C': h3c,
             'Juniper': juniper,
             'D-Link': dlink,
+            'TP-Link': tplink,
             'Brocade': brocade,
             'Datacom': datacom,
             'Fortinet': fortinet,
