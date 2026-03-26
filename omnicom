@@ -14396,15 +14396,17 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.setSpacing(6)
 
         self.scan_results_table = QTableWidget()
-        self.scan_results_table.setColumnCount(5)
-        self.scan_results_table.setHorizontalHeaderLabels(["IP Address", "Status", "Latency (ms)", "Hostname", "MAC Vendor"])
-        self.scan_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.setColumnCount(6)
+        self.scan_results_table.setHorizontalHeaderLabels(["", "IP Address", "Status", "Latency (ms)", "Hostname", "MAC Vendor"])
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.scan_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.scan_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.scan_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.scan_results_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.scan_results_table.setColumnWidth(2, 100)
-        self.scan_results_table.setColumnHidden(3, True)
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        self.scan_results_table.setColumnWidth(0, 36)
+        self.scan_results_table.setColumnWidth(3, 100)
+        self.scan_results_table.setColumnHidden(4, True)
         self.scan_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.scan_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.scan_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -19543,14 +19545,22 @@ class SerialTerminalGUI(QMainWindow):
         device_type = self._detect_device_type(vendor, hostname, status, mac)
         device_icon = self._get_device_icon(device_type)
 
+        # Col 0: device type icon (dedicated narrow column)
+        icon_item = QTableWidgetItem()
+        icon_item.setIcon(device_icon)
+        icon_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        icon_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.scan_results_table.setItem(row, 0, icon_item)
+
+        # Col 1: IP Address
         ip_item = QTableWidgetItem(ip)
-        ip_item.setIcon(device_icon)
-        # Store IP as data for proper numeric sorting
         ip_item.setData(Qt.ItemDataRole.UserRole, sum(int(o) * (256 ** (3 - i)) for i, o in enumerate(ip.split('.'))))
+        self.scan_results_table.setItem(row, 1, ip_item)
 
-        self.scan_results_table.setItem(row, 0, ip_item)
-        self.scan_results_table.setItem(row, 1, QTableWidgetItem(status))
+        # Col 2: Status
+        self.scan_results_table.setItem(row, 2, QTableWidgetItem(status))
 
+        # Col 3: Latency
         latency_item = QTableWidgetItem(f"{latency:.1f}")
         latency_item.setData(Qt.ItemDataRole.UserRole, latency)
         if latency >= 100:
@@ -19559,18 +19569,18 @@ class SerialTerminalGUI(QMainWindow):
             latency_item.setForeground(QColor("#FF9800"))
         else:
             latency_item.setForeground(QColor("#4CAF50"))
-        self.scan_results_table.setItem(row, 2, latency_item)
+        self.scan_results_table.setItem(row, 3, latency_item)
 
-        # Hostname column
+        # Col 4: Hostname
         hostname_item = QTableWidgetItem(hostname)
         hostname_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.scan_results_table.setItem(row, 3, hostname_item)
+        self.scan_results_table.setItem(row, 4, hostname_item)
 
-        # MAC vendor column
+        # Col 5: MAC Vendor
         vendor_display = f"{vendor} ({mac})" if mac else vendor
         vendor_item = QTableWidgetItem(vendor_display)
         vendor_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.scan_results_table.setItem(row, 4, vendor_item)
+        self.scan_results_table.setItem(row, 5, vendor_item)
 
         self.scan_results_group.setTitle(f"Results (scanning... {row + 1} hosts found)")
 
@@ -19625,7 +19635,7 @@ class SerialTerminalGUI(QMainWindow):
                 for row in range(self.scan_results_table.rowCount()):
                     writer.writerow([
                         self.scan_results_table.item(row, col).text()
-                        for col in range(5)
+                        for col in range(1, 6)  # skip col 0 (icon)
                     ])
             QMessageBox.information(self, "IP Scanner", f"Results exported to:\n{file_path}")
         except Exception as e:
@@ -19643,7 +19653,7 @@ class SerialTerminalGUI(QMainWindow):
         if not item:
             return
         row = item.row()
-        ip = self.scan_results_table.item(row, 0).text()
+        ip = self.scan_results_table.item(row, 1).text()
 
         menu = QMenu(self)
         menu.setStyleSheet("""
