@@ -10592,8 +10592,6 @@ class TerminalDialog(QWidget):
         button_layout.addSpacing(6)
         button_layout.addWidget(self.quickref_btn)
         button_layout.addSpacing(6)
-        button_layout.addWidget(self.stickynote_btn)
-        button_layout.addSpacing(6)
         button_layout.addWidget(self.configtemplate_btn)
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
@@ -10656,13 +10654,15 @@ class TerminalDialog(QWidget):
         self.search_status = QLabel()
         self.search_status.setStyleSheet("color: #b0b0b0; font-size: 9pt;")
 
-        # Group 3 – search
+        # Group 3 – search + quick notes
         button_layout.addWidget(self.search_input)
         button_layout.addSpacing(4)
         button_layout.addWidget(self.search_prev_btn)
         button_layout.addWidget(self.search_next_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.search_status)
+        button_layout.addSpacing(6)
+        button_layout.addWidget(self.stickynote_btn)
 
         button_bar = QWidget()
         button_bar.setStyleSheet("background-color: #1e1e1e;")
