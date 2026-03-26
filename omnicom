@@ -19589,6 +19589,7 @@ class SerialTerminalGUI(QMainWindow):
         """Handle scan completion"""
         self.scan_results_group.setTitle(f"Results — {total_found} host{'s' if total_found != 1 else ''} found")
         self.scan_results_table.setSortingEnabled(True)
+        self.scan_results_table.sortItems(1, Qt.SortOrder.AscendingOrder)
         self._reset_scan_button()
 
     def _on_scan_error(self, error_msg):
