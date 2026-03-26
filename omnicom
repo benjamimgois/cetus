@@ -14140,7 +14140,7 @@ class SerialTerminalGUI(QMainWindow):
 
         self.scan_dns_checkbox = QCheckBox("DNS Lookup")
         self.scan_dns_checkbox.setToolTip("Resolve hostnames via reverse DNS (slower)")
-        self.scan_dns_checkbox.setChecked(True)
+        self.scan_dns_checkbox.setChecked(False)
         self.scan_dns_checkbox.setStyleSheet("""
             QCheckBox {
                 color: #333333;
