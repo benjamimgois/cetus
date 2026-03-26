@@ -14409,8 +14409,8 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.scan_results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.scan_results_table.verticalHeader().setVisible(False)
-        self.scan_results_table.verticalHeader().setDefaultSectionSize(24)
-        self.scan_results_table.setIconSize(QSize(20, 20))
+        self.scan_results_table.verticalHeader().setDefaultSectionSize(30)
+        self.scan_results_table.setIconSize(QSize(26, 26))
         self.scan_results_table.setSortingEnabled(True)
         self.scan_results_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.scan_results_table.customContextMenuRequested.connect(self._scan_context_menu)
@@ -19530,7 +19530,7 @@ class SerialTerminalGUI(QMainWindow):
             return QIcon()
         path = self.get_icon_path(f'device_{device_type}.svg')
         if path:
-            pixmap = load_svg_pixmap(path, 20)
+            pixmap = load_svg_pixmap(path, 26)
             if pixmap and not pixmap.isNull():
                 return QIcon(pixmap)
         return QIcon()
