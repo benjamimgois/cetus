@@ -9592,6 +9592,16 @@ class TerminalDialog(QWidget):
                     ('write memory', 'Save configuration (shorthand)'),
                     ('reload', 'Reboot the device'),
                 ],
+                'Firmware': [
+                    ('show version', 'Display current IOS version and hardware'),
+                    ('show flash:', 'List files in flash memory'),
+                    ('verify /md5 flash:<file>', 'Verify MD5 checksum of file in flash'),
+                    ('copy tftp://<ip>/<file> flash:', 'Download firmware from TFTP to flash'),
+                    ('copy tftp: flash:', 'Interactive TFTP copy to flash'),
+                    ('boot system flash:<file>', 'Set boot image for next reload'),
+                    ('no boot system', 'Remove all configured boot images'),
+                    ('reload', 'Reboot to apply new firmware'),
+                ],
             },
             'Huawei': {
                 'Navigation': [
@@ -9635,6 +9645,14 @@ class TerminalDialog(QWidget):
                     ('undo <command>', 'Negate/remove a configuration'),
                     ('reboot', 'Reboot the device'),
                 ],
+                'Firmware': [
+                    ('display version', 'Show current VRP version and hardware'),
+                    ('dir', 'List files in current storage'),
+                    ('tftp <ip> get <remote-file> <local-file>', 'Download firmware from TFTP server'),
+                    ('startup system-software <file>', 'Set firmware image for next boot'),
+                    ('display startup', 'Show next boot software file'),
+                    ('reboot', 'Reboot to apply new firmware'),
+                ],
             },
             'H3C': {
                 'Navigation': [
@@ -9660,6 +9678,14 @@ class TerminalDialog(QWidget):
                     ('sysname <name>', 'Set hostname'),
                     ('save', 'Save configuration'),
                     ('undo <command>', 'Negate configuration'),
+                ],
+                'Firmware': [
+                    ('display version', 'Show current Comware version'),
+                    ('dir', 'List files in storage'),
+                    ('tftp <ip> get <remote-file>', 'Download firmware via TFTP'),
+                    ('boot-loader file flash:/<file> main', 'Set main boot image'),
+                    ('display boot-loader', 'Show current and next boot images'),
+                    ('reboot', 'Reboot to apply new firmware'),
                 ],
             },
             'Juniper': {
@@ -9693,6 +9719,16 @@ class TerminalDialog(QWidget):
                     ('request system reboot', 'Reboot the device'),
                     ('request system snapshot', 'Create system snapshot'),
                 ],
+                'Firmware': [
+                    ('show version', 'Display Junos version and hardware'),
+                    ('show system storage', 'Show available disk space'),
+                    ('file list /var/tmp/', 'List files in /var/tmp'),
+                    ('request system software add /var/tmp/<file>', 'Install firmware from local file'),
+                    ('request system software add <tftp-url>', 'Install firmware from TFTP/HTTP URL'),
+                    ('request system software add no-validate /var/tmp/<file>', 'Install without signature check'),
+                    ('request system reboot', 'Reboot to apply new firmware'),
+                    ('request system software rollback', 'Roll back to previous firmware'),
+                ],
             },
             'D-Link': {
                 'Basic': [
@@ -9722,8 +9758,14 @@ class TerminalDialog(QWidget):
                 ],
                 'System': [
                     ('config ipif System ipaddress <ip>/<mask>', 'Set management IP'),
-                    ('download firmware_fromTFTP <ip> <file>', 'Download firmware via TFTP'),
                     ('reset', 'Reset to factory defaults'),
+                ],
+                'Firmware': [
+                    ('show firmware information', 'Display current firmware version'),
+                    ('download firmware_fromTFTP <ip> <file>', 'Download and install firmware from TFTP'),
+                    ('config firmware image_id <1|2>', 'Select active firmware image'),
+                    ('show flash', 'Show flash memory usage'),
+                    ('reboot system', 'Reboot to apply new firmware'),
                 ],
             },
             'Brocade': {
@@ -9761,6 +9803,14 @@ class TerminalDialog(QWidget):
                     ('ipaddrshow', 'Display IP addressing'),
                     ('reboot', 'Reboot the switch'),
                 ],
+                'Firmware': [
+                    ('version', 'Display current Fabric OS firmware version'),
+                    ('firmwareshow', 'Display firmware version on all blades/CPs'),
+                    ('firmwaredownload -s <ip> <user> <pass> <file>', 'Download firmware via SCP'),
+                    ('firmwaredownload -p <ip> <user> <pass> <file>', 'Download firmware via FTP'),
+                    ('firmwarecommit', 'Commit new firmware (if auto-commit disabled)'),
+                    ('reboot', 'Reboot to apply firmware'),
+                ],
             },
             'Datacom': {
                 'Navigation': [
@@ -9790,6 +9840,14 @@ class TerminalDialog(QWidget):
                     ('write memory', 'Save configuration'),
                     ('copy running-config startup-config', 'Save configuration'),
                     ('reload', 'Reboot the device'),
+                ],
+                'Firmware': [
+                    ('show version', 'Display current firmware version'),
+                    ('show flash:', 'List files in flash'),
+                    ('copy tftp: flash:', 'Interactive TFTP copy to flash'),
+                    ('copy tftp://<ip>/<file> flash:<file>', 'Download firmware from TFTP'),
+                    ('boot system flash <file>', 'Set boot image'),
+                    ('reload', 'Reboot to apply new firmware'),
                 ],
             },
             'Fortinet': {
@@ -9838,6 +9896,13 @@ class TerminalDialog(QWidget):
                     ('execute factoryreset', 'Factory reset'),
                     ('diagnose debug enable', 'Enable debug output'),
                 ],
+                'Firmware': [
+                    ('get system status', 'Show current FortiOS firmware version'),
+                    ('execute restore image tftp <file> <ip>', 'Upgrade firmware from TFTP server'),
+                    ('execute restore image ftp <file> <ip> <user> <pass>', 'Upgrade firmware from FTP'),
+                    ('execute restore image usb <file>', 'Upgrade firmware from USB'),
+                    ('execute reboot', 'Reboot to apply new firmware'),
+                ],
             },
             'Aruba': {
                 'Navigation': [
@@ -9872,6 +9937,15 @@ class TerminalDialog(QWidget):
                     ('write memory', 'Save configuration'),
                     ('boot system flash primary', 'Set boot image'),
                     ('reload', 'Reboot the device'),
+                ],
+                'Firmware': [
+                    ('show version', 'Display current ArubaOS version'),
+                    ('show image version', 'Show firmware images on all partitions'),
+                    ('copy tftp flash <ip> <file> primary', 'Copy firmware from TFTP to primary partition'),
+                    ('copy tftp flash <ip> <file> secondary', 'Copy firmware from TFTP to secondary partition'),
+                    ('boot system flash primary', 'Boot from primary partition'),
+                    ('boot system flash secondary', 'Boot from secondary partition'),
+                    ('reload', 'Reboot to apply new firmware'),
                 ],
             },
             'Linux': {
@@ -10020,6 +10094,18 @@ class TerminalDialog(QWidget):
                     ('/export', 'Export configuration to terminal'),
                     ('/system reboot', 'Reboot the device'),
                     ('/system package update install', 'Install available updates'),
+                ],
+                'Firmware': [
+                    ('/system package print', 'List installed packages and versions'),
+                    ('/system package update check-for-updates', 'Check for available updates'),
+                    ('/system package update download', 'Download available updates'),
+                    ('/system package update install', 'Install downloaded updates and reboot'),
+                    ('/tool fetch url="http://<ip>/<file>" dst-path=<file>', 'Download file via HTTP'),
+                    ('/tool fetch address=<ip> src-path=<file> mode=tftp dst-path=<file>', 'Download file via TFTP'),
+                    ('/system package add file=<file>', 'Install package from local file'),
+                    ('/system routerboard upgrade', 'Upgrade RouterBOARD firmware'),
+                    ('/system routerboard print', 'Show RouterBOARD firmware version'),
+                    ('/system reboot', 'Reboot to apply new firmware'),
                 ],
             },
             'Windows': {
@@ -10319,6 +10405,14 @@ class TerminalDialog(QWidget):
                     ('acl number <3000>', 'Create extended ACL'),
                     ('rule <n> deny protocol tcp src any dst any d-port 23', 'Block Telnet in ACL'),
                     ('packet-filter <acl> in', 'Apply ACL to interface inbound'),
+                ],
+                'Firmware': [
+                    ('show version', 'Display current firmware version and hardware info'),
+                    ('copy tftp opcode <ip> <filename>', 'Download and install firmware from TFTP'),
+                    ('copy tftp startup-config <ip> <filename>', 'Restore startup config from TFTP'),
+                    ('copy startup-config tftp <ip> <filename>', 'Backup startup config to TFTP'),
+                    ('write', 'Save current configuration'),
+                    ('reboot', 'Reboot to apply new firmware'),
                 ],
             },
             'Default': {},
