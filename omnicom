@@ -19526,9 +19526,9 @@ class SerialTerminalGUI(QMainWindow):
 
     def _get_device_icon(self, device_type):
         """Load and return a QIcon for the given device type string."""
+        if device_type == 'unknown':
+            return QIcon()
         path = self.get_icon_path(f'device_{device_type}.svg')
-        if not path:
-            path = self.get_icon_path('device_unknown.svg')
         if path:
             pixmap = load_svg_pixmap(path, 20)
             if pixmap and not pixmap.isNull():
