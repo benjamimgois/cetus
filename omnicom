@@ -1656,7 +1656,8 @@ class TerminalWidget(QTextEdit):
         text = re.sub(number_pattern, r'<span style="color: #ffff00;">\1</span>', text)
 
         # Highlight prompts (magenta - vibrant) - patterns like [SWITCH]#, Router>, etc.
-        prompt_pattern = r'^([\[\<]?[A-Za-z0-9_-]+[\]\>]?[#&gt;])'
+        # Note: '>' is HTML-escaped to '&gt;' at this point, so match it as a literal string.
+        prompt_pattern = r'^([\[<]?[A-Za-z0-9_-]+[\]>]?(?:[#]|&gt;))'
         text = re.sub(prompt_pattern, r'<span style="color: #ff00ff; font-weight: bold;">\1</span>', text, flags=re.MULTILINE)
 
         return text
