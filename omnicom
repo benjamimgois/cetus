@@ -19588,8 +19588,28 @@ class SerialTerminalGUI(QMainWindow):
     def _on_scan_finished(self, total_found):
         """Handle scan completion"""
         self.scan_results_group.setTitle(f"Results — {total_found} host{'s' if total_found != 1 else ''} found")
+
+        # Sort rows numerically by IP (UserRole on col 1 holds the 32-bit integer).
+        # sortItems() is text-based and would mis-order 10.0.0.2 after 10.0.0.100.
+        row_count = self.scan_results_table.rowCount()
+        rows = []
+        for row in range(row_count):
+            ip_item = self.scan_results_table.item(row, 1)
+            ip_val = ip_item.data(Qt.ItemDataRole.UserRole) if ip_item else 0
+            items = [self.scan_results_table.takeItem(row, col) for col in range(6)]
+            rows.append((ip_val, items))
+
+        rows.sort(key=lambda x: x[0])
+
+        self.scan_results_table.setRowCount(0)
+        for _, items in rows:
+            r = self.scan_results_table.rowCount()
+            self.scan_results_table.insertRow(r)
+            for col, item in enumerate(items):
+                if item:
+                    self.scan_results_table.setItem(r, col, item)
+
         self.scan_results_table.setSortingEnabled(True)
-        self.scan_results_table.sortItems(1, Qt.SortOrder.AscendingOrder)
         self._reset_scan_button()
 
     def _on_scan_error(self, error_msg):
