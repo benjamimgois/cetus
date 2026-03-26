@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- TV body -->
+  <rect x="1" y="3" width="22" height="15" rx="2" fill="#7B1FA2"/>
+  <!-- screen -->
+  <rect x="2.5" y="4.5" width="19" height="12" rx="1" fill="#4A148C"/>
+  <!-- play button -->
+  <polygon points="10,8 10,14 16,11" fill="#CE93D8" opacity="0.8"/>
+  <!-- stand -->
+  <rect x="9" y="18" width="6" height="1.5" fill="#7B1FA2"/>
+  <rect x="6" y="19.5" width="12" height="1.5" rx="0.7" fill="#7B1FA2"/>
+</svg>

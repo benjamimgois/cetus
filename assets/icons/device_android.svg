@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- antennas -->
+  <line x1="9" y1="7" x2="7" y2="4" stroke="#43A047" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="15" y1="7" x2="17" y2="4" stroke="#43A047" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- head -->
+  <path d="M5 12 Q5 7 12 7 Q19 7 19 12 L19 16 Q19 17 18 17 L6 17 Q5 17 5 16 Z" fill="#43A047"/>
+  <!-- eyes -->
+  <circle cx="9" cy="11" r="1.2" fill="#E8F5E9"/>
+  <circle cx="15" cy="11" r="1.2" fill="#E8F5E9"/>
+  <!-- body -->
+  <rect x="5" y="17" width="14" height="5" rx="1.5" fill="#388E3C"/>
+  <!-- arms -->
+  <rect x="1.5" y="17" width="3" height="7" rx="1.5" fill="#388E3C"/>
+  <rect x="19.5" y="17" width="3" height="7" rx="1.5" fill="#388E3C"/>
+  <!-- legs -->
+  <rect x="6" y="22" width="4" height="2" rx="1" fill="#388E3C"/>
+  <rect x="14" y="22" width="4" height="2" rx="1" fill="#388E3C"/>
+</svg>

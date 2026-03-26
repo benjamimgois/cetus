@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- phone body -->
+  <rect x="5" y="1" width="14" height="22" rx="3" fill="#AB47BC"/>
+  <!-- screen -->
+  <rect x="6.5" y="3" width="11" height="16" rx="1.5" fill="#7B1FA2"/>
+  <!-- notch / Dynamic Island -->
+  <rect x="9" y="3.5" width="6" height="1.5" rx="0.75" fill="#AB47BC"/>
+  <!-- home indicator -->
+  <rect x="9.5" y="20.5" width="5" height="1" rx="0.5" fill="#CE93D8"/>
+  <!-- small camera dot -->
+  <circle cx="12" cy="4.5" r="0.8" fill="#9C27B0"/>
+</svg>

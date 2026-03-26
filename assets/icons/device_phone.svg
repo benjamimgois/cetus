@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- phone base -->
+  <rect x="2" y="12" width="16" height="9" rx="1.5" fill="#558B2F"/>
+  <!-- handset -->
+  <path d="M6 2 Q4 2 4 6 L4 10 Q4 12 6 12 L12 12 Q14 12 14 10 L14 6 Q14 2 12 2 Z" fill="#558B2F"/>
+  <!-- earpiece -->
+  <rect x="7" y="4" width="4" height="1.5" rx="0.7" fill="#33691E"/>
+  <!-- mic -->
+  <circle cx="9" cy="10" r="1.2" fill="#33691E"/>
+  <!-- cable -->
+  <path d="M9 12 Q9 14 12 14 Q16 14 16 12" fill="none" stroke="#33691E" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- keypad dots -->
+  <circle cx="6" cy="15" r="0.8" fill="#33691E"/>
+  <circle cx="9" cy="15" r="0.8" fill="#33691E"/>
+  <circle cx="12" cy="15" r="0.8" fill="#33691E"/>
+  <circle cx="6" cy="18" r="0.8" fill="#33691E"/>
+  <circle cx="9" cy="18" r="0.8" fill="#33691E"/>
+  <circle cx="12" cy="18" r="0.8" fill="#33691E"/>
+</svg>

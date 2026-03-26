@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- monitor -->
+  <rect x="2" y="2" width="20" height="14" rx="2" fill="#F9A825"/>
+  <!-- screen -->
+  <rect x="3.5" y="3.5" width="17" height="11" rx="1" fill="#E65100"/>
+  <!-- terminal prompt: $ _ -->
+  <text x="5.5" y="12" font-family="monospace" font-size="7" font-weight="bold" fill="#FFEE58">$</text>
+  <rect x="10" y="10.5" width="5" height="1.5" rx="0.3" fill="#FFEE58"/>
+  <!-- cursor blink line -->
+  <rect x="15.5" y="10.5" width="1.5" height="1.5" fill="#FFEE58" opacity="0.8"/>
+  <!-- prompt line 2 -->
+  <rect x="5.5" y="7" width="8" height="1.2" rx="0.3" fill="#FFEE58" opacity="0.5"/>
+  <!-- stand -->
+  <rect x="10" y="16" width="4" height="2.5" fill="#F9A825"/>
+  <rect x="7" y="18.5" width="10" height="1.5" rx="0.7" fill="#F9A825"/>
+</svg>
