@@ -8243,7 +8243,7 @@ class VendorConfigTemplateDialog(QDialog):
         QApplication.clipboard().setText(self._viewer.toPlainText())
 
     @staticmethod
-    def get_vendor_config_template():
+    def get_vendor_config_template():  # noqa: C901
         return {
             'Cisco': """\
 ! ============================================================
@@ -8340,6 +8340,78 @@ banner motd ^
   *** Authorized access only. All activity is monitored. ***
 ^
 !
+! --- DHCP Server ---
+ip dhcp excluded-address 192.168.10.1 192.168.10.20
+ip dhcp pool DATA_POOL
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+ dns-server 8.8.8.8 8.8.4.4
+ lease 1
+!
+! --- ACLs ---
+ip access-list standard MGMT_ONLY
+ permit 192.168.10.0 0.0.0.255
+ deny   any log
+!
+ip access-list extended BLOCK_TELNET
+ deny   tcp any any eq 23 log
+ permit ip any any
+!
+! --- OSPF ---
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.10.0 0.0.0.255 area 0
+ network 192.168.20.0 0.0.0.255 area 0
+ passive-interface default
+ no passive-interface GigabitEthernet0/0
+ auto-cost reference-bandwidth 10000
+!
+! --- VRF ---
+ip vrf CUSTOMER_A
+ rd 65000:100
+ route-target export 65000:100
+ route-target import 65000:100
+!
+interface GigabitEthernet0/3
+ ip vrf forwarding CUSTOMER_A
+ ip address 10.100.0.1 255.255.255.0
+ no shutdown
+!
+! --- VPN (GRE Tunnel) ---
+interface Tunnel0
+ description GRE-TO-REMOTE
+ ip address 10.0.0.1 255.255.255.252
+ tunnel source GigabitEthernet0/0
+ tunnel destination REMOTE_PUBLIC_IP
+!
+! --- VPN (IPSec) ---
+crypto isakmp policy 10
+ encr aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 86400
+crypto isakmp key VPN_KEY address REMOTE_PUBLIC_IP
+!
+crypto ipsec transform-set TS_AES esp-aes 256 esp-sha256-hmac
+ mode tunnel
+!
+crypto map CMAP 10 ipsec-isakmp
+ set peer REMOTE_PUBLIC_IP
+ set transform-set TS_AES
+ match address VPN_ACL
+!
+ip access-list extended VPN_ACL
+ permit ip 192.168.10.0 0.0.0.255 10.200.0.0 0.0.0.255
+!
+interface GigabitEthernet0/0
+ crypto map CMAP
+!
+! --- SSH & Telnet control ---
+ip ssh version 2
+ip ssh time-out 60
+no service telnet
+!
 ! --- Save ---
 end
 write memory
@@ -8419,6 +8491,40 @@ header login information "Authorized access only."
 # --- STP ---
 stp mode rstp
 stp enable
+#
+# --- DHCP Server ---
+dhcp enable
+ip pool DATA_POOL
+ network 192.168.20.0 mask 255.255.255.0
+ gateway-list 192.168.20.1
+ dns-list 8.8.8.8
+ lease day 1
+#
+# --- ACL ---
+acl number 2000
+ rule 5 permit source 192.168.10.0 0.0.0.255
+ rule 100 deny
+#
+acl number 3000
+ rule 5 deny tcp source any destination any destination-port eq 23
+ rule 100 permit ip
+#
+# --- OSPF ---
+ospf 1 router-id 1.1.1.1
+ area 0.0.0.0
+  network 192.168.10.0 0.0.0.255
+  network 192.168.20.0 0.0.0.255
+#
+# --- VRF ---
+ip vpn-instance CUSTOMER_A
+ route-distinguisher 65000:100
+ vpn-target 65000:100 export-extcommunity
+ vpn-target 65000:100 import-extcommunity
+#
+# --- SSH ---
+stelnet server enable
+ssh authentication-type default password
+undo telnet server enable
 #
 return
 """,
