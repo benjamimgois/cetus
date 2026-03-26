@@ -8581,6 +8581,51 @@ snmp-agent
 snmp-agent community read public
 snmp-agent community write private
 #
+# --- DHCP Server ---
+dhcp enable
+ip pool DATA_POOL
+ network 192.168.20.0 mask 255.255.255.0
+ gateway-list 192.168.20.1
+ dns-list 8.8.8.8
+ excluded-ip-address 192.168.20.1 192.168.20.20
+ lease day 1
+#
+# --- ACL ---
+acl number 2000
+ description MGMT_ONLY
+ rule 5 permit source 192.168.10.0 0.0.0.255
+ rule 100 deny
+#
+acl number 3000
+ description BLOCK_TELNET
+ rule 5 deny tcp source any destination any destination-port eq 23
+ rule 100 permit ip
+#
+# --- OSPF ---
+ospf 1 router-id 1.1.1.1
+ area 0.0.0.0
+  network 192.168.10.0 0.0.0.255
+  network 192.168.20.0 0.0.0.255
+#
+# --- VRF ---
+ip vpn-instance CUSTOMER_A
+ route-distinguisher 65000:100
+ vpn-target 65000:100 export-extcommunity
+ vpn-target 65000:100 import-extcommunity
+#
+# --- VPN (GRE Tunnel) ---
+interface Tunnel0
+ ip binding vpn-instance default
+ ip address 10.0.0.1 255.255.255.252
+ tunnel-protocol gre
+ source GigabitEthernet0/0/0
+ destination REMOTE_PUBLIC_IP
+#
+# --- SSH (disable Telnet) ---
+stelnet server enable
+ssh authentication-type default password
+undo telnet server enable
+#
 return
 """,
             'Juniper': """\
@@ -8648,6 +8693,88 @@ snmp {
         authorization read-write;
     }
 }
+/* --- DHCP --- */
+system {
+    services {
+        dhcp-local-server {
+            group DATA_GROUP {
+                interface ge-0/0/1.0;
+            }
+        }
+    }
+}
+access {
+    address-assignment {
+        pool DATA_POOL {
+            family inet {
+                network 192.168.20.0/24;
+                range DATA_RANGE low 192.168.20.21 high 192.168.20.254;
+                dhcp-attributes {
+                    router 192.168.20.1;
+                    name-server [ 8.8.8.8 8.8.4.4 ];
+                    maximum-lease-time 86400;
+                }
+            }
+        }
+    }
+}
+/* --- ACL (Firewall Filter) --- */
+firewall {
+    family inet {
+        filter MGMT_ONLY {
+            term ALLOW_MGMT {
+                from { source-address { 192.168.10.0/24; } }
+                then accept;
+            }
+            term DENY_REST { then { reject; } }
+        }
+        filter BLOCK_TELNET {
+            term BLOCK_23 {
+                from { protocol tcp; destination-port telnet; }
+                then { discard; log; }
+            }
+            term ALLOW_ALL { then accept; }
+        }
+    }
+}
+/* --- OSPF --- */
+protocols {
+    ospf {
+        area 0.0.0.0 {
+            interface ge-0/0/0.0 { interface-type p2p; }
+            interface ge-0/0/1.0;
+        }
+    }
+}
+/* --- VRF (routing-instance) --- */
+routing-instances {
+    CUSTOMER_A {
+        instance-type vrf;
+        interface ge-0/0/2.0;
+        route-distinguisher 65000:100;
+        vrf-target target:65000:100;
+        routing-options { static { route 0.0.0.0/0 next-hop 10.100.0.254; } }
+    }
+}
+/* --- VPN (GRE) --- */
+interfaces {
+    gr-0/0/0 {
+        unit 0 {
+            tunnel {
+                source LOCAL_PUBLIC_IP;
+                destination REMOTE_PUBLIC_IP;
+            }
+            family inet { address 10.0.0.1/30; }
+        }
+    }
+}
+/* --- SSH (disable Telnet) --- */
+system {
+    services {
+        ssh { root-login deny; protocol-version v2; }
+        /* remove 'telnet' from services to disable it */
+    }
+}
 """,
             'Linux': """\
 # ============================================================
@@ -8710,6 +8837,68 @@ agentAddress udp:161
 rocommunity public 192.168.10.0/24
 syslocation LOCATION
 syscontact admin@domain.local
+
+# --- DHCP Server (isc-dhcp-server) ---
+# /etc/dhcp/dhcpd.conf
+option domain-name-servers 8.8.8.8, 8.8.4.4;
+default-lease-time 86400;
+max-lease-time 172800;
+subnet 192.168.20.0 netmask 255.255.255.0 {
+  range 192.168.20.21 192.168.20.254;
+  option routers 192.168.20.1;
+  option subnet-mask 255.255.255.0;
+}
+# systemctl enable isc-dhcp-server && systemctl restart isc-dhcp-server
+
+# --- iptables ACL ---
+# Flush and set defaults
+iptables -F && iptables -X
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+# Allow established/related
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# Allow management subnet
+iptables -A INPUT -s 192.168.10.0/24 -j ACCEPT
+# Allow SSH
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+# Block Telnet
+iptables -A INPUT -p tcp --dport 23 -j DROP
+# Save rules
+iptables-save > /etc/iptables/rules.v4
+
+# --- OSPF (FRRouting) ---
+# vtysh
+router ospf
+  ospf router-id 1.1.1.1
+  network 192.168.10.0/24 area 0
+  network 192.168.20.0/24 area 0
+  passive-interface default
+  no passive-interface eth0
+!
+
+# --- VRF ---
+ip link add vrf-CUSTOMER_A type vrf table 100
+ip link set vrf-CUSTOMER_A up
+ip link set eth2 master vrf-CUSTOMER_A
+ip addr add 10.100.0.1/24 dev eth2
+
+# --- VPN (WireGuard) ---
+# /etc/wireguard/wg0.conf
+[Interface]
+Address = 10.0.0.1/30
+PrivateKey = <SERVER_PRIVATE_KEY>
+ListenPort = 51820
+[Peer]
+PublicKey = <CLIENT_PUBLIC_KEY>
+AllowedIPs = 10.200.0.0/24
+# wg-quick up wg0 && systemctl enable wg-quick@wg0
+
+# --- Telnet disable / SSH harden ---
+systemctl stop telnet.socket 2>/dev/null; systemctl disable telnet.socket 2>/dev/null
+sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+systemctl restart sshd
 """,
             'MikroTik': """\
 # ============================================================
@@ -8766,6 +8955,44 @@ add chain=input action=drop
 
 # --- Backup ---
 /system backup save name=DEVICE_NAME
+
+# --- DHCP Server ---
+/ip pool add name=DATA_POOL ranges=192.168.20.21-192.168.20.254
+/ip dhcp-server add name=dhcp-data interface=ether2 address-pool=DATA_POOL disabled=no
+/ip dhcp-server network add address=192.168.20.0/24 gateway=192.168.20.1 dns-server=8.8.8.8
+
+# --- ACL (Firewall Filter) ---
+/ip firewall filter
+add chain=input src-address=192.168.10.0/24 action=accept comment="Allow MGMT"
+add chain=input protocol=tcp dst-port=22 action=accept comment="Allow SSH"
+add chain=input protocol=tcp dst-port=23 action=drop comment="Block Telnet"
+add chain=input connection-state=established,related action=accept
+add chain=input action=drop comment="Drop all other INPUT"
+add chain=forward action=fasttrack-connection connection-state=established,related
+add chain=forward connection-state=established,related action=accept
+add chain=forward connection-state=invalid action=drop
+
+# --- OSPF ---
+/routing ospf instance add name=default router-id=1.1.1.1
+/routing ospf area add name=backbone area-id=0.0.0.0 instance=default
+/routing ospf interface-template add networks=192.168.10.0/24 area=backbone
+/routing ospf interface-template add networks=192.168.20.0/24 area=backbone
+
+# --- VRF ---
+/ip vrf add name=CUSTOMER_A interfaces=ether3 route-distinguisher=65000:100 \
+  import-route-targets=65000:100 export-route-targets=65000:100
+
+# --- VPN (L2TP/IPSec Server) ---
+/ip ipsec proposal add name=vpn-proposal auth-algorithms=sha256 enc-algorithms=aes-256-cbc
+/ip ipsec profile add name=vpn-profile dh-group=modp2048 enc-algorithm=aes-256
+/ip ipsec peer add name=remote-peer address=REMOTE_PUBLIC_IP profile=vpn-profile
+/ip ipsec identity add peer=remote-peer auth-method=pre-shared-key secret=VPN_KEY
+/ip ipsec policy add peer=remote-peer src-address=192.168.10.0/24 dst-address=10.200.0.0/24 proposal=vpn-proposal
+
+# --- SSH / Disable Telnet ---
+/ip service set telnet disabled=yes
+/ip service set ssh disabled=no port=22
+/ip ssh set strong-crypto=yes
 """,
             'Fortinet': """\
 # ============================================================
@@ -8831,6 +9058,81 @@ config log syslogd setting
     set server 192.168.10.100
     set facility local0
 end
+
+config system dhcp server
+    edit 1
+        set dns-service default
+        set ntp-service default
+        set default-gateway 192.168.20.1
+        set netmask 255.255.255.0
+        set interface "lan"
+        config ip-range
+            edit 1
+                set start-ip 192.168.20.21
+                set end-ip 192.168.20.254
+            next
+        end
+    next
+end
+
+config firewall address
+    edit "MGMT_SUBNET"
+        set subnet 192.168.10.0 255.255.255.0
+    next
+end
+config firewall policy
+    edit 1
+        set name "MGMT_TO_LAN"
+        set srcintf "mgmt"
+        set dstintf "lan"
+        set srcaddr "MGMT_SUBNET"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+    next
+end
+
+config router ospf
+    set router-id 1.1.1.1
+    config area
+        edit 0.0.0.0
+        next
+    end
+    config network
+        edit 1
+            set prefix 192.168.10.0 255.255.255.0
+        next
+        edit 2
+            set prefix 192.168.20.0 255.255.255.0
+        next
+    end
+end
+
+config vpn ipsec phase1-interface
+    edit "vpn-to-remote"
+        set interface "wan1"
+        set remote-gw REMOTE_PUBLIC_IP
+        set psksecret VPN_KEY
+        set proposal aes256-sha256
+        set dhgrp 14
+    next
+end
+config vpn ipsec phase2-interface
+    edit "vpn-to-remote-p2"
+        set phase1name "vpn-to-remote"
+        set proposal aes256-sha256
+        set src-subnet 192.168.10.0 255.255.255.0
+        set dst-subnet 10.200.0.0 255.255.255.0
+    next
+end
+
+config system global
+    set admin-telnet disable
+end
+config system ssh
+    set strong-crypto enable
+end
 """,
             'Aruba': """\
 # ============================================================
@@ -8889,6 +9191,35 @@ snmp-server location LOCATION
 ! --- Syslog ---
 logging 192.168.10.100
 !
+! --- DHCP Server ---
+ip dhcp excluded-address 192.168.20.1 192.168.20.20
+ip dhcp pool DATA_POOL
+  network 192.168.20.0/24
+  default-router 192.168.20.1
+  dns-server 8.8.8.8
+  lease 1
+!
+! --- ACL ---
+ip access-list standard MGMT_ONLY
+  permit 192.168.10.0/24
+  deny any
+ip access-list extended BLOCK_TELNET
+  deny tcp any any eq 23
+  permit ip any any
+!
+! --- OSPF ---
+router ospf 1
+  router-id 1.1.1.1
+  area 0.0.0.0
+  network 192.168.10.0/24
+  network 192.168.20.0/24
+  passive-interface default
+  no passive-interface 1/1
+!
+! --- SSH / Disable Telnet ---
+ip ssh version 2
+no service telnet
+!
 ! --- Save ---
 write memory
 """,
@@ -8940,7 +9271,125 @@ snmp-server community public ro
 # --- NTP ---
 ntp server 192.168.10.254
 #
+# --- DHCP ---
+ip dhcp excluded-address 192.168.20.1 192.168.20.20
+ip dhcp pool DATA_POOL
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+ dns-server 8.8.8.8
+ lease 1
+#
+# --- ACL ---
+ip access-list standard MGMT_ONLY
+ permit 192.168.10.0 0.0.0.255
+ deny any
+ip access-list extended BLOCK_TELNET
+ deny tcp any any eq 23
+ permit ip any any
+#
+# --- OSPF ---
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.10.0 0.0.0.255 area 0
+ network 192.168.20.0 0.0.0.255 area 0
+#
+# --- SSH / Disable Telnet ---
+ip ssh version 2
+no service telnet
+#
 end
+write
+""",
+            'TP-Link': """\
+# ============================================================
+# TP-LINK — CONFIGURATION TEMPLATE (TL-SG / TL-ER Series)
+# ============================================================
+# Note: TP-Link uses a web GUI for most models.
+# CLI below applies to TP-Link EasySmartManaged / TL-ER series.
+
+# --- System ---
+hostname DEVICE_NAME
+no ip telnet server
+ip ssh server
+
+# --- Management VLAN ---
+vlan 10
+ name MGMT
+interface vlan 10
+ ip address 192.168.10.1 255.255.255.0
+ no shutdown
+
+# --- Access Ports ---
+interface gigabitethernet 1/0/1
+ description ACCESS-DATA
+ switchport mode access
+ switchport access vlan 20
+ no shutdown
+
+# --- Trunk Port ---
+interface gigabitethernet 1/0/24
+ description UPLINK-TRUNK
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+ no shutdown
+
+# --- Routing (TL-ER series) ---
+interface gigabitethernet 1/0/1
+ ip address 192.168.10.1 255.255.255.0
+interface gigabitethernet 1/0/2
+ ip address 192.168.20.1 255.255.255.0
+ip route 0.0.0.0 0.0.0.0 192.168.1.1
+
+# --- DHCP Server ---
+ip dhcp pool LAN_POOL
+ network 192.168.20.0 255.255.255.0
+ gateway 192.168.20.1
+ dns-server 8.8.8.8 8.8.4.4
+ lease 1
+ip dhcp excluded-address 192.168.20.1 192.168.20.20
+
+# --- ACL ---
+acl number 3000
+ rule 5 deny protocol tcp source any destination any d-port 23
+ rule 10 permit protocol ip source any destination any
+interface gigabitethernet 1/0/1
+ packet-filter 3000 in
+
+# --- OSPF (TL-ER routers) ---
+router ospf
+ ospf enable
+ router-id 1.1.1.1
+ area 0
+  network 192.168.10.0 0.0.0.255
+  network 192.168.20.0 0.0.0.255
+
+# --- VPN (IPSec — TL-ER series) ---
+vpn ipsec policy SITE_TO_SITE
+ mode tunnel
+ local-subnet 192.168.10.0/24
+ remote-subnet 10.200.0.0/24
+ remote-gateway REMOTE_PUBLIC_IP
+ auth-method pre-shared-key
+ pre-shared-key VPN_KEY
+ encryption aes256
+ integrity sha256
+ dh-group 14
+ enable
+
+# --- SSH ---
+ip ssh server enable
+ip ssh version 2
+no ip telnet server
+
+# --- SNMP ---
+snmp-server community public ro
+snmp-server location LOCATION
+snmp-server contact admin@domain.local
+
+# --- NTP ---
+ntp server 192.168.10.254
+
+# --- Save ---
 write
 """,
         }
@@ -9804,6 +10253,55 @@ class TerminalDialog(QWidget):
                     ('pfctl -F all', 'Flush all rules and state'),
                 ],
             },
+            'TP-Link': {
+                'Basic': [
+                    ('enable', 'Enter privileged mode'),
+                    ('configure', 'Enter global configuration mode'),
+                    ('exit', 'Exit current mode'),
+                    ('end', 'Return to privileged mode'),
+                    ('write', 'Save configuration'),
+                    ('show running-config', 'Show active configuration'),
+                    ('show version', 'Show firmware and hardware info'),
+                ],
+                'Interfaces': [
+                    ('interface gigabitethernet 1/0/<n>', 'Enter interface config mode'),
+                    ('ip address <ip> <mask>', 'Assign IP to routed interface'),
+                    ('switchport mode access', 'Set port to access mode'),
+                    ('switchport access vlan <id>', 'Assign access VLAN'),
+                    ('switchport mode trunk', 'Set port to trunk mode'),
+                    ('switchport trunk allowed vlan <list>', 'Set allowed VLANs on trunk'),
+                    ('no shutdown', 'Enable the interface'),
+                    ('description <text>', 'Set interface description'),
+                ],
+                'VLANs': [
+                    ('vlan <id>', 'Create VLAN'),
+                    ('name <name>', 'Name the VLAN'),
+                    ('show vlan', 'Display VLAN table'),
+                    ('interface vlan <id>', 'Enter SVI config mode'),
+                ],
+                'Routing': [
+                    ('ip route 0.0.0.0 0.0.0.0 <gw>', 'Add default route'),
+                    ('ip route <net> <mask> <gw>', 'Add static route'),
+                    ('show ip route', 'Display routing table'),
+                    ('router ospf', 'Enter OSPF config mode'),
+                    ('network <net> <wildcard>', 'Announce network in OSPF'),
+                ],
+                'DHCP': [
+                    ('ip dhcp pool <name>', 'Create DHCP pool'),
+                    ('network <subnet> <mask>', 'Define pool subnet'),
+                    ('gateway <ip>', 'Set default gateway for clients'),
+                    ('dns-server <ip>', 'Set DNS server for clients'),
+                    ('ip dhcp excluded-address <start> <end>', 'Exclude IPs from pool'),
+                    ('show ip dhcp binding', 'Show DHCP leases'),
+                ],
+                'Security': [
+                    ('ip ssh server enable', 'Enable SSH server'),
+                    ('no ip telnet server', 'Disable Telnet'),
+                    ('acl number <3000>', 'Create extended ACL'),
+                    ('rule <n> deny protocol tcp src any dst any d-port 23', 'Block Telnet in ACL'),
+                    ('packet-filter <acl> in', 'Apply ACL to interface inbound'),
+                ],
+            },
             'Default': {},
         }
 
@@ -9939,7 +10437,7 @@ class TerminalDialog(QWidget):
 
         # Vendor selector — flat button with icon + name + ▾, opens a QMenu
         _VENDORS = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper',
-                    'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik']
+                    'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik', 'TP-Link']
         initial_vendor = 'Default'
         if self.config:
             saved_vendor = self.config.get('vendor')
@@ -21377,7 +21875,7 @@ class SerialTerminalGUI(QMainWindow):
         if key_file:
             self.ssh_key_path.setText(key_file)
 
-    VENDOR_LIST = ['Default', 'Linux', 'Windows', 'FreeBSD', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik']
+    VENDOR_LIST = ['Default', 'Linux', 'Windows', 'FreeBSD', 'Cisco', 'Huawei', 'H3C', 'Juniper', 'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik', 'TP-Link']
 
     def _create_vendor_icon_widget(self, vendor, row, table='ssh'):
         """Create a clickable vendor icon widget for a profiles table"""
