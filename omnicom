@@ -19633,8 +19633,6 @@ class SerialTerminalGUI(QMainWindow):
             rows.append((local_key, [_icon_item, _ip_item, _status_item, _lat_item, _host_item, _vendor_item]))
             rows.sort(key=lambda x: x[0])
 
-        _local_bg = QBrush(QColor("#1565C0"))
-        _local_fg = QColor("#ffffff")
         _bold_font = self.scan_results_table.font()
         _bold_font.setBold(True)
 
@@ -19644,19 +19642,19 @@ class SerialTerminalGUI(QMainWindow):
             self.scan_results_table.insertRow(r)
             is_local = local_key is not None and ip_val == local_key
             if is_local:
-                # Override status cell to show "This device" badge
+                # Force pc_linux icon
+                _icon_item = QTableWidgetItem()
+                _icon_item.setIcon(self._get_device_icon('pc_linux'))
+                _icon_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                _icon_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                items[0] = _icon_item
+                # Bold IP
+                items[1].setFont(_bold_font)
+                # "This device" status
                 items[2] = QTableWidgetItem("  ★ This device")
-                items[2].setForeground(_local_fg)
             for col, item in enumerate(items):
                 if item:
-                    if is_local:
-                        item.setBackground(_local_bg)
-                        item.setForeground(_local_fg)
-                        if col == 1:
-                            item.setFont(_bold_font)
                     self.scan_results_table.setItem(r, col, item)
-            if is_local:
-                self.scan_results_table.setRowHeight(r, 34)
 
         self.scan_results_table.setSortingEnabled(True)
         self._reset_scan_button()
