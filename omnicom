@@ -19607,10 +19607,19 @@ class SerialTerminalGUI(QMainWindow):
 
         rows.sort(key=lambda x: x[0])
 
-        # Mark local device row (may already exist from scan, or inject if not found)
+        # Mark local device row only when it belongs to the scanned network
         local_ip = getattr(self, '_local_ip', None)
         local_hostname = getattr(self, '_local_hostname', None) or ''
         local_key = None
+        if local_ip:
+            try:
+                net_addr = self.scan_network_input.text().strip()
+                prefix = self.scan_mask_combo.currentText().strip()
+                scanned_net = ipaddress.ip_network(f"{net_addr}/{prefix}", strict=False)
+                if ipaddress.ip_address(local_ip) not in scanned_net:
+                    local_ip = None  # different network — don't inject
+            except Exception:
+                local_ip = None
         if local_ip:
             try:
                 local_key = sum(int(o) * (256 ** (3 - i)) for i, o in enumerate(local_ip.split('.')))
