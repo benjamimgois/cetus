@@ -1,8 +1,94 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
-  <rect x="1"  y="10" width="2.2" height="4"  rx="1.1"/>
-  <rect x="5"  y="6"  width="2.2" height="12" rx="1.1"/>
-  <rect x="9"  y="3"  width="2.2" height="18" rx="1.1"/>
-  <rect x="13" y="6"  width="2.2" height="12" rx="1.1"/>
-  <rect x="17" y="9"  width="2.2" height="6"  rx="1.1"/>
-  <rect x="21" y="11" width="2.2" height="2"  rx="1.1"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 44 34"
+   fill="#ffffff"
+   version="1.1"
+   id="svg6"
+   sodipodi:docname="traffic.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   width="44"
+   height="34"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs6" />
+  <sodipodi:namedview
+     id="namedview6"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="16.729166"
+     inkscape:cx="19.69614"
+     inkscape:cy="21.369863"
+     inkscape:window-width="1920"
+     inkscape:window-height="1012"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg6" />
+  <rect
+     x="6.4608421"
+     y="10.038474"
+     width="3.1918192"
+     height="5.6844039"
+     rx="1.5959096"
+     id="rect1"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <rect
+     x="12.26415"
+     y="4.3540692"
+     width="3.1918192"
+     height="17.053213"
+     rx="1.5959096"
+     id="rect2"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <rect
+     x="18.067457"
+     y="0.09076672"
+     width="3.1918192"
+     height="25.579819"
+     rx="1.5959096"
+     id="rect3"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <rect
+     x="23.870764"
+     y="4.3540692"
+     width="3.1918192"
+     height="17.053213"
+     rx="1.5959096"
+     id="rect4"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <rect
+     x="29.674074"
+     y="8.6173735"
+     width="3.1918192"
+     height="8.5266066"
+     rx="1.5959096"
+     id="rect5"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <rect
+     x="35.477379"
+     y="11.459576"
+     width="3.1918192"
+     height="2.8422019"
+     rx="1.5959096"
+     id="rect6"
+     style="fill:#ffffff;stroke-width:1.43589" />
+  <text
+     xml:space="preserve"
+     style="font-weight:bold;font-size:10.6667px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff"
+     x="0.42692712"
+     y="33.747387"
+     id="text6"><tspan
+       sodipodi:role="line"
+       id="tspan6"
+       x="0.42692712"
+       y="33.747387"
+       style="font-size:10.6667px;fill:#ffffff">TRAFFIC</tspan></text>
 </svg>

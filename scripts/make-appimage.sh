@@ -44,6 +44,14 @@ if [ ! -f "AppDir/omnicom.png" ]; then
     exit 1
 fi
 
+# Sync icons and application files into AppDir
+echo "Syncing icons..."
+mkdir -p AppDir/usr/share/omnicom/icons
+cp assets/icons/*.svg AppDir/usr/share/omnicom/icons/
+mkdir -p AppDir/usr/share/omnicom/vendors
+cp assets/vendors/*.svg AppDir/usr/share/omnicom/vendors/
+cp omnicom AppDir/usr/bin/omnicom 2>/dev/null || true
+
 # Update desktop file paths for AppImage
 echo "Updating desktop file..."
 sed -i 's|Exec=.*|Exec=omnicom|' AppDir/omnicom.desktop

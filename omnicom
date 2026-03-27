@@ -6388,7 +6388,7 @@ class TcpdumpWorker(QThread):
         self._count     = 0
 
     def run(self):
-        cmd = ['tcpdump', '-l', '-n', '-i', self._interface, '-s', str(self._snap_len)]
+        cmd = ['tcpdump', '-l', '-n', '-e', '-i', self._interface, '-s', str(self._snap_len)]
         if self._filter:
             import shlex
             cmd += shlex.split(self._filter)
@@ -13011,38 +13011,143 @@ class SerialTerminalGUI(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     _TRAFFIC_COLOR = '#546E7A'
 
-    _TRAFFIC_PRESETS = [
-        ("All",        "",                                                       "Capture all traffic"),
-        ("HTTP",       "tcp port 80 or tcp port 8080",                           "HTTP web traffic"),
-        ("HTTPS",      "tcp port 443",                                            "HTTPS encrypted traffic"),
-        ("DNS",        "port 53",                                                 "DNS queries and replies"),
-        ("ARP",        "arp",                                                     "ARP requests / replies"),
-        ("ICMP",       "icmp",                                                    "ICMP / ping traffic"),
-        ("DHCP",       "port 67 or port 68",                                      "DHCP discover/offer/request/ack"),
-        ("SSH",        "tcp port 22",                                             "SSH connections"),
-        ("Telnet",     "tcp port 23",                                             "Telnet traffic"),
-        ("FTP",        "tcp port 20 or tcp port 21",                              "FTP control and data"),
-        ("SNMP",       "port 161 or port 162",                                    "SNMP queries and traps"),
-        ("RDP",        "tcp port 3389",                                           "RDP (Windows Remote Desktop)"),
-        ("TCP SYN",    "tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0", "New TCP connection attempts"),
-        ("TCP RST",    "tcp[tcpflags] & tcp-rst != 0",                           "TCP resets (connection drops)"),
-        ("UDP",        "udp",                                                     "All UDP traffic"),
-        ("Broadcast",  "broadcast",                                               "Broadcast frames"),
-        ("Multicast",  "multicast",                                               "Multicast frames"),
-        ("OSPF",       "proto ospf",                                              "OSPF routing protocol"),
-        ("BGP",        "tcp port 179",                                            "BGP routing protocol"),
-        ("VLAN",       "vlan",                                                    "VLAN tagged frames (802.1Q)"),
-        ("Non-ARP",    "not arp and not icmp",                                   "Exclude ARP and ICMP"),
-        ("Large pkts", "greater 1400",                                            "Packets larger than 1400 bytes"),
-    ]
+    _LAYER_ICON = {
+        'All': 'layer_all.svg',
+        'L2':  'layer_l2.svg',
+        'L3':  'layer_l3.svg',
+        'L4':  'layer_l4.svg',
+        'L7':  'layer_l7.svg',
+    }
+
+    _FILTER_ICON = {
+        # All layer
+        'All Traffic': 'proto_all.svg',
+        'Non-ARP':     'proto_nonarp.svg',
+        'Large pkts':  'proto_largepkt.svg',
+        # L2
+        'ARP':         'proto_arp.svg',
+        'Broadcast':   'proto_broadcast.svg',
+        'Multicast':   'proto_multicast.svg',
+        'VLAN':        'proto_vlan.svg',
+        'STP':         'proto_stp.svg',
+        'Non-IP':      'proto_nonip.svg',
+        # L3
+        'ICMP':        'proto_icmp.svg',
+        'ICMPv6':      'proto_icmpv6.svg',
+        'OSPF':        'proto_ospf.svg',
+        'IPv4':        'proto_ipv4.svg',
+        'IPv6':        'proto_ipv6.svg',
+        'Fragmented':  'proto_fragmented.svg',
+        # L4
+        'TCP':         'proto_tcp.svg',
+        'UDP':         'proto_udp.svg',
+        'TCP SYN':     'proto_tcp_syn.svg',
+        'TCP RST':     'proto_tcp_rst.svg',
+        'TCP FIN':     'proto_tcp_fin.svg',
+        # L7
+        'HTTP':        'proto_http.svg',
+        'HTTPS':       'proto_https.svg',
+        'DNS':         'proto_dns.svg',
+        'SSH':         'ssh2.svg',
+        'Telnet':      'telnet.svg',
+        'FTP':         'ftp.svg',
+        'DHCP':        'proto_dhcp.svg',
+        'SNMP':        'snmp.svg',
+        'RDP':         'rdp.svg',
+        'BGP':         'proto_bgp.svg',
+        'SIP':         'proto_sip.svg',
+        'SMB':         'smb.svg',
+    }
+
+    # bg_color, text_color per protocol
+    _PROTO_COLORS = {
+        'ARP':    ('#FFF3E0', '#E65100'),
+        'ICMP':   ('#E0F7FA', '#006064'),
+        'ICMPv6': ('#B2EBF2', '#006064'),
+        'TCP':    ('#E3F2FD', '#0D47A1'),
+        'UDP':    ('#F3E5F5', '#4A148C'),
+        'DNS':    ('#E8F5E9', '#1B5E20'),
+        'HTTP':   ('#E0F2F1', '#004D40'),
+        'HTTPS':  ('#DCEDC8', '#33691E'),
+        'DHCP':   ('#FFF9C4', '#F57F17'),
+        'SSH':    ('#C8E6C9', '#1B5E20'),
+        'Telnet': ('#FFCDD2', '#B71C1C'),
+        'FTP':    ('#FFE0B2', '#BF360C'),
+        'SMTP':   ('#FCE4EC', '#880E4F'),
+        'SNMP':   ('#F8BBD0', '#880E4F'),
+        'RDP':    ('#EDE7F6', '#4527A0'),
+        'VNC':    ('#D1C4E9', '#4527A0'),
+        'SMB':    ('#FFE0B2', '#BF360C'),
+        'OSPF':   ('#EFEBE9', '#4E342E'),
+        'BGP':    ('#E8EAF6', '#1A237E'),
+        'STP':    ('#ECEFF1', '#37474F'),
+        'SIP':    ('#FFF8E1', '#F57F17'),
+        'IPv6':   ('#EDE7F6', '#311B92'),
+        'Other':  ('#F5F5F5', '#424242'),
+    }
+
+    _PORT_PROTO = {
+        20: 'FTP', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
+        53: 'DNS', 67: 'DHCP', 68: 'DHCP', 69: 'FTP', 80: 'HTTP',
+        110: 'SMTP', 143: 'SMTP', 161: 'SNMP', 162: 'SNMP',
+        179: 'BGP', 443: 'HTTPS', 445: 'SMB', 139: 'SMB',
+        587: 'SMTP', 993: 'SMTP', 995: 'SMTP', 3389: 'RDP',
+        5060: 'SIP', 5061: 'SIP', 5900: 'VNC', 8080: 'HTTP', 8443: 'HTTPS',
+    }
+
+    _LAYER_FILTERS = {
+        'All': [
+            ("All Traffic", "",                                                    "Capture everything"),
+            ("Non-ARP",     "not arp and not icmp",                               "Exclude ARP and ICMP"),
+            ("Large pkts",  "greater 1400",                                        "Packets > 1400 bytes"),
+        ],
+        'L2': [
+            ("ARP",         "arp",                                                 "ARP requests / replies"),
+            ("Broadcast",   "broadcast",                                           "Broadcast frames"),
+            ("Multicast",   "multicast",                                           "Multicast frames"),
+            ("VLAN",        "vlan",                                                "VLAN-tagged (802.1Q)"),
+            ("STP",         "stp",                                                 "Spanning Tree Protocol"),
+            ("Non-IP",      "not ip and not ip6",                                  "Non-IP Ethernet frames"),
+        ],
+        'L3': [
+            ("ICMP",        "icmp",                                                "ICMP (ping, unreachable)"),
+            ("ICMPv6",      "icmp6",                                               "ICMPv6"),
+            ("OSPF",        "proto ospf",                                          "OSPF routing protocol"),
+            ("IPv4",        "ip",                                                  "All IPv4 packets"),
+            ("IPv6",        "ip6",                                                 "All IPv6 packets"),
+            ("Fragmented",  "ip[6:2] & 0x1fff != 0",                              "Fragmented IP packets"),
+        ],
+        'L4': [
+            ("TCP",         "tcp",                                                 "All TCP traffic"),
+            ("UDP",         "udp",                                                 "All UDP traffic"),
+            ("TCP SYN",     "tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0", "New connections"),
+            ("TCP RST",     "tcp[tcpflags] & tcp-rst != 0",                       "TCP resets"),
+            ("TCP FIN",     "tcp[tcpflags] & tcp-fin != 0",                       "TCP connection closes"),
+        ],
+        'L7': [
+            ("HTTP",        "tcp port 80 or tcp port 8080",                       "HTTP web traffic"),
+            ("HTTPS",       "tcp port 443",                                        "HTTPS encrypted"),
+            ("DNS",         "port 53",                                             "DNS queries/responses"),
+            ("SSH",         "tcp port 22",                                         "SSH connections"),
+            ("Telnet",      "tcp port 23",                                         "Telnet (plaintext)"),
+            ("FTP",         "tcp port 20 or tcp port 21",                         "FTP control/data"),
+            ("DHCP",        "port 67 or port 68",                                  "DHCP leases"),
+            ("SNMP",        "port 161 or port 162",                                "SNMP queries/traps"),
+            ("RDP",         "tcp port 3389",                                       "RDP remote desktop"),
+            ("BGP",         "tcp port 179",                                        "BGP routing"),
+            ("SIP",         "port 5060 or port 5061",                             "SIP VoIP signalling"),
+            ("SMB",         "tcp port 445 or tcp port 139",                       "SMB file sharing"),
+        ],
+    }
 
     def create_traffic_monitor_page(self):
-        """Create the Traffic Monitor page (live tcpdump capture)."""
-        self._traffic_worker = None
+        """Create the Traffic Monitor page with table view and layer-organised filters."""
+        self._traffic_worker       = None
         self._traffic_packet_count = 0
+        self._traffic_row_buffer   = []
 
-        _C = self._TRAFFIC_COLOR
-        page = QWidget()
+        _C     = self._TRAFFIC_COLOR
+        page   = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
@@ -13064,25 +13169,31 @@ class SerialTerminalGUI(QMainWindow):
         cfg_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         _iface_widget = QWidget()
-        _iface_row = QHBoxLayout(_iface_widget)
+        _iface_row    = QHBoxLayout(_iface_widget)
         _iface_row.setContentsMargins(0, 0, 0, 0)
         _iface_row.setSpacing(8)
 
         self._traffic_iface_combo = FlatComboButton()
-        _interfaces = get_network_interfaces()
+        _interfaces  = get_network_interfaces()
         _iface_names = [iface for iface, _ip, _pfx in _interfaces] if _interfaces else []
-        if _iface_names:
-            self._traffic_iface_combo.addItems(_iface_names)
-        else:
-            self._traffic_iface_combo.addItems(['any'])
+        self._traffic_iface_combo.addItems(_iface_names if _iface_names else ['any'])
         self._traffic_iface_combo.setFixedWidth(160)
         _iface_row.addWidget(self._traffic_iface_combo)
 
+        _snap_tip = (
+            "<b>Snap Length</b> — número máximo de bytes capturados por pacote.<br><br>"
+            "<b>96–256</b> &nbsp;→ cabeçalhos apenas (Ethernet + IP + TCP/UDP + início do payload).<br>"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Menor uso de CPU/memória; ideal para identificar protocolo e IPs.<br>"
+            "<b>512–1500</b> → inclui boa parte do payload; útil para inspecionar HTTP, DNS, etc.<br>"
+            "<b>65535</b> &nbsp;&nbsp;&nbsp;→ captura o pacote inteiro (sem limite)."
+        )
         _snap_label = QLabel("Snap len:")
         _snap_label.setStyleSheet("color: #555; font-size: 9pt;")
+        _snap_label.setToolTip(_snap_tip)
         self._traffic_snaplen_combo = FlatComboButton()
         self._traffic_snaplen_combo.addItems(["96", "256", "512", "1500", "65535"])
         self._traffic_snaplen_combo.setCurrentText("256")
+        self._traffic_snaplen_combo.setToolTip(_snap_tip)
         self._traffic_snaplen_combo.setFixedWidth(80)
         _iface_row.addWidget(_snap_label)
         _iface_row.addWidget(self._traffic_snaplen_combo)
@@ -13100,9 +13211,8 @@ class SerialTerminalGUI(QMainWindow):
         _iface_row.addStretch()
         cfg_layout.addRow("Interface:", _iface_widget)
 
-        # Custom filter input
         _filter_widget = QWidget()
-        _filter_row = QHBoxLayout(_filter_widget)
+        _filter_row    = QHBoxLayout(_filter_widget)
         _filter_row.setContentsMargins(0, 0, 0, 0)
         _filter_row.setSpacing(6)
         self._traffic_filter_input = QLineEdit()
@@ -13122,82 +13232,158 @@ class SerialTerminalGUI(QMainWindow):
         cfg_group.setGraphicsEffect(_shadow)
         layout.addWidget(cfg_group)
 
-        # ── Preset filter buttons ─────────────────────────────────────────
-        _preset_group = QGroupBox("Quick Filters")
-        _preset_group.setStyleSheet(f"""
+        # ── Quick Filters (layer-organised) ──────────────────────────────
+        _qf_group = QGroupBox("Quick Filters")
+        _qf_group.setStyleSheet(f"""
             QGroupBox {{ font-weight: bold; font-size: 9pt;
                 border: 1px solid #c8c8c8; border-radius: 8px;
                 margin-top: 6px; padding-top: 4px; background-color: #f9f9f9; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {_C}; }}
         """)
-        _preset_outer = QVBoxLayout(_preset_group)
-        _preset_outer.setContentsMargins(8, 4, 8, 6)
-        _preset_outer.setSpacing(4)
+        _qf_outer = QVBoxLayout(_qf_group)
+        _qf_outer.setContentsMargins(8, 4, 8, 6)
+        _qf_outer.setSpacing(4)
 
-        _btn_style = f"""
+        # Layer selector row
+        _layer_row_w  = QWidget()
+        _layer_row_lo = QHBoxLayout(_layer_row_w)
+        _layer_row_lo.setContentsMargins(0, 0, 0, 0)
+        _layer_row_lo.setSpacing(4)
+
+        _layer_btn_style = f"""
+            QPushButton {{
+                border: 1px solid #c0c0c0; border-radius: 5px; padding: 3px 14px;
+                background: #e8e8e8; color: #333; font-size: 9pt; font-weight: bold;
+            }}
+            QPushButton:hover   {{ background: #d8d8d8; }}
+            QPushButton:checked {{ background: {_C}; color: white; border-color: {_C}; }}
+        """
+        self._traffic_layer_btns = {}
+        for _ln in self._LAYER_FILTERS:
+            _lb = QPushButton(_ln)
+            _lb.setCheckable(True)
+            _lb.setChecked(_ln == 'All')
+            _lb.setStyleSheet(_layer_btn_style)
+            _lb.setCursor(Qt.CursorShape.PointingHandCursor)
+            _lb_icon_path = self.get_tab_icon_path(self._LAYER_ICON.get(_ln, ''))
+            if _lb_icon_path:
+                _lb_icon = load_svg_icon_dual(_lb_icon_path, 14)
+                if _lb_icon:
+                    _lb.setIcon(_lb_icon)
+                    _lb.setIconSize(QSize(14, 14))
+            _lb.clicked.connect(lambda _, ln=_ln: self._traffic_layer_selected(ln))
+            _layer_row_lo.addWidget(_lb)
+            self._traffic_layer_btns[_ln] = _lb
+        _layer_row_lo.addStretch()
+        _qf_outer.addWidget(_layer_row_w)
+
+        # One stack page per layer — filter preset buttons
+        _filter_btn_style = f"""
             QPushButton {{
                 border: 1px solid #d0d0d0; border-radius: 5px; padding: 3px 10px;
                 background: #f0f0f0; color: #333; font-size: 8pt;
             }}
-            QPushButton:hover {{ background: #e0e0e0; }}
+            QPushButton:hover   {{ background: #e0e0e0; }}
             QPushButton:checked {{ background: {_C}; color: white; border-color: {_C}; font-weight: bold; }}
         """
-        self._traffic_preset_btns = []
-        _row_widget = None
-        _row_layout = None
-        for i, (label, expr, tip) in enumerate(self._TRAFFIC_PRESETS):
-            if i % 8 == 0:
-                _row_widget = QWidget()
-                _row_layout = QHBoxLayout(_row_widget)
-                _row_layout.setContentsMargins(0, 0, 0, 0)
-                _row_layout.setSpacing(4)
-                _preset_outer.addWidget(_row_widget)
-            _b = QPushButton(label)
-            _b.setCheckable(True)
-            _b.setChecked(label == "All")
-            _b.setToolTip(tip)
-            _b.setStyleSheet(_btn_style)
-            _b.setCursor(Qt.CursorShape.PointingHandCursor)
-            _expr = expr  # capture
-            _b.clicked.connect(lambda _, e=_expr, b=_b: self._traffic_preset_clicked(e, b))
-            _row_layout.addWidget(_b)
-            self._traffic_preset_btns.append((_b, expr))
-        if _row_layout:
-            _row_layout.addStretch()
+        self._traffic_filter_stack = QStackedWidget()
+        for _ln, _filters in self._LAYER_FILTERS.items():
+            _pg_w  = QWidget()
+            _pg_lo = QHBoxLayout(_pg_w)
+            _pg_lo.setContentsMargins(0, 0, 0, 0)
+            _pg_lo.setSpacing(4)
+            for _label, _expr, _tip in _filters:
+                _fb = QPushButton(_label)
+                _fb.setCheckable(True)
+                _fb.setChecked(_label == 'All Traffic')
+                _fb.setToolTip(_tip)
+                _fb.setStyleSheet(_filter_btn_style)
+                _fb.setCursor(Qt.CursorShape.PointingHandCursor)
+                _fb_icon_path = self.get_tab_icon_path(self._FILTER_ICON.get(_label, ''))
+                if _fb_icon_path:
+                    _fb_icon = load_svg_icon_dual(_fb_icon_path, 13)
+                    if _fb_icon:
+                        _fb.setIcon(_fb_icon)
+                        _fb.setIconSize(QSize(13, 13))
+                _fb.clicked.connect(lambda _, e=_expr, b=_fb: self._traffic_preset_clicked(e, b))
+                _pg_lo.addWidget(_fb)
+            _pg_lo.addStretch()
+            self._traffic_filter_stack.addWidget(_pg_w)
+        _qf_outer.addWidget(self._traffic_filter_stack)
 
         _shadow2 = QGraphicsDropShadowEffect()
         _shadow2.setBlurRadius(15); _shadow2.setXOffset(0); _shadow2.setYOffset(2)
         _shadow2.setColor(QColor(0, 0, 0, 30))
-        _preset_group.setGraphicsEffect(_shadow2)
-        layout.addWidget(_preset_group)
+        _qf_group.setGraphicsEffect(_shadow2)
+        layout.addWidget(_qf_group)
 
-        # ── Output display ────────────────────────────────────────────────
-        self._traffic_output = QPlainTextEdit()
-        self._traffic_output.setReadOnly(True)
-        self._traffic_output.setMaximumBlockCount(5000)
-        self._traffic_output.setFont(QFont("Monospace", 9))
-        self._traffic_output.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #1e2228;
-                color: #a8d8a8;
-                border: 1px solid #333;
-                border-radius: 8px;
-                padding: 6px;
-                selection-background-color: #546E7A;
-            }
+        # ── Packet table ──────────────────────────────────────────────────
+        self._traffic_sort_state = {}   # col → Qt.SortOrder or absent (=unsorted)
+        self._traffic_table = QTableWidget(0, 8)  # col 7 hidden: original order
+        self._traffic_table.setHorizontalHeaderLabels(
+            ['Time', 'Source', 'Destination', 'Protocol', 'Layer', 'Len', 'Info', '_seq'])
+        self._traffic_table.setColumnHidden(7, True)
+        self._traffic_table.setSortingEnabled(False)
+        self._traffic_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._traffic_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._traffic_table.setAlternatingRowColors(False)
+        self._traffic_table.verticalHeader().setVisible(False)
+        self._traffic_table.verticalHeader().setDefaultSectionSize(20)
+        _hdr = self._traffic_table.horizontalHeader()
+        _hdr.setSortIndicatorShown(True)
+        _hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        _hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        _hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        _hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        _hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        _hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        _hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self._traffic_table.setColumnWidth(0, 110)
+        self._traffic_table.setColumnWidth(1, 145)
+        self._traffic_table.setColumnWidth(2, 145)
+        self._traffic_table.setColumnWidth(3, 75)
+        self._traffic_table.setColumnWidth(4, 45)
+        self._traffic_table.setColumnWidth(5, 50)
+        self._traffic_table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: #ffffff;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                gridline-color: #e8e8e8;
+                font-size: 8pt;
+                font-family: monospace;
+            }}
+            QTableWidget::item {{ padding: 1px 4px; }}
+            QTableWidget::item:selected {{ background-color: {_C}; color: white; }}
+            QHeaderView::section {{
+                background-color: #f0f0f0; color: #333;
+                padding: 4px 6px; border: none;
+                border-right: 1px solid #e0e0e0;
+                border-bottom: 1px solid #d0d0d0;
+                font-weight: bold; font-size: 8pt;
+                cursor: pointer;
+            }}
+            QHeaderView::section:hover {{ background-color: #e0e0e0; }}
         """)
-        layout.addWidget(self._traffic_output, 1)
+        _hdr.sectionClicked.connect(self._traffic_sort_by_col)
+        self._traffic_table.itemSelectionChanged.connect(self._traffic_on_row_selected)
+        layout.addWidget(self._traffic_table, 1)
 
-        # ── Bottom status + buttons ───────────────────────────────────────
-        _bottom = QWidget()
-        _bottom_row = QHBoxLayout(_bottom)
-        _bottom_row.setContentsMargins(0, 0, 0, 0)
-        _bottom_row.setSpacing(8)
+        # Flush timer for batch row inserts (150 ms)
+        self._traffic_flush_timer = QTimer()
+        self._traffic_flush_timer.setInterval(150)
+        self._traffic_flush_timer.timeout.connect(self._traffic_flush_rows)
+
+        # ── Bottom status + Clear ─────────────────────────────────────────
+        _bottom    = QWidget()
+        _bottom_lo = QHBoxLayout(_bottom)
+        _bottom_lo.setContentsMargins(0, 0, 0, 0)
+        _bottom_lo.setSpacing(8)
 
         self._traffic_status_lbl = QLabel("Packets: 0")
         self._traffic_status_lbl.setStyleSheet("color: #555; font-size: 9pt;")
-        _bottom_row.addWidget(self._traffic_status_lbl)
-        _bottom_row.addStretch()
+        _bottom_lo.addWidget(self._traffic_status_lbl)
+        _bottom_lo.addStretch()
 
         _clear_btn = QPushButton("Clear")
         _clear_btn.setFixedWidth(80)
@@ -13208,9 +13394,25 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:hover {{ background: #e0e0e0; }}
         """)
         _clear_btn.clicked.connect(self._traffic_clear)
-        _bottom_row.addWidget(_clear_btn)
-
+        _bottom_lo.addWidget(_clear_btn)
         layout.addWidget(_bottom)
+
+        # ── Packet description label ──────────────────────────────────────
+        self._traffic_packet_desc = QLabel("")
+        self._traffic_packet_desc.setWordWrap(True)
+        self._traffic_packet_desc.setStyleSheet(f"""
+            QLabel {{
+                color: #37474F;
+                background: #ECEFF1;
+                border: 1px solid #CFD8DC;
+                border-radius: 5px;
+                padding: 4px 8px;
+                font-size: 8pt;
+            }}
+        """)
+        self._traffic_packet_desc.setMinimumHeight(30)
+        self._traffic_packet_desc.hide()
+        layout.addWidget(self._traffic_packet_desc)
 
         # ── Big START button ──────────────────────────────────────────────
         self._traffic_start_btn = QPushButton("START CAPTURE")
@@ -13219,7 +13421,7 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_start_btn.setStyleSheet(f"""
             QPushButton {{ background-color: {_C}; color: white; border: none;
                 border-radius: 8px; font-weight: bold; font-size: 11pt; }}
-            QPushButton:hover {{ background-color: #455a64; }}
+            QPushButton:hover   {{ background-color: #455a64; }}
             QPushButton:pressed {{ background-color: #37474f; }}
         """)
         self._traffic_start_btn.clicked.connect(self._traffic_start_stop)
@@ -13227,19 +13429,151 @@ class SerialTerminalGUI(QMainWindow):
 
         return page
 
+    @staticmethod
+    def _traffic_parse_line(line):
+        """Parse a tcpdump -e -n output line into (time, src, dst, proto, layer, len, info)."""
+        import re
+        line = line.strip()
+        if not line:
+            return None
+
+        # Expected format (tcpdump -e -n):
+        #   HH:MM:SS.ffffff  SRC_MAC > DST_MAC, ethertype TYPE (0xNNNN), length NNN: payload
+        m = re.match(
+            r'^(\d\d:\d\d:\d\d\.\d+)\s+'
+            r'(\S+)\s+>\s+(\S+),\s+'
+            r'ethertype\s+(\S+)\s+\([^)]+\),\s+'
+            r'length\s+(\d+):\s*(.*)',
+            line, re.IGNORECASE,
+        )
+        if not m:
+            return None
+
+        time_s, src_mac, dst_mac, eth_type, length, rest = m.groups()
+        src, dst, proto, layer = src_mac, dst_mac, eth_type, 'L2'
+
+        if eth_type in ('IPv4', 'IPv6'):
+            layer = 'L3'
+            proto = 'IPv4' if eth_type == 'IPv4' else 'IPv6'
+
+            # Payload starts with:  SRC_ADDR.PORT > DST_ADDR.PORT: flags...
+            # Use non-greedy + ": " boundary to handle IPv6 colons correctly.
+            ip_m = re.match(r'(\S+)\s+>\s+(.+?):\s(.*)', rest)
+            if ip_m:
+                src_ep, dst_ep, rest = ip_m.groups()
+
+                def _split_ep(ep):
+                    """Return (address, port_int_or_None). Port follows last dot."""
+                    dot = ep.rfind('.')
+                    if dot < 0:
+                        return ep, None
+                    tail = ep[dot + 1:]
+                    # For plain IPv4 (3 dots) the last segment is the 4th octet, not a port
+                    if tail.isdigit() and ep.count('.') != 3:
+                        return ep[:dot], int(tail)
+                    return ep, None
+
+                src_ip, src_port = _split_ep(src_ep)
+                dst_ip, dst_port = _split_ep(dst_ep)
+                src, dst = src_ip, dst_ip
+
+                # Map well-known port → application-layer protocol name
+                proto_from_port = None
+                for _p in (dst_port, src_port):
+                    if _p and _p in SerialTerminalGUI._PORT_PROTO:
+                        proto_from_port = SerialTerminalGUI._PORT_PROTO[_p]
+                        break
+
+                # Identify transport / application protocol from payload hint
+                rest_up = rest.upper()
+                if rest.startswith('Flags') or 'SEQ' in rest_up:
+                    l4 = proto_from_port or 'TCP'
+                elif rest.startswith('UDP'):
+                    l4 = proto_from_port or 'UDP'
+                elif 'ICMP' in rest_up:
+                    l4 = 'ICMPv6' if eth_type == 'IPv6' else 'ICMP'
+                elif 'OSPF' in rest_up:
+                    l4 = 'OSPF'
+                elif proto_from_port:
+                    l4 = proto_from_port
+                else:
+                    l4 = None
+
+                if l4:
+                    proto = l4
+                    layer = 'L4' if l4 in ('TCP', 'UDP', 'ICMP', 'ICMPv6', 'OSPF') else 'L7'
+
+        elif eth_type == 'ARP':
+            proto, layer = 'ARP',  'L2'
+        elif eth_type == 'LLDP':
+            proto, layer = 'LLDP', 'L2'
+
+        info = (rest or '')[:100]
+        return (time_s, src, dst, proto, layer, length, info)
+
+    def _traffic_flush_rows(self):
+        """Batch-insert buffered rows into the packet table (called every 150 ms)."""
+        if not self._traffic_row_buffer:
+            return
+        rows = self._traffic_row_buffer[:]
+        self._traffic_row_buffer.clear()
+
+        tbl = self._traffic_table
+        tbl.setUpdatesEnabled(False)
+        for time_s, src, dst, proto, layer, length, info in rows:
+            bg_hex, fg_hex = self._PROTO_COLORS.get(proto, self._PROTO_COLORS['Other'])
+            bg = QColor(bg_hex)
+            fg = QColor(fg_hex)
+            row_idx = tbl.rowCount()
+            tbl.insertRow(row_idx)
+            for col, text in enumerate([time_s, src, dst, proto, layer, str(length), info]):
+                item = QTableWidgetItem(text)
+                item.setBackground(QBrush(bg))
+                item.setForeground(QBrush(fg))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                tbl.setItem(row_idx, col, item)
+            # Hidden column 7: zero-padded sequence for restore-sort
+            seq_item = QTableWidgetItem(f'{self._traffic_packet_count:010d}')
+            seq_item.setFlags(seq_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            tbl.setItem(row_idx, 7, seq_item)
+        tbl.setUpdatesEnabled(True)
+
+        # Cap table at 3 000 rows — discard oldest
+        excess = tbl.rowCount() - 3000
+        if excess > 0:
+            tbl.setUpdatesEnabled(False)
+            for _ in range(excess):
+                tbl.removeRow(0)
+            tbl.setUpdatesEnabled(True)
+
+        tbl.scrollToBottom()
+
+    def _traffic_layer_selected(self, layer_name):
+        """Switch the filter-button panel to the chosen OSI layer."""
+        for name, btn in self._traffic_layer_btns.items():
+            btn.setChecked(name == layer_name)
+        layer_names = list(self._LAYER_FILTERS.keys())
+        if layer_name in layer_names:
+            self._traffic_filter_stack.setCurrentIndex(layer_names.index(layer_name))
+
     def _traffic_preset_clicked(self, expr, clicked_btn):
-        """Select a quick filter preset."""
-        for btn, _ in self._traffic_preset_btns:
-            btn.setChecked(btn is clicked_btn)
+        """Apply a quick-filter preset button."""
+        for i in range(self._traffic_filter_stack.count()):
+            for btn in self._traffic_filter_stack.widget(i).findChildren(QPushButton):
+                btn.setChecked(False)
+        clicked_btn.setChecked(True)
         self._traffic_filter_input.setText(expr)
 
     def _traffic_clear(self):
-        self._traffic_output.clear()
+        self._traffic_table.setRowCount(0)
+        self._traffic_row_buffer.clear()
         self._traffic_packet_count = 0
         self._traffic_status_lbl.setText("Packets: 0")
 
     def _traffic_start_stop(self):
         if self._traffic_worker and self._traffic_worker.isRunning():
+            self._traffic_flush_timer.stop()
+            self._traffic_flush_rows()
             self._traffic_worker.stop()
             self._traffic_worker.wait(2000)
             self._traffic_worker = None
@@ -13247,10 +13581,9 @@ class SerialTerminalGUI(QMainWindow):
             self._traffic_start_btn.setStyleSheet(f"""
                 QPushButton {{ background-color: {self._TRAFFIC_COLOR}; color: white; border: none;
                     border-radius: 8px; font-weight: bold; font-size: 11pt; }}
-                QPushButton:hover {{ background-color: #455a64; }}
+                QPushButton:hover   {{ background-color: #455a64; }}
                 QPushButton:pressed {{ background-color: #37474f; }}
             """)
-            self._traffic_output.appendPlainText("\n--- Capture stopped ---")
             return
 
         iface    = self._traffic_iface_combo.currentText()
@@ -13271,17 +13604,16 @@ class SerialTerminalGUI(QMainWindow):
             sudo_pw = pw
 
         self._traffic_packet_count = 0
-        self._traffic_output.clear()
-        self._traffic_output.appendPlainText(
-            f"--- Starting capture on {iface}"
-            + (f"  filter: {filt}" if filt else "  (no filter)") + " ---\n"
-        )
+        self._traffic_row_buffer.clear()
+        self._traffic_table.setRowCount(0)
+        self._traffic_status_lbl.setText("Packets: 0")
 
         self._traffic_worker = TcpdumpWorker(iface, filt, snap_len, sudo_pw)
         self._traffic_worker.line_received.connect(self._traffic_on_line)
         self._traffic_worker.packet_count_updated.connect(self._traffic_on_count)
         self._traffic_worker.error_occurred.connect(self._traffic_on_error)
         self._traffic_worker.start()
+        self._traffic_flush_timer.start()
 
         self._traffic_start_btn.setText("STOP CAPTURE")
         self._traffic_start_btn.setStyleSheet("""
@@ -13291,16 +13623,17 @@ class SerialTerminalGUI(QMainWindow):
         """)
 
     def _traffic_on_line(self, line):
-        self._traffic_output.appendPlainText(line)
-        sb = self._traffic_output.verticalScrollBar()
-        sb.setValue(sb.maximum())
+        parsed = self._traffic_parse_line(line)
+        if parsed:
+            self._traffic_row_buffer.append(parsed)
 
     def _traffic_on_count(self, count):
         self._traffic_packet_count = count
         self._traffic_status_lbl.setText(f"Packets: {count}")
 
     def _traffic_on_error(self, msg):
-        self._traffic_output.appendPlainText(f"\n[ERROR] {msg}")
+        from PyQt6.QtWidgets import QMessageBox
+        self._traffic_flush_timer.stop()
         if self._traffic_worker:
             self._traffic_worker = None
         self._traffic_start_btn.setText("START CAPTURE")
@@ -13309,6 +13642,186 @@ class SerialTerminalGUI(QMainWindow):
                 border-radius: 8px; font-weight: bold; font-size: 11pt; }}
             QPushButton:hover {{ background-color: #455a64; }}
         """)
+        QMessageBox.warning(self, "tcpdump error", msg)
+
+    def _traffic_sort_by_col(self, col):
+        """Cycle sort on column header click: ascending → descending → original order."""
+        if col >= 7:   # ignore hidden sequence column
+            return
+        tbl   = self._traffic_table
+        state = self._traffic_sort_state.get(col)
+        hdr   = tbl.horizontalHeader()
+        if state is None:
+            # First click → ascending
+            tbl.sortItems(col, Qt.SortOrder.AscendingOrder)
+            self._traffic_sort_state = {col: Qt.SortOrder.AscendingOrder}
+            hdr.setSortIndicator(col, Qt.SortOrder.AscendingOrder)
+            hdr.setSortIndicatorShown(True)
+        elif state == Qt.SortOrder.AscendingOrder:
+            # Second click → descending
+            tbl.sortItems(col, Qt.SortOrder.DescendingOrder)
+            self._traffic_sort_state = {col: Qt.SortOrder.DescendingOrder}
+            hdr.setSortIndicator(col, Qt.SortOrder.DescendingOrder)
+        else:
+            # Third click → restore capture order (sort by hidden seq column)
+            tbl.sortItems(7, Qt.SortOrder.AscendingOrder)
+            self._traffic_sort_state = {}
+            hdr.setSortIndicatorShown(False)
+
+    def _traffic_on_row_selected(self):
+        """Update packet description label when a row is selected."""
+        row = self._traffic_table.currentRow()
+        if row < 0:
+            self._traffic_packet_desc.hide()
+            return
+
+        def _cell(c):
+            item = self._traffic_table.item(row, c)
+            return item.text() if item else ''
+
+        proto = _cell(3)
+        src   = _cell(1)
+        dst   = _cell(2)
+        info  = _cell(6)
+        length = _cell(5)
+        time_s = _cell(0)
+
+        desc = self._traffic_describe_packet(proto, src, dst, info)
+        self._traffic_packet_desc.setText(f'[{time_s}]  {desc}  •  {length} bytes')
+        self._traffic_packet_desc.show()
+
+    @staticmethod
+    def _traffic_describe_packet(proto, src, dst, info):
+        """Return a human-readable description for a captured packet."""
+        il = info.lower()
+
+        def _arp():
+            if 'request' in il:
+                # Extract "who-has X tell Y" if present
+                import re
+                m = re.search(r'who-has\s+(\S+)', info)
+                target = m.group(1).rstrip(',') if m else dst
+                return f'ARP Request: who has {target}? Sent by {src}'
+            return f'ARP Reply: {src} reports its MAC address'
+
+        def _icmp():
+            if 'request' in il or 'echo' in il and 'reply' not in il:
+                return f'Ping request from {src} → {dst}'
+            if 'reply' in il:
+                return f'Ping reply from {src} → {dst}'
+            if 'unreachable' in il:
+                return f'ICMP Unreachable: {src} could not reach {dst}'
+            if 'redirect' in il:
+                return f'ICMP Redirect from {src}'
+            return f'ICMP message from {src} → {dst}'
+
+        def _tcp():
+            if 'flags [s]' in il or ('[s,' in il) or ('syn' in il and 'ack' not in il):
+                return f'TCP SYN: {src} is opening a connection to {dst}'
+            if 'flags [s.]' in il or ('syn' in il and 'ack' in il):
+                return f'TCP SYN-ACK: {dst} accepted the connection from {src}'
+            if '[r' in il or 'rst' in il:
+                return f'TCP Reset: connection between {src} and {dst} was abruptly closed'
+            if '[f' in il or 'fin' in il:
+                return f'TCP FIN: {src} is closing the connection to {dst}'
+            return f'TCP data exchange between {src} and {dst}'
+
+        def _dns():
+            import re
+            # Query
+            m = re.search(r'\?\s+(\S+)', info)
+            if m:
+                return f'DNS Query from {src}: resolving "{m.group(1).rstrip(".")}"'
+            # Response with IP
+            m2 = re.search(r'A\s+([\d.]+)', info)
+            if m2:
+                return f'DNS Response from {src}: resolved to {m2.group(1)}'
+            return f'DNS traffic between {src} and {dst}'
+
+        def _dhcp():
+            if 'discover' in il:
+                return f'DHCP Discover: {src} is broadcasting to find a DHCP server'
+            if 'offer' in il:
+                return f'DHCP Offer: server {src} is proposing an IP address'
+            if 'request' in il:
+                return f'DHCP Request: {src} is requesting IP address confirmation'
+            if 'ack' in il:
+                return f'DHCP ACK: server confirmed IP address assignment to {dst}'
+            if 'nak' in il or 'nack' in il:
+                return f'DHCP NAK: server {src} refused the request from {dst}'
+            return f'DHCP message between {src} and {dst}'
+
+        def _http():
+            import re
+            m = re.match(r'(GET|POST|PUT|DELETE|HEAD|PATCH|OPTIONS)\s+(\S+)', info, re.I)
+            if m:
+                return f'HTTP {m.group(1).upper()} {m.group(2)} from {src} to {dst}'
+            if re.match(r'HTTP/\d', info):
+                m2 = re.search(r'HTTP/[\d.]+ (\d{3})', info)
+                code = m2.group(1) if m2 else '?'
+                return f'HTTP Response {code} from {src} to {dst}'
+            return f'HTTP traffic between {src} and {dst}'
+
+        def _ospf():
+            if 'hello' in il:
+                return f'OSPF Hello: router {src} is advertising its presence on the link'
+            if 'lsa' in il or 'update' in il:
+                return f'OSPF LSA Update from {src}: routing topology change'
+            if 'dbdesc' in il or 'database' in il:
+                return f'OSPF Database Description from {src}'
+            return f'OSPF routing protocol message from {src}'
+
+        def _sip():
+            import re
+            m = re.match(r'(INVITE|BYE|REGISTER|ACK|CANCEL|OPTIONS|PRACK)\s', info, re.I)
+            if m:
+                method = m.group(1).upper()
+                actions = {
+                    'INVITE': f'SIP INVITE: {src} is initiating a call to {dst}',
+                    'BYE': f'SIP BYE: {src} is ending the call with {dst}',
+                    'REGISTER': f'SIP REGISTER: {src} is registering with {dst}',
+                    'ACK': f'SIP ACK: {src} confirmed the call setup with {dst}',
+                    'CANCEL': f'SIP CANCEL: {src} cancelled the call to {dst}',
+                }
+                return actions.get(method, f'SIP {method} from {src} to {dst}')
+            return f'SIP VoIP signalling between {src} and {dst}'
+
+        dispatch = {
+            'ARP':    _arp,
+            'ICMP':   _icmp,
+            'ICMPv6': lambda: f'ICMPv6 message from {src} → {dst}' + (f': {info[:60]}' if info else ''),
+            'TCP':    _tcp,
+            'UDP':    lambda: f'UDP datagram from {src} → {dst}',
+            'DNS':    _dns,
+            'HTTP':   _http,
+            'HTTPS':  lambda: f'HTTPS encrypted traffic between {src} and {dst}',
+            'DHCP':   _dhcp,
+            'SSH':    lambda: f'SSH encrypted session between {src} and {dst}',
+            'Telnet': lambda: f'Telnet (cleartext) session from {src} to {dst}',
+            'FTP':    lambda: f'FTP file transfer control/data between {src} and {dst}',
+            'SMTP':   lambda: f'SMTP email message from {src} to {dst}',
+            'SNMP':   lambda: (
+                f'SNMP query from {src} to {dst}' if '161' in dst
+                else f'SNMP trap from {src} to {dst}'
+            ),
+            'RDP':    lambda: f'RDP remote desktop session from {src} to {dst}',
+            'VNC':    lambda: f'VNC remote desktop session from {src} to {dst}',
+            'SMB':    lambda: f'SMB file sharing traffic between {src} and {dst}',
+            'OSPF':   _ospf,
+            'BGP':    lambda: f'BGP routing protocol exchange between {src} and {dst}',
+            'STP':    lambda: f'STP BPDU from {src} — spanning-tree topology message',
+            'SIP':    _sip,
+            'LLDP':   lambda: f'LLDP: {src} is announcing its identity and capabilities',
+            'IPv4':   lambda: f'IPv4 packet from {src} to {dst}',
+            'IPv6':   lambda: f'IPv6 packet from {src} to {dst}',
+        }
+        fn = dispatch.get(proto)
+        if fn:
+            try:
+                return fn()
+            except Exception:
+                pass
+        return f'{proto} traffic from {src} to {dst}' + (f' — {info[:60]}' if info else '')
 
     def create_filetransfer_page(self):
         """Create the File Transfer page (SSH/SMB/FTP/TFTP, Server/Client modes)"""

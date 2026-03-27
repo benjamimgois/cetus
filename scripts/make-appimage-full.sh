@@ -77,7 +77,10 @@ fi
 # Copy application files
 echo "Copying application files..."
 cp omnicom AppDir-full/usr/bin/
-cp arrow_down.svg AppDir-full/usr/share/omnicom/
+mkdir -p AppDir-full/usr/share/omnicom/icons
+cp assets/icons/*.svg AppDir-full/usr/share/omnicom/icons/
+mkdir -p AppDir-full/usr/share/omnicom/vendors
+cp assets/vendors/*.svg AppDir-full/usr/share/omnicom/vendors/
 cp omnicom.png AppDir-full/
 cp omnicom.desktop AppDir-full/
 
