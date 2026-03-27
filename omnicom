@@ -265,7 +265,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
+from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QBrush, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
 
 try:
     from PyQt6.QtSvg import QSvgRenderer
