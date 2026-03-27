@@ -19190,9 +19190,16 @@ class SerialTerminalGUI(QMainWindow):
 
     def _scan_auto_detect_network(self):
         """Auto-detect the network from the first active interface"""
+        self._local_ip = None
+        self._local_hostname = None
         interfaces = get_network_interfaces()
         if interfaces:
             iface, ip, prefix_len = interfaces[0]
+            self._local_ip = ip
+            try:
+                self._local_hostname = socket.gethostname()
+            except Exception:
+                self._local_hostname = ""
             try:
                 network = ipaddress.ip_network(f"{ip}/{prefix_len}", strict=False)
                 self.scan_network_input.setText(str(network.network_address))
@@ -19601,13 +19608,61 @@ class SerialTerminalGUI(QMainWindow):
 
         rows.sort(key=lambda x: x[0])
 
+        # Determine local device sort key and inject it into rows list
+        local_ip = getattr(self, '_local_ip', None)
+        local_hostname = getattr(self, '_local_hostname', None) or ''
+        local_row_data = None
+        if local_ip:
+            try:
+                local_key = sum(int(o) * (256 ** (3 - i)) for i, o in enumerate(local_ip.split('.')))
+            except Exception:
+                local_key = None
+            if local_key is not None:
+                device_type = self._detect_device_type('', local_hostname, '', '')
+                device_icon = self._get_device_icon(device_type)
+
+                _icon_item = QTableWidgetItem()
+                _icon_item.setIcon(device_icon)
+                _icon_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                _icon_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                _ip_item = QTableWidgetItem(local_ip)
+                _ip_item.setData(Qt.ItemDataRole.UserRole, local_key)
+                _ip_item.setFont(_bold := _ip_item.font())
+                _bold.setBold(True)
+                _ip_item.setFont(_bold)
+
+                _status_item = QTableWidgetItem("This device")
+                _status_item.setForeground(QColor("#ffffff"))
+
+                _lat_item = QTableWidgetItem("0.0")
+                _lat_item.setData(Qt.ItemDataRole.UserRole, 0.0)
+                _lat_item.setForeground(QColor("#ffffff"))
+
+                _host_item = QTableWidgetItem(local_hostname)
+                _host_item.setForeground(QColor("#ffffff"))
+
+                _vendor_item = QTableWidgetItem("")
+                _vendor_item.setForeground(QColor("#ffffff"))
+
+                local_row_data = (local_key, [_icon_item, _ip_item, _status_item, _lat_item, _host_item, _vendor_item])
+                rows.append(local_row_data)
+                rows.sort(key=lambda x: x[0])
+
+        _local_bg = QColor("#1976D2")  # blue highlight for local device
+
         self.scan_results_table.setRowCount(0)
-        for _, items in rows:
+        for ip_val, items in rows:
             r = self.scan_results_table.rowCount()
             self.scan_results_table.insertRow(r)
+            is_local = local_row_data is not None and ip_val == local_row_data[0]
             for col, item in enumerate(items):
                 if item:
+                    if is_local:
+                        item.setBackground(_local_bg)
                     self.scan_results_table.setItem(r, col, item)
+            if is_local:
+                self.scan_results_table.setRowHeight(r, 34)
 
         self.scan_results_table.setSortingEnabled(True)
         self._reset_scan_button()
