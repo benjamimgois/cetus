@@ -6371,6 +6371,76 @@ class FileTransferWorker(QThread):
             self.finished.emit(False, str(e))
 
 
+class TcpdumpWorker(QThread):
+    """Run tcpdump and stream output line by line."""
+    line_received       = pyqtSignal(str)
+    error_occurred      = pyqtSignal(str)
+    packet_count_updated = pyqtSignal(int)
+
+    def __init__(self, interface, filter_expr, snap_len=128, sudo_password=None):
+        super().__init__()
+        self._interface = interface
+        self._filter    = filter_expr.strip()
+        self._snap_len  = snap_len
+        self._sudo_pw   = sudo_password
+        self._proc      = None
+        self._running   = False
+        self._count     = 0
+
+    def run(self):
+        cmd = ['tcpdump', '-l', '-n', '-i', self._interface, '-s', str(self._snap_len)]
+        if self._filter:
+            import shlex
+            cmd += shlex.split(self._filter)
+        if self._sudo_pw is not None:
+            cmd = ['sudo', '-S'] + cmd
+        try:
+            stdin_pipe = subprocess.PIPE if self._sudo_pw is not None else None
+            self._proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=stdin_pipe,
+                text=True,
+                bufsize=1,
+            )
+            if self._sudo_pw is not None:
+                try:
+                    self._proc.stdin.write(self._sudo_pw + '\n')
+                    self._proc.stdin.flush()
+                    self._proc.stdin.close()
+                except Exception:
+                    pass
+            self._running = True
+            for line in self._proc.stdout:
+                if not self._running:
+                    break
+                line = line.rstrip('\n')
+                if line:
+                    if 'password' in line.lower() and self._sudo_pw is not None:
+                        continue
+                    self._count += 1
+                    self.line_received.emit(line)
+                    self.packet_count_updated.emit(self._count)
+        except FileNotFoundError:
+            self.error_occurred.emit("tcpdump not found — install it with: sudo apt install tcpdump")
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def stop(self):
+        self._running = False
+        if self._proc:
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=2)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
+
+
 class WiFiScanWorker(QThread):
     """Worker thread that scans for WiFi networks using nmcli."""
 
@@ -12334,6 +12404,20 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_tab_btn.clicked.connect(lambda: self.switch_tab(6))
         self.iperf_tab_btn.setStyleSheet(tab_btn_style.format(color='#00897B'))
         tab_layout.addWidget(self.iperf_tab_btn)
+
+        self.traffic_tab_btn = QPushButton()
+        self.traffic_tab_btn.setFixedSize(62, 52)
+        _traffic_icon_path = self.get_tab_icon_path('traffic.svg')
+        _traffic_icon = load_svg_icon(_traffic_icon_path, icon_size) if _traffic_icon_path else None
+        if _traffic_icon:
+            self.traffic_tab_btn.setIcon(_traffic_icon)
+            self.traffic_tab_btn.setIconSize(self.traffic_tab_btn.size() * 0.7)
+        self.traffic_tab_btn.setToolTip("Traffic Monitor\nLive packet capture via tcpdump")
+        self.traffic_tab_btn.setCheckable(True)
+        self.traffic_tab_btn.clicked.connect(lambda: self.switch_tab(8))
+        self.traffic_tab_btn.setStyleSheet(tab_btn_style.format(color='#546E7A'))
+        tab_layout.addWidget(self.traffic_tab_btn)
+
         tab_layout.addWidget(self.tftp_tab_btn)
 
         tab_layout.addStretch()
@@ -12402,6 +12486,10 @@ class SerialTerminalGUI(QMainWindow):
         self.tftp_page = self.create_filetransfer_page()
         self.content_stack.addWidget(self.tftp_page)
 
+        # Create Traffic Monitor page (index 8)
+        self.traffic_page = self.create_traffic_monitor_page()
+        self.content_stack.addWidget(self.traffic_page)
+
         # Add to main layout
         main_h_layout.addWidget(self.tab_widget)
         main_h_layout.addWidget(self.content_stack, 1)
@@ -12422,8 +12510,9 @@ class SerialTerminalGUI(QMainWindow):
         self.wifi_tab_btn.setChecked(index == 5)
         self.iperf_tab_btn.setChecked(index == 6)
         self.tftp_tab_btn.setChecked(index == 7)
+        self.traffic_tab_btn.setChecked(index == 8)
         modes = {0: 'ssh', 1: 'serial', 2: 'ipscan', 3: 'snmp',
-                 4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp'}
+                 4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp', 8: 'traffic'}
         self.config.set('connection_mode', modes.get(index, 'ssh'))
 
     def _show_about_dialog(self):
@@ -12916,6 +13005,310 @@ class SerialTerminalGUI(QMainWindow):
         self.refresh_serial_profiles()
 
         return page
+
+    # ──────────────────────────────────────────────────────────────────────
+    # TRAFFIC MONITOR
+    # ──────────────────────────────────────────────────────────────────────
+    _TRAFFIC_COLOR = '#546E7A'
+
+    _TRAFFIC_PRESETS = [
+        ("All",        "",                                                       "Capture all traffic"),
+        ("HTTP",       "tcp port 80 or tcp port 8080",                           "HTTP web traffic"),
+        ("HTTPS",      "tcp port 443",                                            "HTTPS encrypted traffic"),
+        ("DNS",        "port 53",                                                 "DNS queries and replies"),
+        ("ARP",        "arp",                                                     "ARP requests / replies"),
+        ("ICMP",       "icmp",                                                    "ICMP / ping traffic"),
+        ("DHCP",       "port 67 or port 68",                                      "DHCP discover/offer/request/ack"),
+        ("SSH",        "tcp port 22",                                             "SSH connections"),
+        ("Telnet",     "tcp port 23",                                             "Telnet traffic"),
+        ("FTP",        "tcp port 20 or tcp port 21",                              "FTP control and data"),
+        ("SNMP",       "port 161 or port 162",                                    "SNMP queries and traps"),
+        ("RDP",        "tcp port 3389",                                           "RDP (Windows Remote Desktop)"),
+        ("TCP SYN",    "tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0", "New TCP connection attempts"),
+        ("TCP RST",    "tcp[tcpflags] & tcp-rst != 0",                           "TCP resets (connection drops)"),
+        ("UDP",        "udp",                                                     "All UDP traffic"),
+        ("Broadcast",  "broadcast",                                               "Broadcast frames"),
+        ("Multicast",  "multicast",                                               "Multicast frames"),
+        ("OSPF",       "proto ospf",                                              "OSPF routing protocol"),
+        ("BGP",        "tcp port 179",                                            "BGP routing protocol"),
+        ("VLAN",       "vlan",                                                    "VLAN tagged frames (802.1Q)"),
+        ("Non-ARP",    "not arp and not icmp",                                   "Exclude ARP and ICMP"),
+        ("Large pkts", "greater 1400",                                            "Packets larger than 1400 bytes"),
+    ]
+
+    def create_traffic_monitor_page(self):
+        """Create the Traffic Monitor page (live tcpdump capture)."""
+        self._traffic_worker = None
+        self._traffic_packet_count = 0
+
+        _C = self._TRAFFIC_COLOR
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        # ── Config group ──────────────────────────────────────────────────
+        cfg_group = QGroupBox("Capture Configuration")
+        cfg_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold; font-size: 9pt;
+                border: 1px solid #c8c8c8; border-radius: 8px;
+                margin-top: 6px; padding-top: 4px;
+                background-color: #f9f9f9;
+            }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {_C}; }}
+        """)
+        cfg_layout = QFormLayout(cfg_group)
+        cfg_layout.setVerticalSpacing(4)
+        cfg_layout.setContentsMargins(8, 5, 8, 6)
+        cfg_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        _iface_widget = QWidget()
+        _iface_row = QHBoxLayout(_iface_widget)
+        _iface_row.setContentsMargins(0, 0, 0, 0)
+        _iface_row.setSpacing(8)
+
+        self._traffic_iface_combo = FlatComboButton()
+        _interfaces = get_network_interfaces()
+        _iface_names = [iface for iface, _ip, _pfx in _interfaces] if _interfaces else []
+        if _iface_names:
+            self._traffic_iface_combo.addItems(_iface_names)
+        else:
+            self._traffic_iface_combo.addItems(['any'])
+        self._traffic_iface_combo.setFixedWidth(160)
+        _iface_row.addWidget(self._traffic_iface_combo)
+
+        _snap_label = QLabel("Snap len:")
+        _snap_label.setStyleSheet("color: #555; font-size: 9pt;")
+        self._traffic_snaplen_combo = FlatComboButton()
+        self._traffic_snaplen_combo.addItems(["96", "256", "512", "1500", "65535"])
+        self._traffic_snaplen_combo.setCurrentText("256")
+        self._traffic_snaplen_combo.setFixedWidth(80)
+        _iface_row.addWidget(_snap_label)
+        _iface_row.addWidget(self._traffic_snaplen_combo)
+
+        self._traffic_sudo_cb = QCheckBox("sudo")
+        self._traffic_sudo_cb.setToolTip("Run tcpdump with sudo (required on most systems)")
+        self._traffic_sudo_cb.setChecked(True)
+        self._traffic_sudo_cb.setStyleSheet(f"""
+            QCheckBox {{ color: #333; font-size: 9pt; spacing: 4px; }}
+            QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid #c0c0c0;
+                border-radius: 3px; background: #f5f5f5; }}
+            QCheckBox::indicator:checked {{ background-color: {_C}; border-color: {_C}; }}
+        """)
+        _iface_row.addWidget(self._traffic_sudo_cb)
+        _iface_row.addStretch()
+        cfg_layout.addRow("Interface:", _iface_widget)
+
+        # Custom filter input
+        _filter_widget = QWidget()
+        _filter_row = QHBoxLayout(_filter_widget)
+        _filter_row.setContentsMargins(0, 0, 0, 0)
+        _filter_row.setSpacing(6)
+        self._traffic_filter_input = QLineEdit()
+        self._traffic_filter_input.setPlaceholderText("tcpdump filter expression  (e.g. tcp port 80)")
+        self._traffic_filter_input.setStyleSheet(f"""
+            QLineEdit {{ border: 1px solid #d0d0d0; border-radius: 6px; padding: 2px 8px;
+                background: #f5f5f5; color: #333; font-size: 9pt; font-family: monospace; }}
+            QLineEdit:focus {{ border: 2px solid {_C}; }}
+        """)
+        self._traffic_filter_input.returnPressed.connect(self._traffic_start_stop)
+        _filter_row.addWidget(self._traffic_filter_input)
+        cfg_layout.addRow("Filter:", _filter_widget)
+
+        _shadow = QGraphicsDropShadowEffect()
+        _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
+        _shadow.setColor(QColor(0, 0, 0, 30))
+        cfg_group.setGraphicsEffect(_shadow)
+        layout.addWidget(cfg_group)
+
+        # ── Preset filter buttons ─────────────────────────────────────────
+        _preset_group = QGroupBox("Quick Filters")
+        _preset_group.setStyleSheet(f"""
+            QGroupBox {{ font-weight: bold; font-size: 9pt;
+                border: 1px solid #c8c8c8; border-radius: 8px;
+                margin-top: 6px; padding-top: 4px; background-color: #f9f9f9; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {_C}; }}
+        """)
+        _preset_outer = QVBoxLayout(_preset_group)
+        _preset_outer.setContentsMargins(8, 4, 8, 6)
+        _preset_outer.setSpacing(4)
+
+        _btn_style = f"""
+            QPushButton {{
+                border: 1px solid #d0d0d0; border-radius: 5px; padding: 3px 10px;
+                background: #f0f0f0; color: #333; font-size: 8pt;
+            }}
+            QPushButton:hover {{ background: #e0e0e0; }}
+            QPushButton:checked {{ background: {_C}; color: white; border-color: {_C}; font-weight: bold; }}
+        """
+        self._traffic_preset_btns = []
+        _row_widget = None
+        _row_layout = None
+        for i, (label, expr, tip) in enumerate(self._TRAFFIC_PRESETS):
+            if i % 8 == 0:
+                _row_widget = QWidget()
+                _row_layout = QHBoxLayout(_row_widget)
+                _row_layout.setContentsMargins(0, 0, 0, 0)
+                _row_layout.setSpacing(4)
+                _preset_outer.addWidget(_row_widget)
+            _b = QPushButton(label)
+            _b.setCheckable(True)
+            _b.setChecked(label == "All")
+            _b.setToolTip(tip)
+            _b.setStyleSheet(_btn_style)
+            _b.setCursor(Qt.CursorShape.PointingHandCursor)
+            _expr = expr  # capture
+            _b.clicked.connect(lambda _, e=_expr, b=_b: self._traffic_preset_clicked(e, b))
+            _row_layout.addWidget(_b)
+            self._traffic_preset_btns.append((_b, expr))
+        if _row_layout:
+            _row_layout.addStretch()
+
+        _shadow2 = QGraphicsDropShadowEffect()
+        _shadow2.setBlurRadius(15); _shadow2.setXOffset(0); _shadow2.setYOffset(2)
+        _shadow2.setColor(QColor(0, 0, 0, 30))
+        _preset_group.setGraphicsEffect(_shadow2)
+        layout.addWidget(_preset_group)
+
+        # ── Output display ────────────────────────────────────────────────
+        self._traffic_output = QPlainTextEdit()
+        self._traffic_output.setReadOnly(True)
+        self._traffic_output.setMaximumBlockCount(5000)
+        self._traffic_output.setFont(QFont("Monospace", 9))
+        self._traffic_output.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1e2228;
+                color: #a8d8a8;
+                border: 1px solid #333;
+                border-radius: 8px;
+                padding: 6px;
+                selection-background-color: #546E7A;
+            }
+        """)
+        layout.addWidget(self._traffic_output, 1)
+
+        # ── Bottom status + buttons ───────────────────────────────────────
+        _bottom = QWidget()
+        _bottom_row = QHBoxLayout(_bottom)
+        _bottom_row.setContentsMargins(0, 0, 0, 0)
+        _bottom_row.setSpacing(8)
+
+        self._traffic_status_lbl = QLabel("Packets: 0")
+        self._traffic_status_lbl.setStyleSheet("color: #555; font-size: 9pt;")
+        _bottom_row.addWidget(self._traffic_status_lbl)
+        _bottom_row.addStretch()
+
+        _clear_btn = QPushButton("Clear")
+        _clear_btn.setFixedWidth(80)
+        _clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _clear_btn.setStyleSheet(f"""
+            QPushButton {{ border: 1px solid #c0c0c0; border-radius: 6px; padding: 4px 12px;
+                background: #f0f0f0; color: #333; font-size: 9pt; }}
+            QPushButton:hover {{ background: #e0e0e0; }}
+        """)
+        _clear_btn.clicked.connect(self._traffic_clear)
+        _bottom_row.addWidget(_clear_btn)
+
+        layout.addWidget(_bottom)
+
+        # ── Big START button ──────────────────────────────────────────────
+        self._traffic_start_btn = QPushButton("START CAPTURE")
+        self._traffic_start_btn.setFixedHeight(48)
+        self._traffic_start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._traffic_start_btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {_C}; color: white; border: none;
+                border-radius: 8px; font-weight: bold; font-size: 11pt; }}
+            QPushButton:hover {{ background-color: #455a64; }}
+            QPushButton:pressed {{ background-color: #37474f; }}
+        """)
+        self._traffic_start_btn.clicked.connect(self._traffic_start_stop)
+        layout.addWidget(self._traffic_start_btn)
+
+        return page
+
+    def _traffic_preset_clicked(self, expr, clicked_btn):
+        """Select a quick filter preset."""
+        for btn, _ in self._traffic_preset_btns:
+            btn.setChecked(btn is clicked_btn)
+        self._traffic_filter_input.setText(expr)
+
+    def _traffic_clear(self):
+        self._traffic_output.clear()
+        self._traffic_packet_count = 0
+        self._traffic_status_lbl.setText("Packets: 0")
+
+    def _traffic_start_stop(self):
+        if self._traffic_worker and self._traffic_worker.isRunning():
+            self._traffic_worker.stop()
+            self._traffic_worker.wait(2000)
+            self._traffic_worker = None
+            self._traffic_start_btn.setText("START CAPTURE")
+            self._traffic_start_btn.setStyleSheet(f"""
+                QPushButton {{ background-color: {self._TRAFFIC_COLOR}; color: white; border: none;
+                    border-radius: 8px; font-weight: bold; font-size: 11pt; }}
+                QPushButton:hover {{ background-color: #455a64; }}
+                QPushButton:pressed {{ background-color: #37474f; }}
+            """)
+            self._traffic_output.appendPlainText("\n--- Capture stopped ---")
+            return
+
+        iface    = self._traffic_iface_combo.currentText()
+        filt     = self._traffic_filter_input.text().strip()
+        snap_len = int(self._traffic_snaplen_combo.currentText())
+        use_sudo = self._traffic_sudo_cb.isChecked()
+
+        sudo_pw = None
+        if use_sudo:
+            from PyQt6.QtWidgets import QInputDialog
+            pw, ok = QInputDialog.getText(
+                self, "sudo password",
+                "Enter sudo password for tcpdump:",
+                QLineEdit.EchoMode.Password
+            )
+            if not ok:
+                return
+            sudo_pw = pw
+
+        self._traffic_packet_count = 0
+        self._traffic_output.clear()
+        self._traffic_output.appendPlainText(
+            f"--- Starting capture on {iface}"
+            + (f"  filter: {filt}" if filt else "  (no filter)") + " ---\n"
+        )
+
+        self._traffic_worker = TcpdumpWorker(iface, filt, snap_len, sudo_pw)
+        self._traffic_worker.line_received.connect(self._traffic_on_line)
+        self._traffic_worker.packet_count_updated.connect(self._traffic_on_count)
+        self._traffic_worker.error_occurred.connect(self._traffic_on_error)
+        self._traffic_worker.start()
+
+        self._traffic_start_btn.setText("STOP CAPTURE")
+        self._traffic_start_btn.setStyleSheet("""
+            QPushButton { background-color: #c62828; color: white; border: none;
+                border-radius: 8px; font-weight: bold; font-size: 11pt; }
+            QPushButton:hover { background-color: #b71c1c; }
+        """)
+
+    def _traffic_on_line(self, line):
+        self._traffic_output.appendPlainText(line)
+        sb = self._traffic_output.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _traffic_on_count(self, count):
+        self._traffic_packet_count = count
+        self._traffic_status_lbl.setText(f"Packets: {count}")
+
+    def _traffic_on_error(self, msg):
+        self._traffic_output.appendPlainText(f"\n[ERROR] {msg}")
+        if self._traffic_worker:
+            self._traffic_worker = None
+        self._traffic_start_btn.setText("START CAPTURE")
+        self._traffic_start_btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {self._TRAFFIC_COLOR}; color: white; border: none;
+                border-radius: 8px; font-weight: bold; font-size: 11pt; }}
+            QPushButton:hover {{ background-color: #455a64; }}
+        """)
 
     def create_filetransfer_page(self):
         """Create the File Transfer page (SSH/SMB/FTP/TFTP, Server/Client modes)"""
