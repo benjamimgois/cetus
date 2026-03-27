@@ -14346,7 +14346,7 @@ class SerialTerminalGUI(QMainWindow):
         _ports_quick_btn.clicked.connect(_show_ports_menu)
 
         _ports_widget = QWidget()
-        _ports_widget.setFixedWidth(combo_width)
+        _ports_widget.setFixedWidth(4 * 90 + 3 * 6)  # align right edge with UDP button
         _ports_layout = QHBoxLayout(_ports_widget)
         _ports_layout.setContentsMargins(0, 0, 0, 0)
         _ports_layout.setSpacing(4)
