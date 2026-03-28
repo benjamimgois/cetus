@@ -919,6 +919,12 @@ class TerminalWidget(QTextEdit):
         # the bottom, freeze auto-scroll (same effect as scrolling up with wheel).
         self.verticalScrollBar().sliderMoved.connect(self._on_slider_moved)
 
+        # ── Autocomplete state ────────────────────────────────────────────
+        self._ac_buffer   = ""    # chars typed since last Enter / Ctrl-C
+        self._ac_commands = []    # [(cmd, desc), …] for current vendor
+        self._ac_popup    = None  # QFrame overlay, created lazily
+        self._ac_sel      = 0     # highlighted row index in popup
+
     def _on_slider_moved(self, value):
         """Called when the user drags the scrollbar manually."""
         if not self._in_scrollback_mode:
@@ -940,7 +946,6 @@ class TerminalWidget(QTextEdit):
         """Intercept Tab key before focus handling"""
         if event.type() == event.Type.KeyPress:
             if event.key() == Qt.Key.Key_Tab:
-                # Handle Tab directly here, don't let it propagate
                 self.send_input.emit('\t')
                 event.accept()
                 return True
@@ -1111,16 +1116,35 @@ class TerminalWidget(QTextEdit):
 
         # Handle special keys
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            self._ac_buffer = ""
+            self._ac_hide()
             sequence = '\r'
         elif key == Qt.Key.Key_Backspace:
+            if self._ac_buffer:
+                self._ac_buffer = self._ac_buffer[:-1]
+                self._ac_update()
             sequence = '\x7f'
         elif key == Qt.Key.Key_Tab:
             sequence = '\t'
+        elif key == Qt.Key.Key_Escape:
+            if self._ac_popup and self._ac_popup.isVisible():
+                self._ac_hide()
+                return          # consume Escape — don't send to device
+            sequence = '\x1b'
         elif key == Qt.Key.Key_Up:
+            if self._ac_popup and self._ac_popup.isVisible():
+                self._ac_navigate(-1)
+                return
             sequence = '\x1b[A'
         elif key == Qt.Key.Key_Down:
+            if self._ac_popup and self._ac_popup.isVisible():
+                self._ac_navigate(1)
+                return
             sequence = '\x1b[B'
         elif key == Qt.Key.Key_Right:
+            if self._ac_popup and self._ac_popup.isVisible():
+                self._ac_commit_sel()
+                return
             sequence = '\x1b[C'
         elif key == Qt.Key.Key_Left:
             sequence = '\x1b[D'
@@ -1136,6 +1160,15 @@ class TerminalWidget(QTextEdit):
             sequence = '\x1b[6~'
         elif text:
             sequence = text
+            # Track printable input for autocomplete (ignore control chars)
+            if len(text) == 1 and text.isprintable():
+                self._ac_buffer += text
+                self._ac_update()
+
+        # Clear buffer on Ctrl+C
+        if sequence == '\x03':
+            self._ac_buffer = ""
+            self._ac_hide()
 
         # Send sequence to picocom/SSH
         if sequence:
@@ -1276,6 +1309,161 @@ class TerminalWidget(QTextEdit):
     def set_vendor(self, vendor):
         """Set the vendor for syntax highlighting"""
         self.vendor = vendor
+
+    # ── Autocomplete ──────────────────────────────────────────────────────────
+
+    def set_autocomplete_commands(self, cmd_list):
+        """Replace the command list used for autocomplete.
+
+        cmd_list: iterable of (command_string, description_string) tuples.
+        """
+        self._ac_commands = list(cmd_list)
+        self._ac_hide()
+        self._ac_buffer = ""
+
+    def _ac_create_popup(self):
+        """Create the floating autocomplete popup (called once, lazily)."""
+        from PyQt6.QtWidgets import QFrame, QListWidget, QListWidgetItem, QVBoxLayout, QLabel
+        popup = QFrame(self.viewport())
+        popup.setWindowFlags(Qt.WindowType.Widget)
+        popup.setStyleSheet("""
+            QFrame {
+                background: #1e2030;
+                border: 1px solid #444860;
+                border-radius: 6px;
+            }
+            QListWidget {
+                background: transparent;
+                border: none;
+                color: #cdd6f4;
+                font-family: Monospace;
+                font-size: 9pt;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 3px 10px;
+            }
+            QListWidget::item:selected {
+                background: #363a4f;
+                color: #89dceb;
+            }
+            QScrollBar:vertical { width: 0px; }
+        """)
+        vbox = QVBoxLayout(popup)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+        lst = QListWidget()
+        lst.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        lst.itemClicked.connect(lambda item: self._ac_commit_item(item))
+        vbox.addWidget(lst)
+        hint = QLabel("  → completar   ↑↓ navegar   Esc fechar")
+        hint.setStyleSheet("""
+            QLabel {
+                background: #161622;
+                color: #6e7194;
+                font-size: 8pt;
+                padding: 2px 6px;
+                border-top: 1px solid #444860;
+                border-bottom-left-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }
+        """)
+        hint.setFixedHeight(18)
+        vbox.addWidget(hint)
+        popup.hide()
+        self._ac_popup = popup
+        self._ac_list  = lst
+
+    def _ac_update(self):
+        """Recompute matching commands and refresh the popup."""
+        if not self._ac_commands or not self._ac_buffer:
+            self._ac_hide()
+            return
+
+        needle = self._ac_buffer.lower()
+        matches = [(cmd, desc) for cmd, desc in self._ac_commands
+                   if cmd.lower().startswith(needle)][:10]
+
+        if not matches:
+            self._ac_hide()
+            return
+
+        if self._ac_popup is None:
+            self._ac_create_popup()
+
+        from PyQt6.QtWidgets import QListWidgetItem
+        self._ac_list.clear()
+        for cmd, desc in matches:
+            item = QListWidgetItem()
+            # Show typed part in normal color, remainder in accent, desc in gray
+            item.setText(f'{cmd}')
+            item.setToolTip(desc)
+            item.setData(Qt.ItemDataRole.UserRole, cmd)
+            item.setData(Qt.ItemDataRole.UserRole + 1, desc)
+            self._ac_list.addItem(item)
+
+        row_h    = 22
+        hint_h   = 18
+        visible  = min(len(matches), 8)
+        pop_w    = min(520, max(280, max(len(cmd) * 8 + 30 for cmd, _ in matches)))
+        list_h   = visible * row_h + 4
+        pop_h    = list_h + hint_h
+
+        # Position just above the bottom of the viewport
+        vp = self.viewport()
+        x  = 10
+        y  = vp.height() - pop_h - 26   # ~26px above the bottom line
+        if y < 4:
+            y = 4
+
+        self._ac_popup.setFixedSize(pop_w, pop_h)
+        self._ac_list.setFixedHeight(list_h)
+        self._ac_popup.move(x, y)
+        self._ac_popup.show()
+        self._ac_popup.raise_()
+
+        # Restore / clamp selection
+        self._ac_sel = max(0, min(self._ac_sel, self._ac_list.count() - 1))
+        self._ac_list.setCurrentRow(self._ac_sel)
+
+    def _ac_navigate(self, delta):
+        """Move selection up (-1) or down (+1) in the popup."""
+        if self._ac_popup is None or not self._ac_popup.isVisible():
+            return
+        count = self._ac_list.count()
+        if count == 0:
+            return
+        self._ac_sel = (self._ac_sel + delta) % count
+        self._ac_list.setCurrentRow(self._ac_sel)
+
+    def _ac_commit_sel(self):
+        """Commit the currently selected popup item."""
+        if self._ac_popup is None or not self._ac_popup.isVisible():
+            return
+        item = self._ac_list.currentItem()
+        if item:
+            self._ac_commit_item(item)
+
+    def _ac_commit_item(self, item):
+        """Replace typed buffer with the chosen command and send to terminal."""
+        cmd = item.data(Qt.ItemDataRole.UserRole)
+        if cmd is None:
+            return
+        # Erase what the user typed so far
+        backspaces = '\x7f' * len(self._ac_buffer)
+        if backspaces:
+            self.send_input.emit(backspaces)
+        # Send the full command
+        self.send_input.emit(cmd)
+        self._ac_buffer = cmd
+        self._ac_hide()
+
+    def _ac_hide(self):
+        """Hide the autocomplete popup."""
+        if self._ac_popup and self._ac_popup.isVisible():
+            self._ac_popup.hide()
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def get_vendor_keywords(self):
         """Get keywords specific to the selected vendor"""
@@ -2019,6 +2207,9 @@ class TerminalWidget(QTextEdit):
         if not self.updatesEnabled():
             return
         self._recalculate_size()
+        # Reposition autocomplete popup if it is open
+        if self._ac_popup and self._ac_popup.isVisible():
+            self._ac_update()
 
     def _check_viewport_size(self):
         """Periodically check if the viewport size changed and recalculate PTY dimensions if so.
@@ -10544,11 +10735,22 @@ class TerminalDialog(QWidget):
         self.profile_label.setVisible(False)
         layout.addWidget(self.profile_label)
 
+        # Determine initial vendor before creating terminal widget
+        _VENDORS = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper',
+                    'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik', 'TP-Link']
+        initial_vendor = 'Default'
+        if self.config:
+            saved_vendor = self.config.get('vendor')
+            if saved_vendor in _VENDORS:
+                initial_vendor = saved_vendor
+
         # Terminal widget
         self.terminal = TerminalWidget()
         self.terminal.send_input.connect(self.send_to_process)
         self.terminal.size_changed.connect(self._on_terminal_resized)
         self.terminal.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.terminal.set_vendor(initial_vendor)
+        self._apply_autocomplete_commands(initial_vendor)
         layout.addWidget(self.terminal, 1)
 
         # ── Status bar ─────────────────────────────────────────────────────────
@@ -10636,13 +10838,6 @@ class TerminalDialog(QWidget):
         """)
 
         # Vendor selector — flat button with icon + name + ▾, opens a QMenu
-        _VENDORS = ['Default', 'Linux', 'Cisco', 'Huawei', 'H3C', 'Juniper',
-                    'D-Link', 'Brocade', 'Datacom', 'Fortinet', 'Aruba', 'MikroTik', 'TP-Link']
-        initial_vendor = 'Default'
-        if self.config:
-            saved_vendor = self.config.get('vendor')
-            if saved_vendor in _VENDORS:
-                initial_vendor = saved_vendor
         self._current_vendor = initial_vendor
 
         self.vendor_btn = QPushButton()
@@ -11045,10 +11240,17 @@ class TerminalDialog(QWidget):
         self._current_vendor = vendor
         self.terminal.set_vendor(vendor)
         self.update_vendor_icon(vendor)
+        self._apply_autocomplete_commands(vendor)
 
         # Save vendor selection
         if self.config:
             self.config.set('vendor', vendor)
+
+    def _apply_autocomplete_commands(self, vendor):
+        """Load the quick-reference commands for *vendor* into the terminal autocomplete."""
+        ref  = TerminalDialog.get_vendor_reference().get(vendor, {})
+        cmds = [(cmd, desc) for cat_cmds in ref.values() for cmd, desc in cat_cmds]
+        self.terminal.set_autocomplete_commands(cmds)
 
     def start_picocom(self, cmd):
         """Start picocom process with sudo"""
@@ -13417,6 +13619,12 @@ class SerialTerminalGUI(QMainWindow):
         _stats_outer_lo.addWidget(_stats_scroll)
         layout.addWidget(_stats_outer_w)
 
+        # ── Results group (wraps search + table + bottom bar + packet desc) ──
+        _traffic_results_group = QGroupBox("Packets")
+        _traffic_results_layout = QVBoxLayout(_traffic_results_group)
+        _traffic_results_layout.setContentsMargins(8, 4, 8, 8)
+        _traffic_results_layout.setSpacing(6)
+
         # ── Post-capture text filter ──────────────────────────────────────
         self._traffic_search_input = QLineEdit()
         self._traffic_search_input.setPlaceholderText("Filter captured packets by IP, protocol or text…")
@@ -13427,7 +13635,7 @@ class SerialTerminalGUI(QMainWindow):
             QLineEdit:focus {{ border: 2px solid {_C}; }}
         """)
         self._traffic_search_input.textChanged.connect(self._traffic_filter_table)
-        layout.addWidget(self._traffic_search_input)
+        _traffic_results_layout.addWidget(self._traffic_search_input)
 
         # ── Packet table ──────────────────────────────────────────────────
         self._traffic_sort_state = {}   # col → Qt.SortOrder or absent (=unsorted)
@@ -13481,7 +13689,7 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_table.itemSelectionChanged.connect(self._traffic_on_row_selected)
         self._traffic_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._traffic_table.customContextMenuRequested.connect(self._traffic_context_menu)
-        layout.addWidget(self._traffic_table, 1)
+        _traffic_results_layout.addWidget(self._traffic_table, 1)
 
         # Flush timer for batch row inserts (150 ms)
         self._traffic_flush_timer = QTimer()
@@ -13521,7 +13729,7 @@ class SerialTerminalGUI(QMainWindow):
         """)
         _clear_btn.clicked.connect(self._traffic_clear)
         _bottom_lo.addWidget(_clear_btn)
-        layout.addWidget(_bottom)
+        _traffic_results_layout.addWidget(_bottom)
 
         # ── Packet description label ──────────────────────────────────────
         self._traffic_packet_desc = QLabel("")
@@ -13538,19 +13746,31 @@ class SerialTerminalGUI(QMainWindow):
         """)
         self._traffic_packet_desc.setMinimumHeight(30)
         self._traffic_packet_desc.hide()
-        layout.addWidget(self._traffic_packet_desc)
+        _traffic_results_layout.addWidget(self._traffic_packet_desc)
+
+        _shadow3 = QGraphicsDropShadowEffect()
+        _shadow3.setBlurRadius(15); _shadow3.setXOffset(0); _shadow3.setYOffset(2)
+        _shadow3.setColor(QColor(0, 0, 0, 30))
+        _traffic_results_group.setGraphicsEffect(_shadow3)
+        _traffic_results_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.addWidget(_traffic_results_group, 1)
 
         # ── Big START button ──────────────────────────────────────────────
         self._traffic_start_btn = QPushButton("START CAPTURE")
         self._traffic_start_btn.setFixedHeight(48)
         self._traffic_start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._traffic_start_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
         self._traffic_start_btn.setStyleSheet(f"""
             QPushButton {{ background-color: {_C}; color: white; border: none;
                 border-radius: 8px; font-weight: bold; font-size: 11pt; }}
-            QPushButton:hover   {{ background-color: #455a64; }}
-            QPushButton:pressed {{ background-color: #37474f; }}
+            QPushButton:hover   {{ background-color: #880E4F; }}
+            QPushButton:pressed {{ background-color: #6A0F3E; }}
         """)
         self._traffic_start_btn.clicked.connect(self._traffic_start_stop)
+        _btn_shadow = QGraphicsDropShadowEffect()
+        _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
+        _btn_shadow.setColor(QColor(0, 0, 0, 60))
+        self._traffic_start_btn.setGraphicsEffect(_btn_shadow)
         layout.addWidget(self._traffic_start_btn)
 
         return page
