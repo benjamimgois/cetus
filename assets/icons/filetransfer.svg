@@ -2,9 +2,9 @@
 <!-- Uploaded to: SVG Repo, www.svgrepo.com, Transformed by: SVG Repo Mixer Tools -->
 
 <svg
-   width="796"
+   width="1078"
    height="746"
-   viewBox="0 0 47.76 44.76"
+   viewBox="0 0 64.68 44.76"
    fill="#ffffff"
    stroke="#ffffff"
    version="1.1"
@@ -26,9 +26,9 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="1.00375"
-     inkscape:cx="368.11955"
-     inkscape:cy="332.25405"
+     inkscape:zoom="0.70975843"
+     inkscape:cx="450.15316"
+     inkscape:cy="312.07801"
      inkscape:window-width="1920"
      inkscape:window-height="1012"
      inkscape:window-x="0"
@@ -45,7 +45,7 @@
   <g
      id="SVGRepo_iconCarrier"
      style="fill:#ffffff"
-     transform="translate(-0.11955168,-5.1429639)">
+     transform="matrix(0.90934803,0,0,0.90934803,10.77266,-4.8732775)">
     <defs
        id="defs1">
       <style
@@ -64,13 +64,13 @@
   </g>
   <text
      xml:space="preserve"
-     style="font-weight:bold;font-size:9.46495px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0492966"
+     style="font-weight:bold;font-size:12.8px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0492966"
      x="-0.08585903"
      y="44.647923"
      id="text2"><tspan
        sodipodi:role="line"
        id="tspan2"
-       style="font-size:9.46495px;fill:#ffffff;stroke-width:0.0492966"
+       style="font-size:12.8px;fill:#ffffff;stroke-width:0.0492966"
        x="-0.08585903"
        y="44.647923">TRANSFER</tspan></text>
 </svg>

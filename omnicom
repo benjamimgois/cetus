@@ -6441,6 +6441,23 @@ class TcpdumpWorker(QThread):
             self._proc = None
 
 
+class DnsResolverWorker(QThread):
+    """Resolve an IP address to a hostname in a background thread."""
+    resolved = pyqtSignal(str, str)   # (ip, hostname)
+
+    def __init__(self, ip):
+        super().__init__()
+        self._ip = ip
+
+    def run(self):
+        import socket
+        try:
+            hostname = socket.gethostbyaddr(self._ip)[0]
+        except Exception:
+            hostname = self._ip
+        self.resolved.emit(self._ip, hostname)
+
+
 class WiFiScanWorker(QThread):
     """Worker thread that scans for WiFi networks using nmcli."""
 
@@ -12415,7 +12432,7 @@ class SerialTerminalGUI(QMainWindow):
         self.traffic_tab_btn.setToolTip("Traffic Monitor\nLive packet capture via tcpdump")
         self.traffic_tab_btn.setCheckable(True)
         self.traffic_tab_btn.clicked.connect(lambda: self.switch_tab(8))
-        self.traffic_tab_btn.setStyleSheet(tab_btn_style.format(color='#546E7A'))
+        self.traffic_tab_btn.setStyleSheet(tab_btn_style.format(color='#AD1457'))
         tab_layout.addWidget(self.traffic_tab_btn)
 
         tab_layout.addWidget(self.tftp_tab_btn)
@@ -13009,7 +13026,7 @@ class SerialTerminalGUI(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     # TRAFFIC MONITOR
     # ──────────────────────────────────────────────────────────────────────
-    _TRAFFIC_COLOR = '#546E7A'
+    _TRAFFIC_COLOR = '#AD1457'
 
     _LAYER_ICON = {
         'All': 'layer_all.svg',
@@ -13145,6 +13162,14 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_worker       = None
         self._traffic_packet_count = 0
         self._traffic_row_buffer   = []
+        self._traffic_proto_stats  = {}
+        self._traffic_dns_cache    = {}
+        self._traffic_dns_pending  = set()
+        self._traffic_dns_workers  = []
+        try:
+            self._traffic_local_ips = {addr for _iface, addr, _pfx in (get_network_interfaces() or []) if addr}
+        except Exception:
+            self._traffic_local_ips = set()
 
         _C     = self._TRAFFIC_COLOR
         page   = QWidget()
@@ -13189,7 +13214,6 @@ class SerialTerminalGUI(QMainWindow):
         )
         _snap_label = QLabel("Snap len:")
         _snap_label.setStyleSheet("color: #555; font-size: 9pt;")
-        _snap_label.setToolTip(_snap_tip)
         self._traffic_snaplen_combo = FlatComboButton()
         self._traffic_snaplen_combo.addItems(["96", "256", "512", "1500", "65535"])
         self._traffic_snaplen_combo.setCurrentText("256")
@@ -13208,6 +13232,17 @@ class SerialTerminalGUI(QMainWindow):
             QCheckBox::indicator:checked {{ background-color: {_C}; border-color: {_C}; }}
         """)
         _iface_row.addWidget(self._traffic_sudo_cb)
+
+        self._traffic_resolve_cb = QCheckBox("Resolve hosts")
+        self._traffic_resolve_cb.setToolTip("Resolve IP addresses to hostnames via reverse DNS (may add latency)")
+        self._traffic_resolve_cb.setChecked(False)
+        self._traffic_resolve_cb.setStyleSheet(f"""
+            QCheckBox {{ color: #333; font-size: 9pt; spacing: 4px; }}
+            QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid #c0c0c0;
+                border-radius: 3px; background: #f5f5f5; }}
+            QCheckBox::indicator:checked {{ background-color: {_C}; border-color: {_C}; }}
+        """)
+        _iface_row.addWidget(self._traffic_resolve_cb)
         _iface_row.addStretch()
         cfg_layout.addRow("Interface:", _iface_widget)
 
@@ -13250,24 +13285,54 @@ class SerialTerminalGUI(QMainWindow):
         _layer_row_lo.setContentsMargins(0, 0, 0, 0)
         _layer_row_lo.setSpacing(4)
 
+        # Layer selector — tab-underline style (visually distinct from filter chips)
         _layer_btn_style = f"""
             QPushButton {{
-                border: 1px solid #c0c0c0; border-radius: 5px; padding: 3px 14px;
-                background: #e8e8e8; color: #333; font-size: 9pt; font-weight: bold;
+                border: none;
+                border-bottom: 3px solid transparent;
+                border-radius: 0px;
+                padding: 5px 14px 4px 14px;
+                background: transparent;
+                color: #666;
+                font-size: 9pt;
+                font-weight: bold;
+                min-height: 28px;
             }}
-            QPushButton:hover   {{ background: #d8d8d8; }}
-            QPushButton:checked {{ background: {_C}; color: white; border-color: {_C}; }}
+            QPushButton:hover {{
+                color: {_C};
+                background: rgba(84, 110, 122, 0.08);
+            }}
+            QPushButton:checked {{
+                color: {_C};
+                border-bottom: 3px solid {_C};
+                background: rgba(84, 110, 122, 0.10);
+            }}
         """
+        _layer_label = {
+            'All': 'All',
+            'L2':  'Layer 2',
+            'L3':  'Layer 3',
+            'L4':  'Layer 4',
+            'L7':  'Layer 7',
+        }
+        _layer_tooltip = {
+            'All': '<b>All</b> — captura todos os pacotes sem filtro por camada.',
+            'L2':  '<b>Layer 2 — Data Link</b><br>Frames Ethernet: ARP, Broadcast, Multicast, VLAN (802.1Q), STP.',
+            'L3':  '<b>Layer 3 — Network</b><br>Pacotes IP: ICMP, ICMPv6, IPv4, IPv6, OSPF, fragmentação.',
+            'L4':  '<b>Layer 4 — Transport</b><br>Segmentos TCP e UDP, incluindo flags SYN, RST e FIN.',
+            'L7':  '<b>Layer 7 — Application</b><br>Protocolos de aplicação: HTTP, HTTPS, DNS, SSH, Telnet, FTP, DHCP, SNMP, RDP, BGP, SIP, SMB.',
+        }
         self._traffic_layer_btns = {}
         for _ln in self._LAYER_FILTERS:
-            _lb = QPushButton(_ln)
+            _lb = QPushButton(_layer_label.get(_ln, _ln))
             _lb.setCheckable(True)
             _lb.setChecked(_ln == 'All')
+            _lb.setToolTip(_layer_tooltip.get(_ln, ''))
             _lb.setStyleSheet(_layer_btn_style)
             _lb.setCursor(Qt.CursorShape.PointingHandCursor)
             _lb_icon_path = self.get_tab_icon_path(self._LAYER_ICON.get(_ln, ''))
             if _lb_icon_path:
-                _lb_icon = load_svg_icon_dual(_lb_icon_path, 14)
+                _lb_icon = load_svg_icon_dual(_lb_icon_path, 14, color_off='#888888', color_on=_C)
                 if _lb_icon:
                     _lb.setIcon(_lb_icon)
                     _lb.setIconSize(QSize(14, 14))
@@ -13277,14 +13342,27 @@ class SerialTerminalGUI(QMainWindow):
         _layer_row_lo.addStretch()
         _qf_outer.addWidget(_layer_row_w)
 
-        # One stack page per layer — filter preset buttons
+        # Protocol filter chips — pill shape, clearly different from layer tabs
         _filter_btn_style = f"""
             QPushButton {{
-                border: 1px solid #d0d0d0; border-radius: 5px; padding: 3px 10px;
-                background: #f0f0f0; color: #333; font-size: 8pt;
+                border: 1px solid #dde0e2;
+                border-radius: 10px;
+                padding: 2px 9px;
+                background: #f5f6f7;
+                color: #555;
+                font-size: 8pt;
             }}
-            QPushButton:hover   {{ background: #e0e0e0; }}
-            QPushButton:checked {{ background: {_C}; color: white; border-color: {_C}; font-weight: bold; }}
+            QPushButton:hover {{
+                background: #e8eaec;
+                border-color: #b0bec5;
+                color: #333;
+            }}
+            QPushButton:checked {{
+                background: {_C};
+                color: white;
+                border-color: {_C};
+                font-weight: bold;
+            }}
         """
         self._traffic_filter_stack = QStackedWidget()
         for _ln, _filters in self._LAYER_FILTERS.items():
@@ -13316,6 +13394,40 @@ class SerialTerminalGUI(QMainWindow):
         _shadow2.setColor(QColor(0, 0, 0, 30))
         _qf_group.setGraphicsEffect(_shadow2)
         layout.addWidget(_qf_group)
+
+        # ── Protocol stats bar ────────────────────────────────────────────
+        from PyQt6.QtWidgets import QScrollArea, QFrame
+        _stats_outer_w = QWidget()
+        _stats_outer_w.setFixedHeight(28)
+        _stats_outer_lo = QHBoxLayout(_stats_outer_w)
+        _stats_outer_lo.setContentsMargins(2, 0, 2, 0)
+        _stats_outer_lo.setSpacing(0)
+        _stats_scroll = QScrollArea()
+        _stats_scroll.setWidgetResizable(True)
+        _stats_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        _stats_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        _stats_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        _stats_scroll.setFixedHeight(28)
+        _stats_inner_w = QWidget()
+        self._traffic_stats_layout = QHBoxLayout(_stats_inner_w)
+        self._traffic_stats_layout.setContentsMargins(0, 2, 0, 2)
+        self._traffic_stats_layout.setSpacing(4)
+        self._traffic_stats_layout.addStretch()
+        _stats_scroll.setWidget(_stats_inner_w)
+        _stats_outer_lo.addWidget(_stats_scroll)
+        layout.addWidget(_stats_outer_w)
+
+        # ── Post-capture text filter ──────────────────────────────────────
+        self._traffic_search_input = QLineEdit()
+        self._traffic_search_input.setPlaceholderText("Filter captured packets by IP, protocol or text…")
+        self._traffic_search_input.setClearButtonEnabled(True)
+        self._traffic_search_input.setStyleSheet(f"""
+            QLineEdit {{ border: 1px solid #d0d0d0; border-radius: 6px; padding: 2px 8px;
+                background: #f5f5f5; color: #333; font-size: 9pt; }}
+            QLineEdit:focus {{ border: 2px solid {_C}; }}
+        """)
+        self._traffic_search_input.textChanged.connect(self._traffic_filter_table)
+        layout.addWidget(self._traffic_search_input)
 
         # ── Packet table ──────────────────────────────────────────────────
         self._traffic_sort_state = {}   # col → Qt.SortOrder or absent (=unsorted)
@@ -13367,6 +13479,8 @@ class SerialTerminalGUI(QMainWindow):
         """)
         _hdr.sectionClicked.connect(self._traffic_sort_by_col)
         self._traffic_table.itemSelectionChanged.connect(self._traffic_on_row_selected)
+        self._traffic_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._traffic_table.customContextMenuRequested.connect(self._traffic_context_menu)
         layout.addWidget(self._traffic_table, 1)
 
         # Flush timer for batch row inserts (150 ms)
@@ -13384,6 +13498,18 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_status_lbl.setStyleSheet("color: #555; font-size: 9pt;")
         _bottom_lo.addWidget(self._traffic_status_lbl)
         _bottom_lo.addStretch()
+
+        _export_btn = QPushButton("Export CSV")
+        _export_btn.setFixedWidth(100)
+        _export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _export_btn.setToolTip("Save visible rows to a CSV file")
+        _export_btn.setStyleSheet(f"""
+            QPushButton {{ border: 1px solid {_C}; border-radius: 6px; padding: 4px 12px;
+                background: #fff; color: {_C}; font-size: 9pt; font-weight: bold; }}
+            QPushButton:hover {{ background: {_C}; color: white; }}
+        """)
+        _export_btn.clicked.connect(self._traffic_export_csv)
+        _bottom_lo.addWidget(_export_btn)
 
         _clear_btn = QPushButton("Clear")
         _clear_btn.setFixedWidth(80)
@@ -13520,23 +13646,54 @@ class SerialTerminalGUI(QMainWindow):
 
         tbl = self._traffic_table
         tbl.setUpdatesEnabled(False)
+        _resolve = self._traffic_resolve_cb.isChecked()
         for time_s, src, dst, proto, layer, length, info in rows:
+            # Protocol stats
+            self._traffic_proto_stats[proto] = self._traffic_proto_stats.get(proto, 0) + 1
+
             bg_hex, fg_hex = self._PROTO_COLORS.get(proto, self._PROTO_COLORS['Other'])
             bg = QColor(bg_hex)
             fg = QColor(fg_hex)
+            _own_src = src in self._traffic_local_ips
+            _own_dst = dst in self._traffic_local_ips
+
+            # Apply DNS cache lookup (display hostname if already resolved)
+            _src_display = self._traffic_dns_cache.get(src, src) if _resolve else src
+            _dst_display = self._traffic_dns_cache.get(dst, dst) if _resolve else dst
+
+            _tooltip = self._traffic_describe_packet(proto, src, dst, info)
+
             row_idx = tbl.rowCount()
             tbl.insertRow(row_idx)
-            for col, text in enumerate([time_s, src, dst, proto, layer, str(length), info]):
+            _own_fg = QColor('#1565C0')
+            for col, text in enumerate([time_s, _src_display, _dst_display, proto, layer, str(length), info]):
                 item = QTableWidgetItem(text)
                 item.setBackground(QBrush(bg))
-                item.setForeground(QBrush(fg))
+                if (col == 1 and _own_src) or (col == 2 and _own_dst):
+                    item.setForeground(QBrush(_own_fg))
+                    f = item.font(); f.setBold(True); item.setFont(f)
+                else:
+                    item.setForeground(QBrush(fg))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setToolTip(_tooltip)
+                # Store original IP for later DNS update
+                if col == 1:
+                    item.setData(Qt.ItemDataRole.UserRole, src)
+                elif col == 2:
+                    item.setData(Qt.ItemDataRole.UserRole, dst)
                 tbl.setItem(row_idx, col, item)
             # Hidden column 7: zero-padded sequence for restore-sort
             seq_item = QTableWidgetItem(f'{self._traffic_packet_count:010d}')
             seq_item.setFlags(seq_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             tbl.setItem(row_idx, 7, seq_item)
+
+            # Queue DNS resolution for new IPs
+            if _resolve:
+                for _ip in (src, dst):
+                    if _ip and '.' in _ip and _ip not in self._traffic_dns_cache and _ip not in self._traffic_dns_pending:
+                        self._traffic_resolve_start(_ip)
         tbl.setUpdatesEnabled(True)
+        self._traffic_update_stats()
 
         # Cap table at 3 000 rows — discard oldest
         excess = tbl.rowCount() - 3000
@@ -13568,7 +13725,10 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_table.setRowCount(0)
         self._traffic_row_buffer.clear()
         self._traffic_packet_count = 0
+        self._traffic_proto_stats.clear()
         self._traffic_status_lbl.setText("Packets: 0")
+        self._traffic_search_input.clear()
+        self._traffic_update_stats()
 
     def _traffic_start_stop(self):
         if self._traffic_worker and self._traffic_worker.isRunning():
@@ -13606,7 +13766,11 @@ class SerialTerminalGUI(QMainWindow):
         self._traffic_packet_count = 0
         self._traffic_row_buffer.clear()
         self._traffic_table.setRowCount(0)
+        self._traffic_proto_stats.clear()
+        self._traffic_dns_cache.clear()
+        self._traffic_dns_pending.clear()
         self._traffic_status_lbl.setText("Packets: 0")
+        self._traffic_update_stats()
 
         self._traffic_worker = TcpdumpWorker(iface, filt, snap_len, sudo_pw)
         self._traffic_worker.line_received.connect(self._traffic_on_line)
@@ -13822,6 +13986,125 @@ class SerialTerminalGUI(QMainWindow):
             except Exception:
                 pass
         return f'{proto} traffic from {src} to {dst}' + (f' — {info[:60]}' if info else '')
+
+    def _traffic_update_stats(self):
+        """Rebuild the protocol statistics bar with per-protocol counters."""
+        lay = self._traffic_stats_layout
+        # Remove all widgets except the trailing stretch
+        while lay.count() > 1:
+            child = lay.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        # Add badges sorted by count (top 14 protos)
+        sorted_protos = sorted(self._traffic_proto_stats.items(), key=lambda x: -x[1])[:14]
+        for proto, count in sorted_protos:
+            bg_h, fg_h = self._PROTO_COLORS.get(proto, self._PROTO_COLORS['Other'])
+            lbl = QLabel(f'{proto}: {count}')
+            lbl.setStyleSheet(f"""
+                QLabel {{
+                    background: {bg_h}; color: {fg_h};
+                    border-radius: 8px; padding: 1px 7px;
+                    font-size: 8pt; font-weight: bold;
+                }}
+            """)
+            lay.insertWidget(lay.count() - 1, lbl)
+
+    def _traffic_filter_table(self, text):
+        """Show/hide table rows based on search text (post-capture filter)."""
+        tbl    = self._traffic_table
+        needle = text.strip().lower()
+        for row in range(tbl.rowCount()):
+            if not needle:
+                tbl.setRowHidden(row, False)
+                continue
+            visible = any(
+                needle in (tbl.item(row, col).text().lower() if tbl.item(row, col) else '')
+                for col in range(7)
+            )
+            tbl.setRowHidden(row, not visible)
+
+    def _traffic_context_menu(self, pos):
+        """Right-click context menu for the packet table."""
+        from PyQt6.QtWidgets import QMenu
+        row = self._traffic_table.rowAt(pos.y())
+        if row < 0:
+            return
+        def _cell(c):
+            item = self._traffic_table.item(row, c)
+            return item.text() if item else ''
+        src   = _cell(1)
+        dst   = _cell(2)
+        proto = _cell(3)
+        menu  = QMenu(self)
+        menu.addAction(f'Copy source  [{src}]',
+                       lambda: QApplication.clipboard().setText(src))
+        menu.addAction(f'Copy dest  [{dst}]',
+                       lambda: QApplication.clipboard().setText(dst))
+        menu.addSeparator()
+        menu.addAction('Filter by source IP',
+                       lambda: self._traffic_search_input.setText(src))
+        menu.addAction('Filter by dest IP',
+                       lambda: self._traffic_search_input.setText(dst))
+        menu.addAction('Filter by protocol',
+                       lambda: self._traffic_search_input.setText(proto))
+        menu.addSeparator()
+        full_row = '\t'.join(_cell(c) for c in range(7))
+        menu.addAction('Copy full row',
+                       lambda: QApplication.clipboard().setText(full_row))
+        menu.exec(self._traffic_table.viewport().mapToGlobal(pos))
+
+    def _traffic_export_csv(self):
+        """Export visible table rows to a CSV file."""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        import csv
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Traffic to CSV", "traffic_capture.csv", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        tbl     = self._traffic_table
+        headers = ['Time', 'Source', 'Destination', 'Protocol', 'Layer', 'Len', 'Info']
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+                exported = 0
+                for row in range(tbl.rowCount()):
+                    if tbl.isRowHidden(row):
+                        continue
+                    writer.writerow([
+                        tbl.item(row, col).text() if tbl.item(row, col) else ''
+                        for col in range(7)
+                    ])
+                    exported += 1
+            QMessageBox.information(self, "Export Complete", f"Exported {exported} rows to:\n{path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", str(e))
+
+    def _traffic_resolve_start(self, ip):
+        """Start a background DNS resolution worker for the given IP."""
+        self._traffic_dns_pending.add(ip)
+        worker = DnsResolverWorker(ip)
+        worker.resolved.connect(self._traffic_on_dns_resolved)
+        self._traffic_dns_workers.append(worker)
+        worker.finished.connect(lambda: self._traffic_dns_workers.remove(worker)
+                                if worker in self._traffic_dns_workers else None)
+        worker.start()
+
+    def _traffic_on_dns_resolved(self, ip, hostname):
+        """Cache resolved hostname and update matching cells in the table."""
+        self._traffic_dns_pending.discard(ip)
+        self._traffic_dns_cache[ip] = hostname
+        if hostname == ip:
+            return   # no change to display
+        tbl = self._traffic_table
+        tbl.setUpdatesEnabled(False)
+        for row in range(tbl.rowCount()):
+            for col in (1, 2):
+                item = tbl.item(row, col)
+                if item and item.data(Qt.ItemDataRole.UserRole) == ip:
+                    item.setText(hostname)
+        tbl.setUpdatesEnabled(True)
 
     def create_filetransfer_page(self):
         """Create the File Transfer page (SSH/SMB/FTP/TFTP, Server/Client modes)"""
