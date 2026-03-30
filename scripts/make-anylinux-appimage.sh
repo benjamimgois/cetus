@@ -39,7 +39,7 @@ if [ "$(id -u)" = "0" ] && command -v pacman &>/dev/null; then
         python-pyqt6 python-pyqt6-qt6 \
         python-paramiko python-pyte \
         qt6-base qt6-svg qt6-wayland \
-        freerdp tigervnc \
+        freerdp tigervnc iperf3 \
         picocom xorg-server-xvfb
     pip install --break-system-packages standard-telnetlib speedtest-cli 2>/dev/null || true
 else
@@ -276,6 +276,12 @@ for _rdp_bin in sdl-freerdp3 xfreerdp3 wlfreerdp3 wlfreerdp xfreerdp; do
     _rdp_bundled=1
 done
 [ "$_rdp_bundled" = "0" ] && echo "    WARNING: no freerdp binary found — RDP won't work in the AppImage"
+
+echo "  Bundling iPerf3..."
+_iperf3_path="$(command -v iperf3 2>/dev/null)" && {
+    echo "    iperf3 → AppDir/usr/bin/"
+    _bundle_exe "$_iperf3_path"
+} || echo "    WARNING: iperf3 not found — iPerf3 tab won't work in the AppImage"
 
 echo "  Bundling TigerVNC viewer..."
 _vnc_bundled=0
