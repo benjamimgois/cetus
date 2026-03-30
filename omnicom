@@ -12726,9 +12726,12 @@ class SerialTerminalGUI(QMainWindow):
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(24, 0, 24, 0)
 
-        app_icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     'assets', 'icons', 'omnicom_icon.svg')
-        app_pix = load_svg_pixmap(app_icon_path, 56) if os.path.exists(app_icon_path) else None
+        app_icon_path = self.get_icon_path('opengrid.png')
+        app_pix = QPixmap(app_icon_path).scaled(
+            56, 56,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ) if app_icon_path and os.path.exists(app_icon_path) else None
         if app_pix and not app_pix.isNull():
             icon_lbl = QLabel()
             icon_lbl.setPixmap(app_pix)
@@ -25444,10 +25447,10 @@ def main():
     window = SerialTerminalGUI()
 
     # Set application window icon
-    icon_path = window.get_icon_path('omnicom_icon.svg')
+    icon_path = window.get_icon_path('opengrid.png')
     if icon_path:
-        icon_pixmap = load_svg_pixmap(icon_path, 256)
-        if icon_pixmap:
+        icon_pixmap = QPixmap(icon_path)
+        if not icon_pixmap.isNull():
             app.setWindowIcon(QIcon(icon_pixmap))
 
     window.show()

@@ -236,6 +236,7 @@ install -dm755 "$APPDIR/usr/share/omnicom/assets/icons"
 install -dm755 "$APPDIR/usr/share/omnicom/assets/vendors"
 cp "$SCRIPT_DIR/omnicom"                "$APPDIR/usr/share/omnicom/omnicom"
 cp "$SCRIPT_DIR/assets/icons/"*.svg     "$APPDIR/usr/share/omnicom/assets/icons/"
+cp "$SCRIPT_DIR/assets/icons/"*.png     "$APPDIR/usr/share/omnicom/assets/icons/" 2>/dev/null || true
 cp "$SCRIPT_DIR/assets/vendors/"*.svg   "$APPDIR/usr/share/omnicom/assets/vendors/"
 
 # ── Bundle Qt platform plugins (XCB + Wayland + themes) ──────────────────────
