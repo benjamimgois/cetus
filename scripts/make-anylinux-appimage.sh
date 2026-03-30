@@ -39,6 +39,7 @@ if [ "$(id -u)" = "0" ] && command -v pacman &>/dev/null; then
         python-pyqt6 python-pyqt6-qt6 \
         python-paramiko python-pyte \
         qt6-base qt6-svg qt6-wayland \
+        freerdp \
         picocom xorg-server-xvfb
     pip install --break-system-packages standard-telnetlib speedtest-cli 2>/dev/null || true
 else
@@ -204,39 +205,76 @@ cd "$BUILD_DIR"
     "$PREFIX/usr/bin/omnicom" --help 2>/dev/null || \
 "$BUILD_DIR/quick-sharun" "$PREFIX/usr/bin/omnicom"
 
-# ── 6b. Post-deploy: copy app data, Qt plugins & custom AppRun ───────────────
-echo "  Copying app data into AppDir..."
+# ── 6b. Post-deploy: copy app data, extra binaries & custom AppRun ───────────
 
+# Helper: copy a binary + ALL its transitive shared-library deps into AppDir.
+# ldd resolves the full dependency closure in one call.
+# Skips glibc/ld-linux (too system-critical to bundle safely).
+_bundle_exe() {
+    local _exe="$1"
+    local _dest_bin="$APPDIR/usr/bin/$(basename "$_exe")"
+    cp "$_exe" "$_dest_bin"
+    chmod +x "$_dest_bin"
+    # Make it findable on PATH inside the AppImage (shared/bin → usr/bin)
+    local _bindir="$APPDIR/bin"
+    [ -d "$_bindir" ] && \
+        ln -sf "../usr/bin/$(basename "$_exe")" "$_bindir/$(basename "$_exe")" 2>/dev/null || true
+
+    ldd "$_exe" 2>/dev/null | awk '/=> \//{print $3}' | \
+    grep -v 'ld-linux\|/lib/libc\.\|/lib/libm\.\|/lib/libdl\.\|/lib/libpthread\.\|/lib/librt\.' | \
+    while read _dep; do
+        [ -f "$_dep" ] || continue
+        local _bn
+        _bn="$(basename "$_dep")"
+        [ -f "$APPDIR/usr/lib/$_bn" ] || [ -f "$APPDIR/lib/$_bn" ] || \
+            cp "$_dep" "$APPDIR/usr/lib/$_bn" 2>/dev/null || true
+    done
+}
+
+echo "  Copying app data into AppDir..."
 install -dm755 "$APPDIR/usr/share/omnicom/assets/icons"
 install -dm755 "$APPDIR/usr/share/omnicom/assets/vendors"
 cp "$SCRIPT_DIR/omnicom"                "$APPDIR/usr/share/omnicom/omnicom"
 cp "$SCRIPT_DIR/assets/icons/"*.svg     "$APPDIR/usr/share/omnicom/assets/icons/"
 cp "$SCRIPT_DIR/assets/vendors/"*.svg   "$APPDIR/usr/share/omnicom/assets/vendors/"
 
-# Bundle Qt platform-theme and Wayland decoration plugins that strace may miss
-# (they are dlopen-ed at runtime by Qt and need to be in the AppDir).
+# ── Bundle Qt platform plugins (XCB + Wayland + themes) ──────────────────────
+# The strace phase captures Qt plugin loads for the running session's display,
+# but the AppImage must also run on the OTHER platform (e.g., built on Wayland
+# → must still work on X11/XWayland).  Force-bundle both platforms here.
 echo "  Bundling Qt platform/decoration plugins..."
-for _plugin_dir in platformthemes wayland-decoration-client; do
+for _plugin_dir in platforms platformthemes wayland-decoration-client; do
     _src="/usr/lib/qt6/plugins/$_plugin_dir"
     _dst="$APPDIR/usr/lib/qt6/plugins/$_plugin_dir"
     [ -d "$_src" ] || continue
     install -dm755 "$_dst"
     for _so in "$_src"/*.so; do
+        [ -f "$_so" ] || continue
         cp "$_so" "$_dst/"
-        # Copy direct shared-library deps that are NOT already bundled.
-        # GTK3 libs are intentionally skipped — they are always present on
-        # the target system and bundling them causes version conflicts.
-        ldd "$_so" 2>/dev/null | awk '/=> \/(usr|lib)/{print $3}' | \
-        grep -v 'libgtk\|libgdk\|libgio\|libgobject\|libglib\|libpango\|libcairo\|libgmodule\|libatk\|libepoxy' | \
+        # Bundle the plugin's own deps (skip GTK3 — always on target distro).
+        ldd "$_so" 2>/dev/null | awk '/=> \//{print $3}' | \
+        grep -v 'libgtk\|libgdk\|libgio\|libgobject\|libpango\|libcairo\|libgmodule\|libatk\|libepoxy' | \
+        grep -v 'ld-linux\|/lib/libc\.\|/lib/libm\.' | \
         while read _dep; do
             [ -f "$_dep" ] || continue
             _bn="$(basename "$_dep")"
-            [ -f "$APPDIR/usr/lib/$_bn" ] || \
-            [ -f "$APPDIR/lib/$_bn" ]     || \
-            cp "$_dep" "$APPDIR/usr/lib/$_bn" 2>/dev/null || true
+            [ -f "$APPDIR/usr/lib/$_bn" ] || [ -f "$APPDIR/lib/$_bn" ] || \
+                cp "$_dep" "$APPDIR/usr/lib/$_bn" 2>/dev/null || true
         done
     done
 done
+
+# ── Bundle external tool: FreeRDP ─────────────────────────────────────────────
+echo "  Bundling FreeRDP..."
+mkdir -p "$APPDIR/usr/bin"
+_rdp_bundled=0
+for _rdp_bin in sdl-freerdp3 xfreerdp3 wlfreerdp3 wlfreerdp xfreerdp; do
+    _rdp_path="$(command -v "$_rdp_bin" 2>/dev/null)" || continue
+    echo "    $( basename "$_rdp_path" ) → AppDir/usr/bin/"
+    _bundle_exe "$_rdp_path"
+    _rdp_bundled=1
+done
+[ "$_rdp_bundled" = "0" ] && echo "    WARNING: no freerdp binary found — RDP won't work in the AppImage"
 
 # Custom AppRun — calls bundled python3 (sharun hardlink) with the omnicom script
 cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
@@ -244,14 +282,14 @@ cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
 APPDIR="$(cd "${0%/*}" && echo "$PWD")"
 
 export APPDIR
-export PATH="$APPDIR/bin:$PATH"
+export PATH="$APPDIR/bin:$APPDIR/usr/bin:$PATH"
 
-# Qt plugin path — needed for platform theme and decoration plugins
+# Qt plugin path — needed for XCB, Wayland, platform themes
 export QT_PLUGIN_PATH="$APPDIR/usr/lib/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 
-# Window decoration: prefer adwaita CSD on Wayland; gtk3 theme on X11
-export QT_WAYLAND_DECORATION="${QT_WAYLAND_DECORATION:-adwaita}"
-export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
+# Force X11/XWayland platform: reliable window decorations on every distro.
+# Users who want native Wayland: QT_QPA_PLATFORM=wayland ./Omnicom.AppImage
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 
 # Run any deployed hooks
 for _hook in "$APPDIR"/bin/*.hook; do
