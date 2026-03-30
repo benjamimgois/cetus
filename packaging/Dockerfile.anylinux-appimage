@@ -19,7 +19,7 @@ RUN pacman -Syu --noconfirm --needed \
         qt6-base qt6-svg qt6-wayland \
         picocom \
         xorg-server-xvfb \
-    && pip install --break-system-packages standard-telnetlib \
+    && pip install --break-system-packages standard-telnetlib speedtest-cli \
     && pacman -Scc --noconfirm
 
 # Copy the repo into the image

@@ -4381,99 +4381,62 @@ class SerialProfilesTree(QTreeWidget):
 
 
 class SpeedTestWorker(QThread):
-    """Measure download speed using the 'fast' CLI (fast.com / Netflix CDN)."""
+    """Measure download/upload speed using the speedtest-cli Python library."""
 
     result      = pyqtSignal(float, float, float)  # ping_ms, dl_mbps, ul_mbps
     info        = pyqtSignal(str, str, str, str)   # isp, rating, country, server
-    phase_start = pyqtSignal(str)                  # 'download'
+    phase_start = pyqtSignal(str)                  # 'download' | 'upload'
     phase_done  = pyqtSignal(str, float)           # phase, avg_mbps
     progress    = pyqtSignal(float, float, float)  # elapsed_s, speed_mbps, 0.0
     log_line    = pyqtSignal(str)
     error       = pyqtSignal(str)
 
     def run(self):
-        import subprocess as _sp, re as _re, time as _time
-
-        # Strip ANSI escape sequences (e.g. \x1b[2K)
-        _ansi = _re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
-        # Strip spinner prefix and arrow  (-  \  |  /  ->  → and spaces)
-        _pfx  = _re.compile(r'^[\-\\/|>\s→]+')
-
+        import time as _time
         try:
-            proc = _sp.Popen(
-                ['fast', '--upload'],
-                stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                bufsize=0
-            )
-        except FileNotFoundError:
+            import speedtest as _speedtest
+        except ImportError:
             self.error.emit(
-                "'fast' not found.\n"
-                "Install with: npm install --global fast-cli"
+                "'speedtest-cli' not found.\n"
+                "Install with: pip install speedtest-cli"
             )
             return
 
-        t0 = _time.monotonic()
-        self.phase_start.emit('download')
-        self.log_line.emit("Starting fast.com…")
+        try:
+            t0 = _time.monotonic()
 
-        dl = ul = 0.0
-        phase = 'download'
-        last_emit = t0
-        buf = ''
+            self.log_line.emit("Connecting to speedtest.net…")
+            st = _speedtest.Speedtest()
 
-        while True:
-            raw = proc.stdout.read(1)
-            if not raw:
-                break
-            ch = raw.decode('utf-8', errors='replace')
-
-            if ch in ('\r', '\n'):
-                line = _pfx.sub('', _ansi.sub('', buf)).strip()
-                buf = ''
-                if not line or line in ('connecting', 'loading'):
-                    continue
-
-                now     = _time.monotonic()
-                elapsed = now - t0
-
-                m = _re.search(r'([\d.]+)\s*(Gbps|Mbps|Kbps)', line, _re.IGNORECASE)
-                if not m:
-                    self.log_line.emit(line)
-                    continue
-
-                val  = float(m.group(1))
-                unit = m.group(2).lower()
-                if   unit == 'gbps': val *= 1000
-                elif unit == 'kbps': val /= 1000
-
-                # Detect upload phase: after download settled, speed drops to <30%
-                if phase == 'download' and dl > 0 and val < dl * 0.3 and elapsed > 15:
-                    self.phase_done.emit('download', dl)
-                    self.phase_start.emit('upload')
-                    phase = 'upload'
-                    self.log_line.emit(f"Download: {dl:.2f} Mbps")
-
-                if phase == 'download':
-                    dl = val
-                else:
-                    ul = val
-
-                if now - last_emit >= 0.5:
-                    self.progress.emit(elapsed, val, 0.0)
-                    last_emit = now
-            else:
-                buf += ch
-
-        proc.wait()
-
-        if dl > 0:
-            if phase == 'download':
-                self.phase_done.emit('download', dl)
-            self.log_line.emit(
-                f"Download: {dl:.2f} Mbps" +
-                (f"  |  Upload: {ul:.2f} Mbps" if ul > 0 else "")
+            self.log_line.emit("Getting best server…")
+            best = st.get_best_server()
+            server_name = (
+                f"{best.get('sponsor', '')} — {best.get('name', '')} "
+                f"({best.get('country', '')})"
             )
-            # Fetch ISP and country from public IP geolocation
+            self.log_line.emit(f"Server: {server_name}")
+
+            # ── Download ──────────────────────────────────────────────────
+            self.phase_start.emit('download')
+            self.log_line.emit("Testing download…")
+            st.download()
+            dl_mbps = st.results.download / 1e6
+            self.progress.emit(_time.monotonic() - t0, dl_mbps, 0.0)
+            self.phase_done.emit('download', dl_mbps)
+            self.log_line.emit(f"Download: {dl_mbps:.2f} Mbps")
+
+            # ── Upload ────────────────────────────────────────────────────
+            self.phase_start.emit('upload')
+            self.log_line.emit("Testing upload…")
+            st.upload()
+            ul_mbps = st.results.upload / 1e6
+            self.progress.emit(_time.monotonic() - t0, ul_mbps, 0.0)
+            self.phase_done.emit('upload', ul_mbps)
+            self.log_line.emit(f"Upload: {ul_mbps:.2f} Mbps")
+
+            ping_ms = st.results.ping
+
+            # ── ISP / country via IP geolocation ──────────────────────────
             isp = '—'
             country = '—'
             try:
@@ -4484,10 +4447,16 @@ class SpeedTestWorker(QThread):
                     country = _d.get('country', '—') or '—'
             except Exception:
                 pass
-            self.info.emit(isp, '—', country, 'Netflix CDN')
-            self.result.emit(0.0, dl, ul)
-        else:
-            self.error.emit("No results obtained.")
+
+            self.info.emit(isp, '—', country, server_name)
+            self.result.emit(ping_ms, dl_mbps, ul_mbps)
+            self.log_line.emit(
+                f"Download: {dl_mbps:.2f} Mbps  |  Upload: {ul_mbps:.2f} Mbps"
+                f"  |  Ping: {ping_ms:.1f} ms"
+            )
+
+        except Exception as e:
+            self.error.emit(f"Speed test error: {e}")
 
 
 class _SimplePingWorker(QThread):
@@ -12618,7 +12587,7 @@ class SerialTerminalGUI(QMainWindow):
         else:
             self.iperf_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_MediaVolume))
-        self.iperf_tab_btn.setToolTip("Speed Test\nBandwidth test via fast.com (Netflix CDN) or iPerf3")
+        self.iperf_tab_btn.setToolTip("Speed Test\nBandwidth test via speedtest.net or iPerf3")
         self.iperf_tab_btn.setCheckable(True)
         self.iperf_tab_btn.clicked.connect(lambda: self.switch_tab(6))
         self.iperf_tab_btn.setStyleSheet(tab_btn_style.format(color='#00897B'))
@@ -24790,8 +24759,8 @@ class SerialTerminalGUI(QMainWindow):
         _sel_inner.addWidget(self._test_mode_iperf_btn)
 
         self._test_mode_speedtest_btn.setToolTip(
-            "Tests internet download speed\n"
-            "using fast.com (Netflix CDN).\nRequires: npm install -g fast-cli"
+            "Tests internet download/upload speed\n"
+            "using speedtest.net.\nRequires: pip install speedtest-cli"
         )
         self._test_mode_iperf_btn.setToolTip(
             "Measures bandwidth between two hosts using iperf3.\n"
@@ -25457,7 +25426,7 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_run_btn.setText("SPEED TEST")
         # Ping fast.com to fill the latency card
         self.stat_ping.setText("…")
-        self._st_ping_worker = _SimplePingWorker('fast.com')
+        self._st_ping_worker = _SimplePingWorker('speedtest.net')
         self._st_ping_worker.result.connect(lambda ms: self.stat_ping.setText(f"{ms:.1f} ms"))
         self._st_ping_worker.error.connect(lambda _: self.stat_ping.setText("—"))
         self._st_ping_worker.start()

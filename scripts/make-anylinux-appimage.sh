@@ -40,12 +40,13 @@ if [ "$(id -u)" = "0" ] && command -v pacman &>/dev/null; then
         python-paramiko python-pyte \
         qt6-base qt6-svg qt6-wayland \
         picocom xorg-server-xvfb
-    pip install --break-system-packages standard-telnetlib 2>/dev/null || true
+    pip install --break-system-packages standard-telnetlib speedtest-cli 2>/dev/null || true
 else
     echo "[1/7] Skipping pacman install (not root) — verifying installed deps..."
     for dep in PyQt6 paramiko pyte; do
         python3 -c "import $dep" 2>/dev/null || { echo "ERROR: python3 $dep not found. Install it first."; exit 1; }
     done
+    python3 -c "import speedtest" 2>/dev/null || pip install --break-system-packages speedtest-cli 2>/dev/null || true
     echo "  All Python deps OK"
 fi
 
@@ -203,7 +204,7 @@ cd "$BUILD_DIR"
     "$PREFIX/usr/bin/omnicom" --help 2>/dev/null || \
 "$BUILD_DIR/quick-sharun" "$PREFIX/usr/bin/omnicom"
 
-# ── 6b. Post-deploy: copy app data & custom AppRun ───────────────────────────
+# ── 6b. Post-deploy: copy app data, Qt plugins & custom AppRun ───────────────
 echo "  Copying app data into AppDir..."
 
 install -dm755 "$APPDIR/usr/share/omnicom/assets/icons"
@@ -212,6 +213,31 @@ cp "$SCRIPT_DIR/omnicom"                "$APPDIR/usr/share/omnicom/omnicom"
 cp "$SCRIPT_DIR/assets/icons/"*.svg     "$APPDIR/usr/share/omnicom/assets/icons/"
 cp "$SCRIPT_DIR/assets/vendors/"*.svg   "$APPDIR/usr/share/omnicom/assets/vendors/"
 
+# Bundle Qt platform-theme and Wayland decoration plugins that strace may miss
+# (they are dlopen-ed at runtime by Qt and need to be in the AppDir).
+echo "  Bundling Qt platform/decoration plugins..."
+for _plugin_dir in platformthemes wayland-decoration-client; do
+    _src="/usr/lib/qt6/plugins/$_plugin_dir"
+    _dst="$APPDIR/usr/lib/qt6/plugins/$_plugin_dir"
+    [ -d "$_src" ] || continue
+    install -dm755 "$_dst"
+    for _so in "$_src"/*.so; do
+        cp "$_so" "$_dst/"
+        # Copy direct shared-library deps that are NOT already bundled.
+        # GTK3 libs are intentionally skipped — they are always present on
+        # the target system and bundling them causes version conflicts.
+        ldd "$_so" 2>/dev/null | awk '/=> \/(usr|lib)/{print $3}' | \
+        grep -v 'libgtk\|libgdk\|libgio\|libgobject\|libglib\|libpango\|libcairo\|libgmodule\|libatk\|libepoxy' | \
+        while read _dep; do
+            [ -f "$_dep" ] || continue
+            _bn="$(basename "$_dep")"
+            [ -f "$APPDIR/usr/lib/$_bn" ] || \
+            [ -f "$APPDIR/lib/$_bn" ]     || \
+            cp "$_dep" "$APPDIR/usr/lib/$_bn" 2>/dev/null || true
+        done
+    done
+done
+
 # Custom AppRun — calls bundled python3 (sharun hardlink) with the omnicom script
 cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
 #!/bin/sh
@@ -219,6 +245,13 @@ APPDIR="$(cd "${0%/*}" && echo "$PWD")"
 
 export APPDIR
 export PATH="$APPDIR/bin:$PATH"
+
+# Qt plugin path — needed for platform theme and decoration plugins
+export QT_PLUGIN_PATH="$APPDIR/usr/lib/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+
+# Window decoration: prefer adwaita CSD on Wayland; gtk3 theme on X11
+export QT_WAYLAND_DECORATION="${QT_WAYLAND_DECORATION:-adwaita}"
+export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
 
 # Run any deployed hooks
 for _hook in "$APPDIR"/bin/*.hook; do
