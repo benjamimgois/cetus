@@ -9,7 +9,7 @@ override_dh_auto_install:
 
 	# Install icon in hicolor theme (FreeDesktop.org standard)
 	install -Dm644 assets/icons/opengrid_icon.svg debian/opengrid/usr/share/icons/hicolor/scalable/apps/opengrid.svg
-	install -Dm644 assets/opengrid.png debian/opengrid/usr/share/icons/hicolor/512x512/apps/opengrid.png
+	install -Dm644 assets/icons/opengrid.png debian/opengrid/usr/share/icons/hicolor/512x512/apps/opengrid.png
 
 	# Install UI icons (sidebar and misc) — all SVGs
 	for icon in assets/icons/*.svg; do \

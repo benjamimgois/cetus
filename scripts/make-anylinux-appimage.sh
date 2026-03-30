@@ -149,8 +149,8 @@ cp "$SCRIPT_DIR/assets/vendors/"*.svg    "$PREFIX/usr/share/opengrid/assets/vend
 cp "$SCRIPT_DIR/opengrid.desktop"         "$PREFIX/usr/share/applications/opengrid.desktop"
 
 # Icon: use PNG from assets if available
-if [ -f "$SCRIPT_DIR/assets/opengrid.png" ]; then
-    cp "$SCRIPT_DIR/assets/opengrid.png" \
+if [ -f "$SCRIPT_DIR/assets/icons/opengrid.png" ]; then
+    cp "$SCRIPT_DIR/assets/icons/opengrid.png" \
        "$PREFIX/usr/share/icons/hicolor/256x256/apps/opengrid.png"
 else
     # Convert SVG to PNG as fallback

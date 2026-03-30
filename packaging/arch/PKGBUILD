@@ -31,12 +31,12 @@ package() {
 
     # Install icon in hicolor theme (FreeDesktop.org standard)
     install -Dm644 assets/icons/opengrid_icon.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/opengrid.svg"
-    install -Dm644 assets/opengrid.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/opengrid.png"
+    install -Dm644 assets/icons/opengrid.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/opengrid.png"
 
     # Create scaled versions for better compatibility
     for size in 256 128 64 48 32 16; do
         install -dm755 "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps"
-        magick assets/opengrid.png -resize ${size}x${size} "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/opengrid.png"
+        magick assets/icons/opengrid.png -resize ${size}x${size} "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/opengrid.png"
     done
 
     # Install UI icons (sidebar and misc) — all SVGs
