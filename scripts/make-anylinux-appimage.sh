@@ -39,7 +39,7 @@ if [ "$(id -u)" = "0" ] && command -v pacman &>/dev/null; then
         python-pyqt6 python-pyqt6-qt6 \
         python-paramiko python-pyte \
         qt6-base qt6-svg qt6-wayland \
-        freerdp \
+        freerdp tigervnc \
         picocom xorg-server-xvfb
     pip install --break-system-packages standard-telnetlib speedtest-cli 2>/dev/null || true
 else
@@ -264,17 +264,28 @@ for _plugin_dir in platforms platformthemes wayland-decoration-client; do
     done
 done
 
-# ── Bundle external tool: FreeRDP ─────────────────────────────────────────────
-echo "  Bundling FreeRDP..."
+# ── Bundle external tools: FreeRDP & TigerVNC ────────────────────────────────
 mkdir -p "$APPDIR/usr/bin"
+
+echo "  Bundling FreeRDP..."
 _rdp_bundled=0
 for _rdp_bin in sdl-freerdp3 xfreerdp3 wlfreerdp3 wlfreerdp xfreerdp; do
     _rdp_path="$(command -v "$_rdp_bin" 2>/dev/null)" || continue
-    echo "    $( basename "$_rdp_path" ) → AppDir/usr/bin/"
+    echo "    $(basename "$_rdp_path") → AppDir/usr/bin/"
     _bundle_exe "$_rdp_path"
     _rdp_bundled=1
 done
 [ "$_rdp_bundled" = "0" ] && echo "    WARNING: no freerdp binary found — RDP won't work in the AppImage"
+
+echo "  Bundling TigerVNC viewer..."
+_vnc_bundled=0
+for _vnc_bin in vncviewer xtigervncviewer; do
+    _vnc_path="$(command -v "$_vnc_bin" 2>/dev/null)" || continue
+    echo "    $(basename "$_vnc_path") → AppDir/usr/bin/"
+    _bundle_exe "$_vnc_path"
+    _vnc_bundled=1
+done
+[ "$_vnc_bundled" = "0" ] && echo "    WARNING: no VNC viewer found — VNC won't work in the AppImage"
 
 # Custom AppRun — calls bundled python3 (sharun hardlink) with the omnicom script
 cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
