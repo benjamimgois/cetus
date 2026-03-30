@@ -7,15 +7,12 @@ override_dh_auto_install:
 	# Install main script
 	install -Dm755 opengrid debian/opengrid/usr/bin/opengrid
 
-	# Install SVG icon (scalable — source of truth)
+	# Install SVG icon (scalable)
 	install -Dm644 assets/icons/opengrid_icon.svg debian/opengrid/usr/share/icons/hicolor/scalable/apps/opengrid.svg
-	# Generate PNG sizes from SVG
+	# Install pre-built PNG sizes
 	for size in 16 32 48 64 128 256 512; do \
-		install -dm755 debian/opengrid/usr/share/icons/hicolor/$${size}x$${size}/apps; \
-		inkscape --export-type=png \
-			--export-filename=debian/opengrid/usr/share/icons/hicolor/$${size}x$${size}/apps/opengrid.png \
-			--export-width=$${size} --export-height=$${size} \
-			assets/icons/opengrid_icon.svg; \
+		install -Dm644 assets/icons/opengrid-$${size}.png \
+			debian/opengrid/usr/share/icons/hicolor/$${size}x$${size}/apps/opengrid.png; \
 	done
 
 	# Install UI icons (sidebar and misc) — all SVGs
