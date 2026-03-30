@@ -322,6 +322,10 @@ for _hook in "$APPDIR"/bin/*.src.hook; do
     . "$_hook"
 done
 
+# Expose bundled libs to subprocesses (iperf3, freerdp, vncviewer …).
+# Prepend AFTER hooks so sharun's own lib path is already included.
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 exec "$APPDIR/bin/python3" \
      "$APPDIR/usr/share/omnicom/omnicom" "$@"
 APPRUN_EOF
