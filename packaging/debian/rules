@@ -15,6 +15,9 @@ override_dh_auto_install:
 			debian/opengrid/usr/share/icons/hicolor/$${size}x$${size}/apps/opengrid.png; \
 	done
 
+	# Install author photo for About dialog
+	install -Dm644 assets/photo.png debian/opengrid/usr/share/opengrid/photo.png
+
 	# Install UI icons (sidebar and misc) — all SVGs
 	for icon in assets/icons/*.svg; do \
 		install -Dm644 "$$icon" "debian/opengrid/usr/share/opengrid/icons/$$(basename $$icon)"; \

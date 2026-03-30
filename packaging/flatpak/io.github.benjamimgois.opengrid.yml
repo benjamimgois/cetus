@@ -103,6 +103,7 @@ modules:
       - install -Dm644 assets/icons/opengrid-64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/opengrid-48.png ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
       - install -Dm644 assets/icons/opengrid-32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 assets/photo.png ${FLATPAK_DEST}/share/opengrid/photo.png
       - for icon in assets/icons/*.svg; do install -Dm644 "$icon" "${FLATPAK_DEST}/share/${FLATPAK_ID}/icons/$(basename $icon)"; done
       - install -Dm644 assets/vendors/default.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/default.svg
       - install -Dm644 assets/vendors/cisco.svg ${FLATPAK_DEST}/share/${FLATPAK_ID}/vendors/cisco.svg

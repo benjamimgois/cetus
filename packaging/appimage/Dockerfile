@@ -1,7 +1,7 @@
 # Builds the Anylinux AppImage for OpenGrid inside an Arch Linux container.
 #
 # Usage (from repo root):
-#   docker build -f packaging/Dockerfile.anylinux-appimage -t opengrid-appimage-builder .
+#   docker build -f packaging/appimage/Dockerfile -t opengrid-appimage-builder .
 #   docker run --rm --privileged \
 #     -v "$(pwd)/dist:/out" \
 #     opengrid-appimage-builder
