@@ -1,8 +1,8 @@
-pkgbase = omnicom-git
+pkgbase = opengrid-git
 	pkgdesc = Modern graphical interface for network device management with Serial, SSH, Telnet, IP Scanner, SNMP and Traceroute support
 	pkgver = r1.g0000000
 	pkgrel = 1
-	url = https://github.com/benjamimgois/omnicom
+	url = https://github.com/benjamimgois/opengrid
 	arch = any
 	license = GPL-3.0-or-later
 	makedepends = git
@@ -25,10 +25,10 @@ pkgbase = omnicom-git
 	depends = nmap
 	optdepends = nodejs: required for fast-cli (npm install -g fast-cli) — Speed Test via fast.com
 	optdepends = python-pyftpdlib: built-in FTP server support
-	provides = omnicom
-	conflicts = omnicom
-	source = omnicom-git::git+https://github.com/benjamimgois/omnicom.git
+	provides = opengrid
+	conflicts = opengrid
+	source = opengrid-git::git+https://github.com/benjamimgois/opengrid.git
 	sha256sums = SKIP
 
-pkgname = omnicom-git
+pkgname = opengrid-git
 

@@ -1,4 +1,4 @@
-omnicom (1.6-1) jammy; urgency=medium
+opengrid (1.6-1) jammy; urgency=medium
 
   * New File Transfer tab: SSH/SFTP, SMB, FTP and TFTP protocols (client + server modes)
   * SMB server configuration: Share Name, Comment, Workgroup, Valid Users, Guest access, Read-only
@@ -7,7 +7,7 @@ omnicom (1.6-1) jammy; urgency=medium
   * Serial quick connect redesigned: grouped tree, drag-and-drop reordering, context menu, rename group
   * Vertical tab order: SSH, Serial, IP Scan, Traceroute, SNMP, WiFi Survey, Speed, Transfer
   * New About dialog in sidebar with description, author info, photo and GitHub link
-  * New official app icon: gradient O with C cutout (omnicom_icon.svg)
+  * New official app icon: gradient O with C cutout (opengrid_icon.svg)
   * Scalable SVG icon installed in hicolor theme for all packaging formats
   * Serial tab: replace port-type QComboBox with toggle buttons (USB / Serial)
   * Standardize button widths: 90px for toggle/action, 110px for Save/Delete/Clear/Export CSV
@@ -17,7 +17,7 @@ omnicom (1.6-1) jammy; urgency=medium
 
  -- Benjamim Gois <benjamimgois@example.com>  Fri, 13 Mar 2026 10:00:00 -0300
 
-omnicom (1.5-3) jammy; urgency=low
+opengrid (1.5-3) jammy; urgency=low
 
   * Add WiFi waterfall heatmap (WifiHeatmapWidget)
   * Add WiFi survey functionality with best channel recommendation and elapsed time display
@@ -34,7 +34,7 @@ omnicom (1.5-3) jammy; urgency=low
 
  -- Benjamim Gois <benjamimgois@example.com>  Thu, 05 Mar 2026 12:00:00 -0300
 
-omnicom (1.5-2) jammy; urgency=low
+opengrid (1.5-2) jammy; urgency=low
 
   * Vulnerability Scanner: fix NVD keyword search — use major.minor version
     only (e.g. 7.20 instead of 7.20.2) to avoid token noise in full-text search
@@ -44,7 +44,7 @@ omnicom (1.5-2) jammy; urgency=low
 
  -- Benjamim Gois <benjamimgois@example.com>  Thu, 27 Feb 2026 12:00:00 -0300
 
-omnicom (1.5-1) jammy; urgency=medium
+opengrid (1.5-1) jammy; urgency=medium
 
   * Reorganize Serial tab layout: Type and Port fields side-by-side
   * Update Quick target presets button style and add SSH profiles integration
@@ -71,7 +71,7 @@ omnicom (1.5-1) jammy; urgency=medium
 
  -- Benjamim Gois <benjamimgois@example.com>  Thu, 26 Feb 2026 12:00:00 -0300
 
-omnicom (1.4-1) jammy; urgency=medium
+opengrid (1.4-1) jammy; urgency=medium
 
   * Add Traceroute / MTR tab with graphical route visualization
   * Redesign route visualization with glowing neon bars and hover effects
@@ -86,7 +86,7 @@ omnicom (1.4-1) jammy; urgency=medium
 
  -- Benjamim Gois <benjamimgois@example.com>  Sat, 21 Feb 2026 20:00:00 -0300
 
-omnicom (1.3-1) jammy; urgency=medium
+opengrid (1.3-1) jammy; urgency=medium
 
   * Add vendor quick reference guide dialog (click vendor icon in terminal)
   * Add new vendor icons: Linux, Aruba, MikroTik, Default
@@ -95,16 +95,16 @@ omnicom (1.3-1) jammy; urgency=medium
 
  -- Benjamim Gois <benjamimgois@example.com>  Tue, 11 Feb 2026 12:00:00 -0300
 
-omnicom (1.2-1) jammy; urgency=medium
+opengrid (1.2-1) jammy; urgency=medium
 
-  * Rename project from SerialCom to Omnicom
+  * Rename project from SerialCom to OpenGrid
   * Add search functionality to terminal dialog with keyboard shortcuts
   * Add context menu with copy, paste, and export options to terminal widget
   * Add profile name banner and copy button for TFTP file names
 
  -- Benjamim Gois <benjamimgois@example.com>  Sun, 09 Feb 2026 19:00:00 -0300
 
-omnicom (1.1-1) jammy; urgency=medium
+opengrid (1.1-1) jammy; urgency=medium
 
   * Add manufacturer SVG icons (Cisco, Huawei, Juniper, Fortinet, D-Link,
     H3C, Brocade, Datacom)
@@ -115,7 +115,7 @@ omnicom (1.1-1) jammy; urgency=medium
 
  -- Benjamim Gois <benjamimgois@example.com>  Tue, 04 Feb 2026 14:30:00 -0300
 
-omnicom (1.0-1) jammy; urgency=medium
+opengrid (1.0-1) jammy; urgency=medium
 
   * Initial release
   * Modern PyQt6 interface for serial communication

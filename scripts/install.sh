@@ -1,7 +1,7 @@
 #!/bin/bash
-# Omnicom installation script
+# OpenGrid installation script
 
-echo "=== Omnicom - Installation ==="
+echo "=== OpenGrid - Installation ==="
 echo ""
 
 # Detect package manager
@@ -91,15 +91,15 @@ fi
 # Install .desktop file
 echo "6. Installing menu shortcut..."
 mkdir -p ~/.local/share/applications
-cp omnicom.desktop ~/.local/share/applications/
+cp opengrid.desktop ~/.local/share/applications/
 echo "   ✓ Shortcut installed at ~/.local/share/applications/"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "To run the application:"
-echo "  - From terminal: ./omnicom"
-echo "  - From menu: Look for 'Omnicom'"
+echo "  - From terminal: ./opengrid"
+echo "  - From menu: Look for 'OpenGrid'"
 echo ""
 echo "IMPORTANT: If added to dialout group now,"
 echo "logout and login again to avoid password prompts."

@@ -1,12 +1,12 @@
-# Next Steps - Omnicom v1.0
+# Next Steps - OpenGrid v1.0
 
 Your GitHub repository is ready! Follow these steps to complete the release and AUR submission.
 
 ## Repository Information
 
-- **GitHub URL**: https://github.com/benjamimgois/omnicom
+- **GitHub URL**: https://github.com/benjamimgois/opengrid
 - **Version**: 1.0
-- **Tarball**: omnicom-1.0.tar.gz
+- **Tarball**: opengrid-1.0.tar.gz
 - **SHA256**: 7481ee224a0a1a7e2838098444011879990b2da1914220dc6164280904fe7042
 
 ## Step 1: Push Code to GitHub ✓
@@ -14,7 +14,7 @@ Your GitHub repository is ready! Follow these steps to complete the release and 
 Your repository is created. Now push the code:
 
 ```bash
-cd /home/benjamim/Documentos/omnicom
+cd /home/benjamim/Documentos/opengrid
 
 # Initialize git if not already done
 git init
@@ -40,10 +40,10 @@ __pycache__/
 EOF
 
 # Commit
-git commit -m "Initial commit - Omnicom v1.0"
+git commit -m "Initial commit - OpenGrid v1.0"
 
 # Add remote (if not already added)
-git remote add origin https://github.com/benjamimgois/omnicom.git
+git remote add origin https://github.com/benjamimgois/opengrid.git
 
 # Push to main branch
 git branch -M main
@@ -52,14 +52,14 @@ git push -u origin main
 
 ## Step 2: Create GitHub Release
 
-1. Go to: https://github.com/benjamimgois/omnicom/releases/new
+1. Go to: https://github.com/benjamimgois/opengrid/releases/new
 
 2. Fill in the release information:
    - **Tag version**: `v1.0`
-   - **Release title**: `Omnicom v1.0`
+   - **Release title**: `OpenGrid v1.0`
    - **Description**:
    ```markdown
-   # Omnicom v1.0 - Initial Release
+   # OpenGrid v1.0 - Initial Release
 
    Modern graphical interface for serial communication via picocom.
 
@@ -74,16 +74,16 @@ git push -u origin main
 
    ### Arch Linux (AUR)
    ```bash
-   yay -S omnicom
+   yay -S opengrid
    ```
 
    ### Manual Installation
    ```bash
-   wget https://github.com/benjamimgois/omnicom/releases/download/v1.0/omnicom-1.0.tar.gz
-   tar -xzf omnicom-1.0.tar.gz
-   cd omnicom-1.0
-   chmod +x omnicom
-   ./omnicom
+   wget https://github.com/benjamimgois/opengrid/releases/download/v1.0/opengrid-1.0.tar.gz
+   tar -xzf opengrid-1.0.tar.gz
+   cd opengrid-1.0
+   chmod +x opengrid
+   ./opengrid
    ```
 
    ## Requirements
@@ -99,7 +99,7 @@ git push -u origin main
    ```
 
 3. **Attach the tarball**:
-   - Upload `omnicom-1.0.tar.gz` as a release asset
+   - Upload `opengrid-1.0.tar.gz` as a release asset
 
 4. Click **"Publish release"**
 
@@ -107,21 +107,21 @@ git push -u origin main
 
 After publishing, verify the download URL:
 ```bash
-wget https://github.com/benjamimgois/omnicom/releases/download/v1.0/omnicom-1.0.tar.gz
-sha256sum omnicom-1.0.tar.gz
+wget https://github.com/benjamimgois/opengrid/releases/download/v1.0/opengrid-1.0.tar.gz
+sha256sum opengrid-1.0.tar.gz
 # Should output: 7481ee224a0a1a7e2838098444011879990b2da1914220dc6164280904fe7042
 ```
 
 ## Step 4: Test PKGBUILD
 
 ```bash
-cd /home/benjamim/Documentos/omnicom
+cd /home/benjamim/Documentos/opengrid
 
 # Test build
 makepkg -si
 
 # If successful, test the application
-omnicom
+opengrid
 ```
 
 ## Step 5: Submit to AUR
@@ -134,16 +134,16 @@ omnicom
 ### 5.2: Clone AUR Repository
 
 ```bash
-git clone ssh://aur@aur.archlinux.org/omnicom.git aur-omnicom
-cd aur-omnicom
+git clone ssh://aur@aur.archlinux.org/opengrid.git aur-opengrid
+cd aur-opengrid
 ```
 
 ### 5.3: Add Files
 
 ```bash
 # Copy PKGBUILD and .SRCINFO
-cp ../omnicom/PKGBUILD .
-cp ../omnicom/.SRCINFO .
+cp ../opengrid/PKGBUILD .
+cp ../opengrid/.SRCINFO .
 
 # Verify files
 cat .SRCINFO
@@ -157,7 +157,7 @@ cat PKGBUILD
 git add PKGBUILD .SRCINFO
 
 # Commit
-git commit -m "Initial release of Omnicom v1.0
+git commit -m "Initial release of OpenGrid v1.0
 
 Modern graphical interface for serial communication via picocom.
 
@@ -173,21 +173,21 @@ git push
 
 ### 5.5: Verify AUR Package
 
-Visit: https://aur.archlinux.org/packages/omnicom
+Visit: https://aur.archlinux.org/packages/opengrid
 
 ## Step 6: Update README Badges
 
 After AUR submission, update README.md with AUR badge:
 
 ```markdown
-[![AUR version](https://img.shields.io/aur/version/omnicom)](https://aur.archlinux.org/packages/omnicom)
+[![AUR version](https://img.shields.io/aur/version/opengrid)](https://aur.archlinux.org/packages/opengrid)
 ```
 
 ## Summary Checklist
 
 - [ ] Push code to GitHub
 - [ ] Create release v1.0 on GitHub
-- [ ] Upload omnicom-1.0.tar.gz to release
+- [ ] Upload opengrid-1.0.tar.gz to release
 - [ ] Verify release download URL works
 - [ ] Test PKGBUILD locally with makepkg
 - [ ] Create AUR account and add SSH key
@@ -205,7 +205,7 @@ All files are configured with the correct URLs:
 ✓ .SRCINFO - Generated with correct URLs
 ✓ README.md - Updated with repository links
 ✓ README-AUR.md - Updated with repository links
-✓ omnicom-1.0.tar.gz - Ready to upload to GitHub release
+✓ opengrid-1.0.tar.gz - Ready to upload to GitHub release
 ```
 
 **Everything is ready! Follow the steps above to complete the release.** 🚀

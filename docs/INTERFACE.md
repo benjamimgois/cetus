@@ -4,10 +4,10 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                       Omnicom v1.0                    │
+│                       OpenGrid v1.0                    │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│                     Omnicom v1.0                      │
+│                     OpenGrid v1.0                      │
 │                                                         │
 │  ┌────────────────────────────────────────────────┐   │
 │  │  Port Configuration                           │   │
@@ -177,9 +177,9 @@ In MTR mode the route refreshes continuously, providing live statistics:
 ### Permissions
 
 The traceroute binary requires `cap_net_raw` for TCP/UDP probe types.
-Omnicom automatically configures this when starting the traceroute tab:
+OpenGrid automatically configures this when starting the traceroute tab:
 
 ```bash
-# Applied automatically by Omnicom:
+# Applied automatically by OpenGrid:
 sudo setcap cap_net_raw+ep $(which traceroute)
 ```

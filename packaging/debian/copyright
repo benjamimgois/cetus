@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: omnicom
+Upstream-Name: opengrid
 Upstream-Contact: Benjamim Gois <benjamimgois@example.com>
-Source: https://github.com/benjamimgois/omnicom
+Source: https://github.com/benjamimgois/opengrid
 
 Files: *
 Copyright: 2026 Benjamim Gois

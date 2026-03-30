@@ -1,31 +1,31 @@
 <p align="center">
-  <img width="128" height="128" alt="Omnicom" src="assets/icons/omnicom_icon.svg" />
+  <img width="128" height="128" alt="OpenGrid" src="assets/icons/opengrid_icon.svg" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/benjamimgois/omnicom/releases">
+  <a href="https://github.com/benjamimgois/opengrid/releases">
     <img
-      src="https://img.shields.io/github/v/release/benjamimgois/omnicom?color=4CAF50&label=Latest%20release&style=for-the-badge"
+      src="https://img.shields.io/github/v/release/benjamimgois/opengrid?color=4CAF50&label=Latest%20release&style=for-the-badge"
       alt="Latest release">
   </a>
 
-  <a href="https://github.com/benjamimgois/omnicom/releases">
+  <a href="https://github.com/benjamimgois/opengrid/releases">
     <img src="https://img.shields.io/badge/Flatpak-Stable-blue?style=for-the-badge&logo=flatpak" alt="Flatpak">
   </a>
 
-  <a href="https://aur.archlinux.org/packages/omnicom-git">
+  <a href="https://aur.archlinux.org/packages/opengrid-git">
     <img
-      src="https://img.shields.io/aur/version/omnicom-git?color=1793d1&label=AUR&style=for-the-badge"
+      src="https://img.shields.io/aur/version/opengrid-git?color=1793d1&label=AUR&style=for-the-badge"
       alt="AUR version">
   </a>
 
-  <a href="https://github.com/benjamimgois/omnicom/releases">
+  <a href="https://github.com/benjamimgois/opengrid/releases">
     <img
       src="https://img.shields.io/badge/Debian-Stable-A81D33?style=for-the-badge&logo=debian"
       alt="Debian package">
   </a>
 
-  <a href="https://github.com/benjamimgois/omnicom/blob/main/LICENSE">
+  <a href="https://github.com/benjamimgois/opengrid/blob/main/LICENSE">
     <img
       src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge"
       alt="License: GPL-3.0">
@@ -169,17 +169,17 @@ npm install -g fast-cli
 
 ### Debian / Ubuntu (from .deb package)
 
-1. Download the latest .deb package from [releases](https://github.com/benjamimgois/omnicom/releases)
+1. Download the latest .deb package from [releases](https://github.com/benjamimgois/opengrid/releases)
 
 2. Install the package:
 ```bash
-sudo dpkg -i omnicom_1.6-1_all.deb
+sudo dpkg -i opengrid_1.6-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
 3. Launch from application menu or terminal:
 ```bash
-omnicom
+opengrid
 ```
 
 ### Debian / Ubuntu (build from source)
@@ -198,42 +198,42 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../omnicom_1.6-1_all.deb
+sudo dpkg -i ../opengrid_1.6-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
 
 ```bash
-yay -S omnicom
+yay -S opengrid
 # or
-paru -S omnicom
+paru -S opengrid
 ```
 
 ### Arch Linux / Manjaro (from package file)
 
-1. Download the latest `.pkg.tar.zst` from [releases](https://github.com/benjamimgois/omnicom/releases)
+1. Download the latest `.pkg.tar.zst` from [releases](https://github.com/benjamimgois/opengrid/releases)
 
 2. Install:
 ```bash
-sudo pacman -U omnicom-1.6-1-any.pkg.tar.zst
+sudo pacman -U opengrid-1.6-1-any.pkg.tar.zst
 ```
 
 ### Flatpak
 
 1. Install from Flathub (when available):
 ```bash
-flatpak install flathub io.github.benjamimgois.omnicom
+flatpak install flathub io.github.benjamimgois.opengrid
 ```
 
 2. Or build from source:
 ```bash
 cd packaging/flatpak
-flatpak-builder --install --user build io.github.benjamimgois.omnicom.yml
+flatpak-builder --install --user build io.github.benjamimgois.opengrid.yml
 ```
 
 3. Run:
 ```bash
-flatpak run io.github.benjamimgois.omnicom
+flatpak run io.github.benjamimgois.opengrid
 ```
 
 ### Other Linux Distributions
@@ -258,7 +258,7 @@ pip3 install standard-telnetlib
 
 2. Make executable:
 ```bash
-chmod +x omnicom
+chmod +x opengrid
 ```
 
 3. (Optional) Install system-wide:
@@ -270,9 +270,9 @@ chmod +x omnicom
 ## Usage
 
 ```bash
-./omnicom
+./opengrid
 # or
-python3 omnicom
+python3 opengrid
 ```
 
 ### Serial Connection
@@ -348,11 +348,11 @@ Log out and back in to apply.
 
 ## Links
 
-- **GitHub**: https://github.com/benjamimgois/omnicom
-- **AUR Package**: https://aur.archlinux.org/packages/omnicom
-- **Flathub**: https://flathub.org/apps/io.github.benjamimgois.omnicom
-- **Releases**: https://github.com/benjamimgois/omnicom/releases
-- **Issues**: https://github.com/benjamimgois/omnicom/issues
+- **GitHub**: https://github.com/benjamimgois/opengrid
+- **AUR Package**: https://aur.archlinux.org/packages/opengrid
+- **Flathub**: https://flathub.org/apps/io.github.benjamimgois.opengrid
+- **Releases**: https://github.com/benjamimgois/opengrid/releases
+- **Issues**: https://github.com/benjamimgois/opengrid/issues
 
 
 ## License

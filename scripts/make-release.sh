@@ -1,13 +1,13 @@
 #!/bin/bash
-# Script to prepare Omnicom for AUR submission
+# Script to prepare OpenGrid for AUR submission
 
 set -e
 
 VERSION="1.6"
-PKGNAME="omnicom"
+PKGNAME="opengrid"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 
-echo "=== Omnicom Release Builder ==="
+echo "=== OpenGrid Release Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
@@ -23,9 +23,9 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 
 # Copy necessary files
 echo "Copying files..."
-cp omnicom "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp opengrid "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r assets "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp omnicom.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp opengrid.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r docs "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp LICENSE "${BUILD_DIR}/${PKGNAME}-${VERSION}/"

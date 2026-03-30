@@ -5,35 +5,35 @@
 
 override_dh_auto_install:
 	# Install main script
-	install -Dm755 omnicom debian/omnicom/usr/bin/omnicom
+	install -Dm755 opengrid debian/opengrid/usr/bin/opengrid
 
 	# Install icon in hicolor theme (FreeDesktop.org standard)
-	install -Dm644 assets/icons/omnicom_icon.svg debian/omnicom/usr/share/icons/hicolor/scalable/apps/omnicom.svg
-	install -Dm644 assets/omnicom.png debian/omnicom/usr/share/icons/hicolor/512x512/apps/omnicom.png
+	install -Dm644 assets/icons/opengrid_icon.svg debian/opengrid/usr/share/icons/hicolor/scalable/apps/opengrid.svg
+	install -Dm644 assets/opengrid.png debian/opengrid/usr/share/icons/hicolor/512x512/apps/opengrid.png
 
 	# Install UI icons (sidebar and misc) — all SVGs
 	for icon in assets/icons/*.svg; do \
-		install -Dm644 "$$icon" "debian/omnicom/usr/share/omnicom/icons/$$(basename $$icon)"; \
+		install -Dm644 "$$icon" "debian/opengrid/usr/share/opengrid/icons/$$(basename $$icon)"; \
 	done
 
 	# Install vendor icons
-	install -Dm644 assets/vendors/default.svg debian/omnicom/usr/share/omnicom/vendors/default.svg
-	install -Dm644 assets/vendors/cisco.svg debian/omnicom/usr/share/omnicom/vendors/cisco.svg
-	install -Dm644 assets/vendors/huawei.svg debian/omnicom/usr/share/omnicom/vendors/huawei.svg
-	install -Dm644 assets/vendors/juniper.svg debian/omnicom/usr/share/omnicom/vendors/juniper.svg
-	install -Dm644 assets/vendors/fortinet.svg debian/omnicom/usr/share/omnicom/vendors/fortinet.svg
-	install -Dm644 assets/vendors/d-link.svg debian/omnicom/usr/share/omnicom/vendors/d-link.svg
-	install -Dm644 assets/vendors/h3c.svg debian/omnicom/usr/share/omnicom/vendors/h3c.svg
-	install -Dm644 assets/vendors/brocade.svg debian/omnicom/usr/share/omnicom/vendors/brocade.svg
-	install -Dm644 assets/vendors/datacom.svg debian/omnicom/usr/share/omnicom/vendors/datacom.svg
-	install -Dm644 assets/vendors/aruba.svg debian/omnicom/usr/share/omnicom/vendors/aruba.svg
-	install -Dm644 assets/vendors/linux.svg debian/omnicom/usr/share/omnicom/vendors/linux.svg
-	install -Dm644 assets/vendors/mikrotik.svg debian/omnicom/usr/share/omnicom/vendors/mikrotik.svg
+	install -Dm644 assets/vendors/default.svg debian/opengrid/usr/share/opengrid/vendors/default.svg
+	install -Dm644 assets/vendors/cisco.svg debian/opengrid/usr/share/opengrid/vendors/cisco.svg
+	install -Dm644 assets/vendors/huawei.svg debian/opengrid/usr/share/opengrid/vendors/huawei.svg
+	install -Dm644 assets/vendors/juniper.svg debian/opengrid/usr/share/opengrid/vendors/juniper.svg
+	install -Dm644 assets/vendors/fortinet.svg debian/opengrid/usr/share/opengrid/vendors/fortinet.svg
+	install -Dm644 assets/vendors/d-link.svg debian/opengrid/usr/share/opengrid/vendors/d-link.svg
+	install -Dm644 assets/vendors/h3c.svg debian/opengrid/usr/share/opengrid/vendors/h3c.svg
+	install -Dm644 assets/vendors/brocade.svg debian/opengrid/usr/share/opengrid/vendors/brocade.svg
+	install -Dm644 assets/vendors/datacom.svg debian/opengrid/usr/share/opengrid/vendors/datacom.svg
+	install -Dm644 assets/vendors/aruba.svg debian/opengrid/usr/share/opengrid/vendors/aruba.svg
+	install -Dm644 assets/vendors/linux.svg debian/opengrid/usr/share/opengrid/vendors/linux.svg
+	install -Dm644 assets/vendors/mikrotik.svg debian/opengrid/usr/share/opengrid/vendors/mikrotik.svg
 
 	# Install desktop file
-	install -Dm644 omnicom.desktop debian/omnicom/usr/share/applications/omnicom.desktop
+	install -Dm644 opengrid.desktop debian/opengrid/usr/share/applications/opengrid.desktop
 
 	# Install documentation
-	install -Dm644 README.md debian/omnicom/usr/share/doc/omnicom/README.md
-	install -Dm644 docs/INTERFACE.md debian/omnicom/usr/share/doc/omnicom/INTERFACE.md
-	install -Dm644 LICENSE debian/omnicom/usr/share/doc/omnicom/copyright
+	install -Dm644 README.md debian/opengrid/usr/share/doc/opengrid/README.md
+	install -Dm644 docs/INTERFACE.md debian/opengrid/usr/share/doc/opengrid/INTERFACE.md
+	install -Dm644 LICENSE debian/opengrid/usr/share/doc/opengrid/copyright

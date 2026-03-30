@@ -1,12 +1,12 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Omnicom
+Name=OpenGrid
 GenericName=Network Management
 Comment=Network management tools
-Exec=/usr/bin/omnicom
-Icon=omnicom
+Exec=/usr/bin/opengrid
+Icon=opengrid
 Terminal=false
 Categories=Network;Internet;
-StartupWMClass=omnicom
+StartupWMClass=opengrid
 Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;

@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Omnicom
+Name=OpenGrid
 GenericName=Network Management
 Comment=Network management tools
-Exec=omnicom
-Icon=io.github.benjamimgois.omnicom
+Exec=opengrid
+Icon=io.github.benjamimgois.opengrid
 Terminal=false
 Categories=Network;Internet;
 Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;picocom;tty;uart;
 StartupNotify=true
-StartupWMClass=omnicom
+StartupWMClass=opengrid

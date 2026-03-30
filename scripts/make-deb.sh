@@ -1,12 +1,12 @@
 #!/bin/bash
-# Script to build Debian package for Omnicom
+# Script to build Debian package for OpenGrid
 
 set -e
 
 VERSION="1.6"
-PKGNAME="omnicom"
+PKGNAME="opengrid"
 
-echo "=== Omnicom Debian Package Builder ==="
+echo "=== OpenGrid Debian Package Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 

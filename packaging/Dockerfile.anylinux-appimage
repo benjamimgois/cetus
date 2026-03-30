@@ -1,10 +1,10 @@
-# Builds the Anylinux AppImage for Omnicom inside an Arch Linux container.
+# Builds the Anylinux AppImage for OpenGrid inside an Arch Linux container.
 #
 # Usage (from repo root):
-#   docker build -f packaging/Dockerfile.anylinux-appimage -t omnicom-appimage-builder .
+#   docker build -f packaging/Dockerfile.anylinux-appimage -t opengrid-appimage-builder .
 #   docker run --rm --privileged \
 #     -v "$(pwd)/dist:/out" \
-#     omnicom-appimage-builder
+#     opengrid-appimage-builder
 #
 # The finished AppImage will appear in ./dist/
 
@@ -31,5 +31,5 @@ COPY . .
 RUN bash scripts/make-anylinux-appimage.sh
 
 # Copy result to /out (mapped from host at docker run time)
-CMD cp /src/Omnicom-*.AppImage /out/ \
+CMD cp /src/OpenGrid-*.AppImage /out/ \
     && echo "AppImage copied to /out/"

@@ -1,4 +1,4 @@
-# Omnicom
+# OpenGrid
 
 Modern graphical interface for serial communication via picocom.
 
@@ -16,16 +16,16 @@ Modern graphical interface for serial communication via picocom.
 ### From AUR
 
 ```bash
-yay -S omnicom
+yay -S opengrid
 # or
-paru -S omnicom
+paru -S opengrid
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://aur.archlinux.org/omnicom.git
-cd omnicom
+git clone https://aur.archlinux.org/opengrid.git
+cd opengrid
 makepkg -si
 ```
 
@@ -34,7 +34,7 @@ makepkg -si
 Simply run:
 
 ```bash
-omnicom
+opengrid
 ```
 
 Or launch from your application menu.
@@ -77,5 +77,5 @@ MIT
 
 ## Links
 
-- GitHub: https://github.com/benjamimgois/omnicom
-- AUR: https://aur.archlinux.org/packages/omnicom
+- GitHub: https://github.com/benjamimgois/opengrid
+- AUR: https://aur.archlinux.org/packages/opengrid

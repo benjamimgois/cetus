@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.benjamimgois.omnicom</id>
+  <id>io.github.benjamimgois.opengrid</id>
 
-  <name>Omnicom</name>
+  <name>OpenGrid</name>
   <summary>Network management GUI with Serial, SSH, SNMP, VulnScan and Speed Test</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
@@ -14,7 +14,7 @@
 
   <description>
     <p>
-      Omnicom is a modern and elegant graphical interface for network device management.
+      OpenGrid is a modern and elegant graphical interface for network device management.
       It combines multiple essential network tools into a single, unified PyQt6 application.
     </p>
     <p>Features:</p>
@@ -31,7 +31,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.benjamimgois.omnicom.desktop</launchable>
+  <launchable type="desktop-id">io.github.benjamimgois.opengrid.desktop</launchable>
 
   <branding>
     <color type="primary" scheme_preference="light">#3584e4</color>
@@ -40,14 +40,14 @@
 
   <screenshots>
     <screenshot type="default">
-      <caption>Omnicom main window</caption>
-      <image>https://raw.githubusercontent.com/benjamimgois/omnicom/main/assets/screenshots/screenshot.jpeg</image>
+      <caption>OpenGrid main window</caption>
+      <image>https://raw.githubusercontent.com/benjamimgois/opengrid/main/assets/screenshots/screenshot.jpeg</image>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://github.com/benjamimgois/omnicom</url>
-  <url type="bugtracker">https://github.com/benjamimgois/omnicom/issues</url>
-  <url type="vcs-browser">https://github.com/benjamimgois/omnicom</url>
+  <url type="homepage">https://github.com/benjamimgois/opengrid</url>
+  <url type="bugtracker">https://github.com/benjamimgois/opengrid/issues</url>
+  <url type="vcs-browser">https://github.com/benjamimgois/opengrid</url>
 
   <content_rating type="oars-1.1" />
 
@@ -63,7 +63,7 @@
           <li>Serial quick connect redesigned with grouped tree, drag-and-drop reordering, context menu and rename group — matching SSH quick connect</li>
           <li>Vertical tab order reorganised: SSH, Serial, IP Scan, Traceroute, SNMP, WiFi Survey, Speed, Transfer</li>
           <li>New About dialog accessible from sidebar with app description, author info, GitHub link and photo support</li>
-          <li>New official app icon: gradient O with C cutout (omnicom_icon.svg)</li>
+          <li>New official app icon: gradient O with C cutout (opengrid_icon.svg)</li>
           <li>Scalable SVG icon installed in hicolor theme for all packaging formats</li>
           <li>Serial tab: port type selector replaced with toggle buttons (USB / Serial)</li>
           <li>Standardized button widths across all tabs (90px / 110px)</li>
@@ -113,9 +113,9 @@
     </release>
     <release version="1.2" date="2026-02-09">
       <description>
-        <p>Project renamed from SerialCom to Omnicom</p>
+        <p>Project renamed from SerialCom to OpenGrid</p>
         <ul>
-          <li>Rename project from SerialCom to Omnicom</li>
+          <li>Rename project from SerialCom to OpenGrid</li>
           <li>Add search functionality to terminal dialog with keyboard shortcuts</li>
           <li>Add context menu with copy, paste, and export options to terminal widget</li>
           <li>Add profile name banner and copy button for TFTP file names</li>
