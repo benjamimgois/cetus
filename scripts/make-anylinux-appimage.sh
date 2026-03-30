@@ -264,34 +264,69 @@ for _plugin_dir in platforms platformthemes wayland-decoration-client; do
     done
 done
 
-# ── Bundle external tools: FreeRDP & TigerVNC ────────────────────────────────
+# ── Bundle external tools via pkgforge static binaries ───────────────────────
+# Using https://bin.pkgforge.dev portable static builds avoids glibc version
+# mismatches when the AppImage (built on Arch) runs on older distros.
 mkdir -p "$APPDIR/usr/bin"
 
-echo "  Bundling FreeRDP..."
-_rdp_bundled=0
-for _rdp_bin in sdl-freerdp3 xfreerdp3 wlfreerdp3 wlfreerdp xfreerdp; do
-    _rdp_path="$(command -v "$_rdp_bin" 2>/dev/null)" || continue
-    echo "    $(basename "$_rdp_path") → AppDir/usr/bin/"
-    _bundle_exe "$_rdp_path"
-    _rdp_bundled=1
-done
-[ "$_rdp_bundled" = "0" ] && echo "    WARNING: no freerdp binary found — RDP won't work in the AppImage"
+# Map uname -m to pkgforge arch directory name
+case "$ARCH" in
+    x86_64)  _pkgforge_arch="x86_64-Linux" ;;
+    aarch64) _pkgforge_arch="aarch64-Linux" ;;
+    *)       _pkgforge_arch="${ARCH}-Linux" ;;
+esac
+_PKGFORGE="https://bin.pkgforge.dev/${_pkgforge_arch}"
 
-echo "  Bundling iPerf3..."
-_iperf3_path="$(command -v iperf3 2>/dev/null)" && {
-    echo "    iperf3 → AppDir/usr/bin/"
-    _bundle_exe "$_iperf3_path"
-} || echo "    WARNING: iperf3 not found — iPerf3 tab won't work in the AppImage"
+# Download a single static binary from pkgforge; fall back to system binary.
+_get_static() {
+    local _name="$1"
+    local _dest="$APPDIR/usr/bin/$_name"
+    if wget -q "$_PKGFORGE/$_name" -O "$_dest" 2>/dev/null && \
+       file "$_dest" 2>/dev/null | grep -q ELF; then
+        chmod +x "$_dest"
+        ln -sf "../usr/bin/$_name" "$APPDIR/bin/$_name" 2>/dev/null || true
+        echo "    $_name (static/pkgforge) → AppDir/usr/bin/"
+        return 0
+    else
+        rm -f "$_dest"
+        return 1
+    fi
+}
 
-echo "  Bundling TigerVNC viewer..."
-_vnc_bundled=0
-for _vnc_bin in vncviewer xtigervncviewer; do
-    _vnc_path="$(command -v "$_vnc_bin" 2>/dev/null)" || continue
-    echo "    $(basename "$_vnc_path") → AppDir/usr/bin/"
-    _bundle_exe "$_vnc_path"
-    _vnc_bundled=1
+echo "  Downloading static iPerf3..."
+_get_static iperf3 || {
+    echo "    WARNING: pkgforge download failed, falling back to system iperf3"
+    _p="$(command -v iperf3 2>/dev/null)" && _bundle_exe "$_p" || \
+        echo "    WARNING: iperf3 not found"
+}
+
+echo "  Downloading static FreeRDP..."
+_rdp_ok=0
+for _rdp_name in xfreerdp3 xfreerdp sdl-freerdp3; do
+    _get_static "$_rdp_name" && { _rdp_ok=1; break; }
 done
-[ "$_vnc_bundled" = "0" ] && echo "    WARNING: no VNC viewer found — VNC won't work in the AppImage"
+if [ "$_rdp_ok" = "0" ]; then
+    echo "    pkgforge download failed, falling back to system freerdp"
+    for _rdp_bin in sdl-freerdp3 xfreerdp3 wlfreerdp3 wlfreerdp xfreerdp; do
+        _rdp_path="$(command -v "$_rdp_bin" 2>/dev/null)" || continue
+        _bundle_exe "$_rdp_path" && _rdp_ok=1 && break
+    done
+    [ "$_rdp_ok" = "0" ] && echo "    WARNING: no freerdp binary found"
+fi
+
+echo "  Downloading static TigerVNC viewer..."
+_vnc_ok=0
+for _vnc_name in vncviewer xtigervncviewer; do
+    _get_static "$_vnc_name" && { _vnc_ok=1; break; }
+done
+if [ "$_vnc_ok" = "0" ]; then
+    echo "    pkgforge download failed, falling back to system vncviewer"
+    for _vnc_bin in vncviewer xtigervncviewer; do
+        _vnc_path="$(command -v "$_vnc_bin" 2>/dev/null)" || continue
+        _bundle_exe "$_vnc_path" && _vnc_ok=1 && break
+    done
+    [ "$_vnc_ok" = "0" ] && echo "    WARNING: no VNC viewer found"
+fi
 
 # Custom AppRun — calls bundled python3 (sharun hardlink) with the omnicom script
 cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
