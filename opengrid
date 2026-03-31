@@ -1165,10 +1165,19 @@ class TerminalWidget(QTextEdit):
                 self._ac_buffer += text
                 self._ac_update()
 
-        # Clear buffer on Ctrl+C
-        if sequence == '\x03':
+        # Clear / trim buffer on line-editing control sequences
+        if sequence == '\x03':          # Ctrl+C — clear line
             self._ac_buffer = ""
             self._ac_hide()
+        elif sequence in ('\x15', '\x0b'):  # Ctrl+U (kill line) / Ctrl+K (kill to end)
+            self._ac_buffer = ""
+            self._ac_hide()
+        elif sequence == '\x17':        # Ctrl+W — kill last word
+            if ' ' in self._ac_buffer:
+                self._ac_buffer = self._ac_buffer.rsplit(' ', 1)[0] + ' '
+            else:
+                self._ac_buffer = ""
+            self._ac_update()
 
         # Send sequence to picocom/SSH
         if sequence:
@@ -1347,7 +1356,21 @@ class TerminalWidget(QTextEdit):
                 background: #363a4f;
                 color: #89dceb;
             }
-            QScrollBar:vertical { width: 0px; }
+            QScrollBar:vertical {
+                background: #1e2030;
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #444860;
+                border-radius: 3px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #6e7194;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical { height: 0px; }
         """)
         vbox = QVBoxLayout(popup)
         vbox.setContentsMargins(0, 0, 0, 0)
@@ -1373,6 +1396,7 @@ class TerminalWidget(QTextEdit):
         popup.hide()
         self._ac_popup = popup
         self._ac_list  = lst
+        self._ac_hint  = hint
 
     def _ac_update(self):
         """Recompute matching commands and refresh the popup."""
@@ -1382,7 +1406,7 @@ class TerminalWidget(QTextEdit):
 
         needle = self._ac_buffer.lower()
         matches = [(cmd, desc) for cmd, desc in self._ac_commands
-                   if cmd.lower().startswith(needle)][:10]
+                   if cmd.lower().startswith(needle)][:30]
 
         if not matches:
             self._ac_hide()
@@ -1404,8 +1428,9 @@ class TerminalWidget(QTextEdit):
 
         row_h    = 22
         hint_h   = 18
-        visible  = min(len(matches), 8)
-        pop_w    = min(520, max(280, max(len(cmd) * 8 + 30 for cmd, _ in matches)))
+        max_vis  = 8
+        visible  = min(len(matches), max_vis)
+        pop_w    = min(560, max(280, max(len(cmd) * 8 + 30 for cmd, _ in matches)))
         list_h   = visible * row_h + 4
         pop_h    = list_h + hint_h
 
@@ -1416,15 +1441,26 @@ class TerminalWidget(QTextEdit):
         if y < 4:
             y = 4
 
+        # Update hint text: show total count when there are more than visible
+        total = len(matches)
+        if total > max_vis:
+            hint_text = f"  → completar   ↑↓ navegar   Esc fechar   ({total} resultados)"
+        else:
+            hint_text = "  → completar   ↑↓ navegar   Esc fechar"
+        if hasattr(self, '_ac_hint'):
+            self._ac_hint.setText(hint_text)
+
         self._ac_popup.setFixedSize(pop_w, pop_h)
         self._ac_list.setFixedHeight(list_h)
         self._ac_popup.move(x, y)
         self._ac_popup.show()
         self._ac_popup.raise_()
+        self._ac_popup.update()
 
         # Restore / clamp selection
         self._ac_sel = max(0, min(self._ac_sel, self._ac_list.count() - 1))
         self._ac_list.setCurrentRow(self._ac_sel)
+        self._ac_list.scrollToItem(self._ac_list.currentItem())
 
     def _ac_navigate(self, delta):
         """Move selection up (-1) or down (+1) in the popup."""
@@ -1462,6 +1498,7 @@ class TerminalWidget(QTextEdit):
         """Hide the autocomplete popup."""
         if self._ac_popup and self._ac_popup.isVisible():
             self._ac_popup.hide()
+        self._ac_sel = 0
 
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -9913,6 +9950,21 @@ class TerminalDialog(QWidget):
                     ('show ip route vrf <name>', 'Display routing table for VRF'),
                     ('ping vrf <name> <ip>', 'Ping within a specific VRF'),
                 ],
+                'VRRP': [
+                    ('interface <iface>', 'Enter interface for VRRP config'),
+                    ('vrrp <group> ip <virtual-ip>', 'Set virtual IP for VRRP group'),
+                    ('vrrp <group> priority <0-255>', 'Set VRRP priority (default 100; higher = master)'),
+                    ('vrrp <group> preempt', 'Enable preemption (default enabled)'),
+                    ('vrrp <group> preempt delay minimum <sec>', 'Set preempt delay in seconds'),
+                    ('vrrp <group> timers advertise <sec>', 'Set advertisement interval (default 1s)'),
+                    ('vrrp <group> authentication text <key>', 'Set plain-text VRRP authentication'),
+                    ('vrrp <group> track <object> decrement <val>', 'Track object and decrement priority'),
+                    ('vrrp <group> description <text>', 'Set VRRP group description'),
+                    ('show vrrp', 'Display all VRRP groups and states'),
+                    ('show vrrp brief', 'VRRP summary (master/backup state per interface)'),
+                    ('show vrrp interface <iface>', 'VRRP details for specific interface'),
+                    ('debug vrrp all', 'Enable full VRRP debug output'),
+                ],
                 'Routing': [
                     ('ip route <net> <mask> <next-hop>', 'Add static route'),
                     ('router ospf <id>', 'Enable OSPF routing process'),
@@ -10040,6 +10092,21 @@ class TerminalDialog(QWidget):
                     ('display ip vpn-instance', 'List all VPN-instances'),
                     ('display ip routing-table vpn-instance <name>', 'Show VRF routing table'),
                 ],
+                'VRRP': [
+                    ('interface <iface>', 'Enter interface for VRRP config'),
+                    ('vrrp vrid <group> virtual-ip <ip>', 'Set virtual IP for VRRP group'),
+                    ('vrrp vrid <group> priority <0-255>', 'Set VRRP priority (default 100; higher = master)'),
+                    ('vrrp vrid <group> preempt-mode timer delay <sec>', 'Set preemption delay'),
+                    ('undo vrrp vrid <group> preempt-mode', 'Disable preemption'),
+                    ('vrrp vrid <group> timer advertise <sec>', 'Set advertisement interval'),
+                    ('vrrp vrid <group> authentication-mode simple plain <key>', 'Set plain-text auth'),
+                    ('vrrp vrid <group> track interface <iface> reduced <val>', 'Track interface and reduce priority'),
+                    ('vrrp vrid <group> description <text>', 'Set VRRP group description'),
+                    ('display vrrp', 'Display all VRRP groups'),
+                    ('display vrrp brief', 'VRRP summary (master/backup state)'),
+                    ('display vrrp interface <iface>', 'VRRP details for specific interface'),
+                    ('display vrrp statistics', 'Show VRRP packet statistics'),
+                ],
                 'Routing': [
                     ('ip route-static <net> <mask> <next-hop>', 'Add static route'),
                     ('ospf <id>', 'Enable OSPF process'),
@@ -10161,6 +10228,19 @@ class TerminalDialog(QWidget):
                     ('display ip vpn-instance', 'List all VPN-instances'),
                     ('display ip routing-table vpn-instance <name>', 'Show VRF routing table'),
                 ],
+                'VRRP': [
+                    ('interface <iface>', 'Enter interface for VRRP config'),
+                    ('vrrp vrid <group> virtual-ip <ip>', 'Set virtual IP for VRRP group'),
+                    ('vrrp vrid <group> priority <0-255>', 'Set VRRP priority (default 100; higher = master)'),
+                    ('vrrp vrid <group> preempt-mode timer delay <sec>', 'Set preemption delay'),
+                    ('undo vrrp vrid <group> preempt-mode', 'Disable preemption'),
+                    ('vrrp vrid <group> timer advertise <sec>', 'Set advertisement interval'),
+                    ('vrrp vrid <group> authentication-mode simple plain <key>', 'Set plain-text auth'),
+                    ('vrrp vrid <group> track interface <iface> reduced <val>', 'Track interface, reduce priority on failure'),
+                    ('display vrrp', 'Display all VRRP groups'),
+                    ('display vrrp brief', 'VRRP summary table'),
+                    ('display vrrp verbose', 'Detailed VRRP information'),
+                ],
                 'System': [
                     ('sysname <name>', 'Set hostname'),
                     ('save', 'Save configuration'),
@@ -10270,6 +10350,19 @@ class TerminalDialog(QWidget):
                     ('show route table <name>.inet.0', 'Display VRF routing table'),
                     ('show routing-instances', 'List all routing instances'),
                     ('ping routing-instance <name> <ip>', 'Ping within a specific VRF'),
+                ],
+                'VRRP': [
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> virtual-address <vip>', 'Create VRRP group with virtual IP'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> priority <0-255>', 'Set VRRP priority (default 100)'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> preempt', 'Enable preemption'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> advertise-interval <ms>', 'Set advertisement interval (milliseconds)'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> authentication-type simple', 'Enable simple authentication'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> authentication-key <key>', 'Set authentication key'),
+                    ('set interfaces <iface> unit 0 family inet address <ip/prefix> vrrp-group <id> track interface <iface2> priority-cost <val>', 'Track interface, reduce priority on failure'),
+                    ('show vrrp', 'Display all VRRP groups and states'),
+                    ('show vrrp detail', 'Detailed VRRP information'),
+                    ('show vrrp interface <iface>', 'VRRP state for specific interface'),
+                    ('show vrrp statistics', 'VRRP packet statistics'),
                 ],
                 'System': [
                     ('set system host-name <name>', 'Set hostname'),
@@ -10460,6 +10553,18 @@ class TerminalDialog(QWidget):
                     ('ip route vrf <name> <net> <mask> <gw>', 'Add static route in VRF'),
                     ('show ip vrf', 'List all VRFs'),
                     ('show ip route vrf <name>', 'Show VRF routing table'),
+                ],
+                'VRRP': [
+                    ('interface <iface>', 'Enter interface for VRRP config'),
+                    ('vrrp <group> ip <virtual-ip>', 'Set virtual IP for VRRP group'),
+                    ('vrrp <group> priority <0-255>', 'Set VRRP priority (default 100; higher = master)'),
+                    ('vrrp <group> preempt', 'Enable preemption'),
+                    ('vrrp <group> timers advertise <sec>', 'Set advertisement interval'),
+                    ('vrrp <group> authentication text <key>', 'Set plain-text authentication'),
+                    ('vrrp <group> track <iface> decrement <val>', 'Reduce priority when interface goes down'),
+                    ('show vrrp', 'Display all VRRP groups and states'),
+                    ('show vrrp brief', 'VRRP summary table'),
+                    ('show vrrp interface <iface>', 'VRRP details for specific interface'),
                 ],
                 'System': [
                     ('hostname <name>', 'Set device hostname'),
@@ -10751,6 +10856,18 @@ class TerminalDialog(QWidget):
                     ('/ip firewall mangle add chain=forward action=mark-connection new-connection-mark=<name>', 'Mark connections'),
                     ('/ip firewall mangle add chain=prerouting src-address=<net>/<prefix> action=mark-routing new-routing-mark=<vrf>', 'Policy-based routing mark'),
                     ('/ip firewall mangle print', 'Display mangle rules'),
+                ],
+                'VRRP': [
+                    ('/ip vrrp add interface=<iface> vrid=<id> address=<virtual-ip>', 'Create VRRP group on interface'),
+                    ('/ip vrrp set <n> priority=<0-255>', 'Set VRRP priority (default 100; higher = master)'),
+                    ('/ip vrrp set <n> preemption-mode=yes', 'Enable preemption'),
+                    ('/ip vrrp set <n> interval=<sec>', 'Set advertisement interval (seconds)'),
+                    ('/ip vrrp set <n> authentication=simple password=<key>', 'Set simple authentication'),
+                    ('/ip vrrp set <n> on-backup="<script>"', 'Script to run when becoming backup'),
+                    ('/ip vrrp set <n> on-master="<script>"', 'Script to run when becoming master'),
+                    ('/ip vrrp print', 'List all VRRP instances'),
+                    ('/ip vrrp print detail', 'Detailed VRRP information'),
+                    ('/ip vrrp monitor <n>', 'Live monitoring of VRRP state'),
                 ],
                 'Wireless': [
                     ('/interface wireless print', 'Display wireless interfaces'),
