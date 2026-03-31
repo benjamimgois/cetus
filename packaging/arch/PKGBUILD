@@ -28,9 +28,6 @@ package() {
     # Install main script
     install -Dm755 opengrid "${pkgdir}/usr/bin/opengrid"
 
-    # Install SVG icon (scalable)
-    install -Dm644 assets/icons/opengrid_icon.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/opengrid.svg"
-
     # Install pre-built PNG sizes
     for size in 16 32 48 64 128 256 512; do
         install -Dm644 "assets/icons/opengrid-${size}.png" \
