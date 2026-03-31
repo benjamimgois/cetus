@@ -64,13 +64,15 @@
   </g>
   <text
      xml:space="preserve"
-     style="font-weight:bold;font-size:12.8px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0492966"
+     style="font-weight:bold;font-size:13.43px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.052"
      x="-0.08585903"
      y="44.647923"
      id="text2"><tspan
        sodipodi:role="line"
        id="tspan2"
-       style="font-size:12.8px;fill:#ffffff;stroke-width:0.0492966"
+       style="font-size:13.43px;fill:#ffffff;stroke-width:0.052"
        x="-0.08585903"
-       y="44.647923">TRANSFER</tspan></text>
+       y="44.647923"
+       textLength="64.5"
+       lengthAdjust="spacingAndGlyphs">TRANSFER</tspan></text>
 </svg>

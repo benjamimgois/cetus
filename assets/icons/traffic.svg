@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   viewBox="0 0 50 34"
+   viewBox="0 0 50 50"
    fill="#ffffff"
    version="1.1"
    id="svg6"
    sodipodi:docname="traffic.svg"
    inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
    width="50"
-   height="34"
+   height="50"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
@@ -24,8 +24,8 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="16.729166"
-     inkscape:cx="25.374845"
-     inkscape:cy="21.369864"
+     inkscape:cx="23.701122"
+     inkscape:cy="38.286427"
      inkscape:window-width="1920"
      inkscape:window-height="1012"
      inkscape:window-x="0"
@@ -34,61 +34,61 @@
      inkscape:current-layer="svg6" />
   <rect
      x="10.729873"
-     y="9.7528772"
+     y="13.853"
      width="3.2189658"
-     height="5.4187336"
-     rx="1.6094829"
+     height="7.695"
+     rx="2.285"
      id="rect1"
      style="fill:#ffffff;stroke-width:1.40789" />
   <rect
      x="16.582539"
-     y="4.3341441"
+     y="6.154"
      width="3.2189658"
-     height="16.256203"
-     rx="1.6094829"
+     height="23.084"
+     rx="2.285"
      id="rect2"
      style="fill:#ffffff;stroke-width:1.40789" />
   <rect
      x="22.4352"
-     y="0.27009431"
+     y="0.384"
      width="3.2189658"
-     height="24.3843"
-     rx="1.6094829"
+     height="34.626"
+     rx="2.285"
      id="rect3"
      style="fill:#ffffff;stroke-width:1.40789" />
   <rect
      x="28.287867"
-     y="4.3341441"
+     y="6.154"
      width="3.2189658"
-     height="16.256203"
-     rx="1.6094829"
+     height="23.084"
+     rx="2.285"
      id="rect4"
      style="fill:#ffffff;stroke-width:1.40789" />
   <rect
      x="34.140537"
-     y="8.3981953"
+     y="11.925"
      width="3.2189658"
-     height="8.1281013"
-     rx="1.6094829"
+     height="11.542"
+     rx="2.285"
      id="rect5"
      style="fill:#ffffff;stroke-width:1.40789" />
   <rect
      x="39.993195"
-     y="11.107564"
+     y="15.773"
      width="3.2189658"
-     height="2.7093668"
-     rx="1.6094829"
+     height="3.847"
+     rx="2.285"
      id="rect6"
      style="fill:#ffffff;stroke-width:1.40789" />
   <text
      xml:space="preserve"
-     style="font-weight:bold;font-size:12px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff"
-     x="0.42692712"
-     y="33.747387"
+     style="font-weight:bold;font-size:12.4px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff"
+     x="-0.40993467"
+     y="49.569553"
      id="text6"><tspan
        sodipodi:role="line"
        id="tspan6"
-       x="0.42692712"
-       y="33.747387"
-       style="font-size:12px;fill:#ffffff">SNIFFER</tspan></text>
+       x="-0.40993467"
+       y="49.569553"
+       style="font-size:12.4px;fill:#ffffff">SNIFFER</tspan></text>
 </svg>

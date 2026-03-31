@@ -96,13 +96,13 @@
      style="fill:#ffffff" />
   <text
      xml:space="preserve"
-     style="font-size:7.45626px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0254191"
+     style="font-weight:bold;font-size:7.2px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0245"
      x="0.39774656"
-     y="18.872717"
+     y="23.74"
      id="text1"><tspan
        sodipodi:role="line"
        id="tspan1"
-       style="font-size:7.45626px;fill:#ffffff;stroke-width:0.0254191"
+       style="font-size:7.2px;fill:#ffffff;stroke-width:0.0245"
        x="0.39774656"
-       y="18.872717">SERIAL</tspan></text>
+       y="23.74">SERIAL</tspan></text>
 </svg>

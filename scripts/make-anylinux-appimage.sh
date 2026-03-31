@@ -42,14 +42,28 @@ if [ "$(id -u)" = "0" ] && command -v pacman &>/dev/null; then
         freerdp tigervnc iperf3 \
         picocom xorg-server-xvfb
     pip install --break-system-packages standard-telnetlib speedtest-cli 2>/dev/null || true
+elif [ "$(id -u)" = "0" ] && command -v apt-get &>/dev/null; then
+    echo "[1/7] Installing system dependencies via apt-get..."
+    apt-get update -qq
+    apt-get install -y --no-install-recommends \
+        build-essential wget curl git strace file binutils patchelf \
+        python3 python3-pip python3-dev \
+        libgl1 libglib2.0-0 libdbus-1-3 libegl1 \
+        libfontconfig1 libfreetype6 libxcb1 libx11-6 libxext6 \
+        libxrender1 libxi6 libxkbcommon0 libxkbcommon-x11-0 \
+        iperf3 freerdp2-x11 xtightvncviewer \
+        xvfb xauth squashfs-tools 2>/dev/null || true
+    pip3 install --no-cache-dir PyQt6 paramiko pyte speedtest-cli standard-telnetlib 2>/dev/null || true
+    echo "  All deps installed via apt-get"
 else
-    echo "[1/7] Skipping pacman install (not root) — verifying installed deps..."
+    echo "[1/7] Skipping package install (not root) — verifying installed deps..."
     for dep in PyQt6 paramiko pyte; do
         python3 -c "import $dep" 2>/dev/null || { echo "ERROR: python3 $dep not found. Install it first."; exit 1; }
     done
     python3 -c "import speedtest" 2>/dev/null || pip install --break-system-packages speedtest-cli 2>/dev/null || true
     echo "  All Python deps OK"
 fi
+
 
 # ── 2. Prepare build directory ────────────────────────────────────────────────
 echo "[2/7] Preparing build directory..."
@@ -127,7 +141,7 @@ int main(int argc, char *argv[])
 }
 LAUNCHER_EOF
 
-gcc -O2 -o "$BUILD_DIR/opengrid-bin" "$BUILD_DIR/opengrid-launcher.c"
+gcc -O2 -march=x86-64 -o "$BUILD_DIR/opengrid-bin" "$BUILD_DIR/opengrid-launcher.c"
 echo "  Compiled: $BUILD_DIR/opengrid-bin ($(file "$BUILD_DIR/opengrid-bin" | cut -d: -f2 | xargs))"
 
 # ── 4. Stage app files in a local prefix (replaces system install) ────────────
@@ -195,6 +209,10 @@ _WAYLAND="${WAYLAND_DISPLAY:-}"
 if [ -n "$_DISPLAY" ] || [ -n "$_WAYLAND" ]; then
     export DISPLAY="$_DISPLAY"
     export WAYLAND_DISPLAY="$_WAYLAND"
+    # Force xcb platform so Qt 6.5+ loads the xcb plugin (needs libxcb-cursor)
+    # and all its X11 dependencies get captured by strace.
+    # In a headless container (Xvfb), xcb + libxcb-cursor0 is the right backend.
+    export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 fi
 
 cd "$BUILD_DIR"
