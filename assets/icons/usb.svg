@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- USB trident symbol -->
+  <circle cx="12" cy="4" r="2" fill="#212121"/>
+  <path d="M12 6 L12 18" stroke="#212121" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M12 9 L7.5 9" stroke="#212121" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <rect x="5.5" y="7.5" width="3.5" height="3.5" rx="0.5" fill="none" stroke="#212121" stroke-width="1.5"/>
+  <path d="M12 14 L16.5 14" stroke="#212121" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <circle cx="18" cy="14" r="1.5" fill="none" stroke="#212121" stroke-width="1.5"/>
+  <rect x="9.5" y="18" width="5" height="3" rx="1" fill="#212121"/>
+</svg>

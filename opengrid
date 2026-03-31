@@ -4502,6 +4502,7 @@ class IperfGraphWidget(QWidget):
         super().__init__(parent)
         self._intervals: list = []   # [(t_end_s, bitrate_mbps, transfer_mb, series)]
         self.setMinimumSize(300, 140)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setStyleSheet("background: transparent;")
 
     def add_interval(self, t_end: float, bitrate_mbps: float, transfer_mb: float,
@@ -12936,7 +12937,7 @@ class SerialTerminalGUI(QMainWindow):
         for _ptype in ('USB', 'Serial'):
             _btn = QPushButton(_ptype)
             _btn.setCheckable(True)
-            _btn.setFixedWidth(70)
+            _btn.setFixedWidth(85)
             _btn.setFixedHeight(26)
             _btn.setStyleSheet(_port_type_style)
             _btn.setToolTip("Select the type of serial port")
@@ -12944,6 +12945,14 @@ class SerialTerminalGUI(QMainWindow):
             self._port_type_btns[_ptype] = _btn
             _row1.addWidget(_btn)
         self._port_type_btns['USB'].setChecked(True)
+        _usb_ico = load_svg_icon_dual(self.get_icon_path('usb.svg'), 14, '#444444', '#ffffff')
+        if _usb_ico:
+            self._port_type_btns['USB'].setIcon(_usb_ico)
+            self._port_type_btns['USB'].setIconSize(QSize(14, 14))
+        _serial_ico = load_svg_icon_dual(self.get_icon_path('serial_port.svg'), 14, '#444444', '#ffffff')
+        if _serial_ico:
+            self._port_type_btns['Serial'].setIcon(_serial_ico)
+            self._port_type_btns['Serial'].setIconSize(QSize(14, 14))
         _row1.addSpacing(20)
         _row1.addWidget(_lbl("Port:"))
         self.port = FlatComboButton()
@@ -18396,7 +18405,7 @@ class SerialTerminalGUI(QMainWindow):
             self.wifi_export_btn.setIcon(_ico)
             self.wifi_export_btn.setIconSize(QSize(16, 16))
 
-        self.wifi_scan_btn = QPushButton("SCAN")
+        self.wifi_scan_btn = QPushButton("Start Survey")
         self.wifi_scan_btn.setMinimumHeight(40)
         self.wifi_scan_btn.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
         self.wifi_scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -20089,7 +20098,7 @@ class SerialTerminalGUI(QMainWindow):
         self._wifi_update_table()
         # Button stays as "Finish Survey  X:XX" during an active survey
         if self._wifi_survey_start is None:
-            self.wifi_scan_btn.setText("SCAN")
+            self.wifi_scan_btn.setText("Start Survey")
             self.wifi_scan_btn.setStyleSheet("""
                 QPushButton { background-color: #E91E63; color: #ffffff; border: none;
                               border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
@@ -20133,7 +20142,7 @@ class SerialTerminalGUI(QMainWindow):
         self._wifi_survey_start = None  # abort survey on error
         if self._wifi_elapsed_timer:
             self._wifi_elapsed_timer.stop()
-        self.wifi_scan_btn.setText("SCAN")
+        self.wifi_scan_btn.setText("Start Survey")
         self.wifi_scan_btn.setStyleSheet("""
             QPushButton { background-color: #E91E63; color: #ffffff; border: none;
                           border-radius: 8px; padding: 10px; font-weight: bold; font-size: 11pt; }
@@ -20277,7 +20286,7 @@ class SerialTerminalGUI(QMainWindow):
         # Reset survey state and button
         self._wifi_survey_start   = None
         self._wifi_survey_ch_load = {}
-        self.wifi_scan_btn.setText("SCAN")
+        self.wifi_scan_btn.setText("Start Survey")
         self.wifi_scan_btn.setStyleSheet(self._SCAN_BTN_STYLE)
 
     def _wifi_active_band_key(self):
@@ -24690,6 +24699,30 @@ class SerialTerminalGUI(QMainWindow):
                 }}
             """
 
+        def _mode_toggle_style(color):
+            return f"""
+                QPushButton {{
+                    border: none;
+                    border-bottom: 3px solid transparent;
+                    border-radius: 0px;
+                    padding: 4px 14px 3px 14px;
+                    background: transparent;
+                    color: #666;
+                    font-size: 9pt;
+                    font-weight: bold;
+                    min-height: 26px;
+                }}
+                QPushButton:hover {{
+                    color: {color};
+                    background: rgba(0, 137, 123, 0.08);
+                }}
+                QPushButton:checked {{
+                    color: {color};
+                    border-bottom: 3px solid {color};
+                    background: rgba(0, 137, 123, 0.10);
+                }}
+            """
+
         # ── Shared field styles ────────────────────────────────────────
         field_style = f"""
             QLineEdit {{
@@ -24739,12 +24772,20 @@ class SerialTerminalGUI(QMainWindow):
         self._test_mode_speedtest_btn.setStyleSheet(
             _btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
         )
+        _speedtest_ico = load_svg_icon_dual(self.get_icon_path('globe.svg'), 16, '#555555', '#ffffff')
+        if _speedtest_ico:
+            self._test_mode_speedtest_btn.setIcon(_speedtest_ico)
+            self._test_mode_speedtest_btn.setIconSize(QSize(16, 16))
         self._test_mode_iperf_btn = QPushButton("iPerf3")
         self._test_mode_iperf_btn.setCheckable(True)
         self._test_mode_iperf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._test_mode_iperf_btn.setStyleSheet(
             _btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
+        _iperf_ico = load_svg_icon_dual(self.get_icon_path('rj45.svg'), 16, '#555555', '#ffffff')
+        if _iperf_ico:
+            self._test_mode_iperf_btn.setIcon(_iperf_ico)
+            self._test_mode_iperf_btn.setIconSize(QSize(16, 16))
         # 1-px separator line between the two buttons
         _sep = QFrame()
         _sep.setFixedWidth(1)
@@ -24785,13 +24826,13 @@ class SerialTerminalGUI(QMainWindow):
         self._iperf_options_widget = QWidget()
         iperf_opts = QVBoxLayout(self._iperf_options_widget)
         iperf_opts.setContentsMargins(0, 2, 0, 0)
-        iperf_opts.setSpacing(6)
+        iperf_opts.setSpacing(8)
 
         # Row 1: Host / Port / Duration
         row1 = QHBoxLayout()
         row1.setSpacing(6)
         host_lbl = QLabel("Host:")
-        host_lbl.setFixedWidth(32)
+        host_lbl.setFixedWidth(58)
         host_lbl.setStyleSheet(lbl_style)
         self.iperf_host_input = QLineEdit()
         self.iperf_host_input.setPlaceholderText("iperf3 server address")
@@ -24799,9 +24840,15 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_host_input.setStyleSheet(field_style)
         self.iperf_discover_btn = QPushButton("Scan Server")
         self.iperf_discover_btn.setFixedHeight(24)
-        self.iperf_discover_btn.setFixedWidth(90)
+        self.iperf_discover_btn.setFixedWidth(100)
         self.iperf_discover_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.iperf_discover_btn.setToolTip("Scan local /24 network for an iperf3 server on port 5201")
+        _scan_ico_path = self.get_icon_path('ipscan.svg')
+        if _scan_ico_path:
+            _scan_ico = load_svg_icon_dual(_scan_ico_path, 14, '#333333', '#ffffff')
+            if _scan_ico:
+                self.iperf_discover_btn.setIcon(_scan_ico)
+                self.iperf_discover_btn.setIconSize(QSize(14, 14))
         self.iperf_discover_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: #e0e0e0;
@@ -24887,18 +24934,18 @@ class SerialTerminalGUI(QMainWindow):
 
         row1.addWidget(host_lbl)
         row1.addWidget(self.iperf_host_input, 1)
+        row1.addWidget(self.iperf_discover_btn)
         row1.addWidget(_srv_btn)
         row1.addWidget(port_lbl)
         row1.addWidget(self.iperf_port_input)
         row1.addWidget(dur_lbl)
         row1.addWidget(self.iperf_duration_combo)
-        iperf_opts.addLayout(row1)
 
         # Row 2: Protocol / Streams / Bandwidth
         row2 = QHBoxLayout()
         row2.setSpacing(6)
         proto_lbl = QLabel("Protocol:")
-        proto_lbl.setFixedWidth(56)
+        proto_lbl.setFixedWidth(58)
         proto_lbl.setStyleSheet(lbl_style)
         self._iperf_proto_btns = {}
         for proto, _icokey in (('TCP', 'proto_tcp'), ('UDP', 'proto_udp')):
@@ -24915,7 +24962,6 @@ class SerialTerminalGUI(QMainWindow):
                 btn.setIconSize(QSize(16, 16))
             btn.clicked.connect(lambda _checked, p=proto: self._iperf_proto_clicked(p))
             self._iperf_proto_btns[proto] = btn
-            row2.addWidget(btn)
         self._iperf_proto_btns['TCP'].setChecked(True)
         streams_lbl = QLabel("Streams:")
         streams_lbl.setFixedWidth(54)
@@ -24939,12 +24985,13 @@ class SerialTerminalGUI(QMainWindow):
         self._iperf_bw_lbl = bw_lbl
         bw_lbl.setVisible(False)
         row2.addWidget(proto_lbl)
+        row2.addWidget(self._iperf_proto_btns['TCP'])
+        row2.addWidget(self._iperf_proto_btns['UDP'])
         row2.addWidget(streams_lbl)
         row2.addWidget(self.iperf_streams_spin)
         row2.addWidget(bw_lbl)
         row2.addWidget(self.iperf_bw_input)
         row2.addStretch()
-        iperf_opts.addLayout(row2)
 
         # Row 3: Mode / Scan Server
         row3 = QHBoxLayout()
@@ -24955,7 +25002,7 @@ class SerialTerminalGUI(QMainWindow):
             btn.setCheckable(True)
             btn.setFixedWidth(90)
             btn.setFixedHeight(24)
-            btn.setStyleSheet(_toggle_style(BROWN))
+            btn.setStyleSheet(_mode_toggle_style(BROWN))
             _p = self.get_icon_path(f'{_icokey}.svg')
             _ico = load_svg_icon_dual(_p, 16, '#555555', '#ffffff') if _p else None
             if _ico:
@@ -24965,9 +25012,15 @@ class SerialTerminalGUI(QMainWindow):
             self._iperf_mode_btns[mode] = btn
             row3.addWidget(btn)
         self._iperf_mode_btns['Client'].setChecked(True)
+        row3.insertStretch(0)
         row3.addStretch()
-        row3.addWidget(self.iperf_discover_btn)
         iperf_opts.addLayout(row3)
+        _sep_line = QFrame()
+        _sep_line.setFrameShape(QFrame.Shape.HLine)
+        _sep_line.setStyleSheet("background: #d8d8d8; border: none; max-height: 1px;")
+        iperf_opts.addWidget(_sep_line)
+        iperf_opts.addLayout(row2)
+        iperf_opts.addLayout(row1)
 
         self._iperf_options_widget.setVisible(False)   # Speed Test is the default
         cfg_layout.addWidget(self._iperf_options_widget)
@@ -25036,6 +25089,7 @@ class SerialTerminalGUI(QMainWindow):
         _shadow = QGraphicsDropShadowEffect()
         _shadow.setBlurRadius(15); _shadow.setXOffset(0); _shadow.setYOffset(2)
         _shadow.setColor(QColor(0, 0, 0, 30))
+        graph_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         graph_group.setGraphicsEffect(_shadow)
         main_layout.addWidget(graph_group, 2)
 
@@ -25174,7 +25228,9 @@ class SerialTerminalGUI(QMainWindow):
         for m, btn in self._iperf_mode_btns.items():
             btn.setChecked(m == mode)
         is_server = (mode == 'Server')
+        is_client = (mode == 'Client')
         self.iperf_host_input.setEnabled(not is_server)
+        self.iperf_discover_btn.setVisible(is_client)
         if is_server:
             self.iperf_run_btn.setText("START SERVER")
         else:
