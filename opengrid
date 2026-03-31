@@ -12017,6 +12017,9 @@ Router#_\r
             try:
                 self.ssh_channel.send(text.encode('utf-8'))
             except Exception as e:
+                msg = str(e).lower()
+                if any(k in msg for k in ('closed', 'not connected', 'eof', 'broken pipe')):
+                    return  # channel teardown — not a real error
                 self.terminal.append_output(f"\n[Send error: {e}]\n")
 
     def _on_terminal_resized(self, cols, rows):
@@ -12118,6 +12121,9 @@ Router#_\r
             try:
                 self.telnet_client.write(text.encode('utf-8'))
             except Exception as e:
+                msg = str(e).lower()
+                if any(k in msg for k in ('closed', 'not connected', 'eof', 'broken pipe')):
+                    return  # connection teardown — not a real error
                 self.terminal.append_output(f"\n[Send error: {e}]\n")
 
     def disconnect_telnet(self):
