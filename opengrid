@@ -13492,11 +13492,15 @@ class SerialTerminalGUI(QMainWindow):
             self._port_type_btns[_ptype] = _btn
             _row1.addWidget(_btn)
         self._port_type_btns['USB'].setChecked(True)
-        _usb_ico = load_svg_icon_dual(self.get_icon_path('usb.svg'), 14, '#444444', '#ffffff')
+        self._port_type_icons = {
+            'USB':    self.get_icon_path('usb.svg'),
+            'Serial': self.get_icon_path('serial_port.svg'),
+        }
+        _usb_ico = load_svg_icon_dual(self._port_type_icons['USB'], 14, '#444444', '#ffffff')
         if _usb_ico:
             self._port_type_btns['USB'].setIcon(_usb_ico)
             self._port_type_btns['USB'].setIconSize(QSize(14, 14))
-        _serial_ico = load_svg_icon_dual(self.get_icon_path('serial_port.svg'), 14, '#444444', '#ffffff')
+        _serial_ico = load_svg_icon_dual(self._port_type_icons['Serial'], 14, '#444444', '#ffffff')
         if _serial_ico:
             self._port_type_btns['Serial'].setIcon(_serial_ico)
             self._port_type_btns['Serial'].setIconSize(QSize(14, 14))
@@ -13744,6 +13748,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self.connect_btn.setGraphicsEffect(_btn_shadow)
+        _serial_conn_ico = load_svg_icon_dual(self._port_type_icons.get('USB'), 18, '#ffffff', '#ffffff')
+        if _serial_conn_ico:
+            self.connect_btn.setIcon(_serial_conn_ico)
+            self.connect_btn.setIconSize(QSize(18, 18))
+            self.connect_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         main_layout.addWidget(self.connect_btn)
 
         page.setLayout(main_layout)
@@ -14299,6 +14308,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self._traffic_start_btn.setGraphicsEffect(_btn_shadow)
+        _arp_ico = load_svg_icon_dual(self.get_icon_path('proto_arp.svg'), 18, '#ffffff', '#ffffff')
+        if _arp_ico:
+            self._traffic_start_btn.setIcon(_arp_ico)
+            self._traffic_start_btn.setIconSize(QSize(18, 18))
+            self._traffic_start_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         layout.addWidget(self._traffic_start_btn)
 
         return page
@@ -15035,12 +15049,13 @@ class SerialTerminalGUI(QMainWindow):
         srv_proto_lbl = QLabel("Protocol:")
         srv_proto_lbl.setStyleSheet("font-size: 9pt; color: #333333;")
         srv_proto_row.addWidget(srv_proto_lbl)
-        _proto_icons = {
+        self._ft_proto_icons = {
             'SSH':  self.get_icon_path('ssh2.svg'),
             'SMB':  self.get_icon_path('smb.svg'),
             'FTP':  self.get_icon_path('ftp.svg'),
             'TFTP': self.get_icon_path('TFTP.svg'),
         }
+        _proto_icons = self._ft_proto_icons
         self._ft_srv_proto_btns = {}
         for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
             _pb = QPushButton(_proto)
@@ -15655,12 +15670,7 @@ class SerialTerminalGUI(QMainWindow):
         cli_proto_row = QHBoxLayout()
         cli_proto_row.setContentsMargins(0, 0, 0, 0)
         cli_proto_row.setSpacing(4)
-        _proto_icons = {
-            'SSH':  self.get_icon_path('ssh2.svg'),
-            'SMB':  self.get_icon_path('smb.svg'),
-            'FTP':  self.get_icon_path('ftp.svg'),
-            'TFTP': self.get_icon_path('TFTP.svg'),
-        }
+        _proto_icons = self._ft_proto_icons
         self._ft_cli_proto_btns = {}
         for _proto in ('SSH', 'SMB', 'FTP', 'TFTP'):
             _pb = QPushButton(_proto)
@@ -15995,6 +16005,11 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: #4A148C;
             }
         """)
+        _ft_conn_ico = load_svg_icon_dual(self._ft_proto_icons.get(self._ft_protocol), 18, '#ffffff', '#ffffff')
+        if _ft_conn_ico:
+            self.tftp_btn.setIcon(_ft_conn_ico)
+            self.tftp_btn.setIconSize(QSize(18, 18))
+            self.tftp_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         _btn_shadow = QGraphicsDropShadowEffect()
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
@@ -16179,6 +16194,7 @@ class SerialTerminalGUI(QMainWindow):
             'ARP': self.scan_method_arp_btn
         }
         self.scan_current_method = "ICMP"
+        self._scan_method_icons = {m: self.get_icon_path(f'proto_{m.lower()}.svg') for m in ('ARP', 'ICMP', 'TCP', 'UDP')}
 
         # Ports input (hidden for ICMP) with quick presets button
         self.scan_ports_label = QLabel("Ports:")
@@ -16458,6 +16474,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self.scan_btn.setGraphicsEffect(_btn_shadow)
+        _scan_ico = load_svg_icon_dual(self._scan_method_icons.get('ICMP'), 18, '#ffffff', '#ffffff')
+        if _scan_ico:
+            self.scan_btn.setIcon(_scan_ico)
+            self.scan_btn.setIconSize(QSize(18, 18))
+            self.scan_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         main_layout.addWidget(self.scan_btn)
 
         page.setLayout(main_layout)
@@ -16819,6 +16840,11 @@ class SerialTerminalGUI(QMainWindow):
             'snmpgetnext': self.snmp_type_getnext_btn
         }
         self.snmp_current_type = "snmpwalk"
+        self._snmp_type_icons = {
+            'snmpwalk':    self.get_icon_path('snmp_walk.svg'),
+            'snmpget':     self.get_icon_path('snmp_get.svg'),
+            'snmpgetnext': self.get_icon_path('snmp_getnext.svg'),
+        }
 
         self.snmp_oid_input = QLineEdit()
         self.snmp_oid_input.setPlaceholderText(".1.3.6.1.2.1.1")
@@ -16988,6 +17014,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self.snmp_execute_btn.setGraphicsEffect(_btn_shadow)
+        _snmp_ico = load_svg_icon_dual(self._snmp_type_icons.get('snmpwalk'), 18, '#ffffff', '#ffffff')
+        if _snmp_ico:
+            self.snmp_execute_btn.setIcon(_snmp_ico)
+            self.snmp_execute_btn.setIconSize(QSize(18, 18))
+            self.snmp_execute_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         main_layout.addWidget(self.snmp_execute_btn)
 
         page.setLayout(main_layout)
@@ -17205,6 +17236,13 @@ class SerialTerminalGUI(QMainWindow):
             'Ping TCP':   self.traceroute_method_pingtcp_btn,
         }
         self.traceroute_current_method = 'ICMP'
+        self._traceroute_method_icons = {
+            'ICMP':      self.get_icon_path('proto_icmp.svg'),
+            'TCP':       self.get_icon_path('proto_tcp.svg'),
+            'UDP':       self.get_icon_path('proto_udp.svg'),
+            'Ping ICMP': self.get_icon_path('proto_icmp.svg'),
+            'Ping TCP':  self.get_icon_path('proto_tcp.svg'),
+        }
 
         def _tr_method_btn_clicked(m):
             for _k, _b in self._traceroute_method_btns.items():
@@ -17574,6 +17612,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self.traceroute_btn.setGraphicsEffect(_btn_shadow)
+        _tr_ico = load_svg_icon_dual(self._traceroute_method_icons.get('ICMP'), 18, '#ffffff', '#ffffff')
+        if _tr_ico:
+            self.traceroute_btn.setIcon(_tr_ico)
+            self.traceroute_btn.setIconSize(QSize(18, 18))
+            self.traceroute_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         main_layout.addWidget(self.traceroute_btn)
 
         page.setLayout(main_layout)
@@ -18403,6 +18446,12 @@ class SerialTerminalGUI(QMainWindow):
         self.snmp_current_type = query_type
         label_map = {"snmpwalk": "SNMP WALK", "snmpget": "SNMP GET", "snmpgetnext": "SNMP GETNEXT"}
         self.snmp_execute_btn.setText(label_map.get(query_type, "SNMP WALK"))
+        _ico = load_svg_icon_dual(self._snmp_type_icons.get(query_type), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.snmp_execute_btn.setIcon(_ico)
+            self.snmp_execute_btn.setIconSize(QSize(18, 18))
+        else:
+            self.snmp_execute_btn.setIcon(QIcon())
 
     def _snmp_show_ip_menu(self):
         """Show a dropdown of all SSH profiles so the user can pick a host."""
@@ -20083,6 +20132,12 @@ class SerialTerminalGUI(QMainWindow):
             if not self.traceroute_port_input.text():
                 self.traceroute_port_input.setText('80')
             self.traceroute_port_input.setPlaceholderText("80 (HTTP), 443 (HTTPS), 22 (SSH)")
+        _ico = load_svg_icon_dual(self._traceroute_method_icons.get(method), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.traceroute_btn.setIcon(_ico)
+            self.traceroute_btn.setIconSize(QSize(18, 18))
+        else:
+            self.traceroute_btn.setIcon(QIcon())
 
     def _open_proxy_settings_dialog(self):
         """Open the proxy configuration dialog for traceroute"""
@@ -21117,6 +21172,12 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_method_buttons[method].setChecked(True)
         self.scan_current_method = method
         self._scan_method_changed(method)
+        _ico = load_svg_icon_dual(self._scan_method_icons.get(method), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.scan_btn.setIcon(_ico)
+            self.scan_btn.setIconSize(QSize(18, 18))
+        else:
+            self.scan_btn.setIcon(QIcon())
 
     def _scan_method_changed(self, method):
         """Show/hide ports field based on scan method"""
@@ -22046,12 +22107,13 @@ class SerialTerminalGUI(QMainWindow):
             }
         """
 
-        _ra_proto_icons = {
+        self._ra_proto_icons = {
             'SSH':    self.get_icon_path('ssh2.svg'),
             'Telnet': self.get_icon_path('telnet.svg'),
             'VNC':    self.get_icon_path('vnc.svg'),
             'RDP':    self.get_icon_path('rdp.svg'),
         }
+        _ra_proto_icons = self._ra_proto_icons
 
         self.protocol_ssh_btn = QPushButton("SSH")
         self.protocol_ssh_btn.setCheckable(True)
@@ -22446,6 +22508,11 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
         self.ssh_connect_btn.clicked.connect(self.connect_ssh)
+        _conn_icon = load_svg_icon_dual(self._ra_proto_icons.get('SSH'), 18, '#ffffff', '#ffffff')
+        if _conn_icon:
+            self.ssh_connect_btn.setIcon(_conn_icon)
+            self.ssh_connect_btn.setIconSize(QSize(18, 18))
+            self.ssh_connect_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.ssh_connect_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         _btn_shadow = QGraphicsDropShadowEffect()
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
@@ -22767,6 +22834,12 @@ class SerialTerminalGUI(QMainWindow):
             btn.setChecked(t == ptype)
         self.config.set('port_type', ptype)
         self.update_port_list()
+        _ico = load_svg_icon_dual(self._port_type_icons.get(ptype), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.connect_btn.setIcon(_ico)
+            self.connect_btn.setIconSize(QSize(18, 18))
+        else:
+            self.connect_btn.setIcon(QIcon())
 
     def update_port_list(self):
         """Update the list of available ports"""
@@ -23003,6 +23076,12 @@ class SerialTerminalGUI(QMainWindow):
                     border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
                 QPushButton:hover { background-color: #7B1FA2; }
                 QPushButton:pressed { background-color: #4A148C; }""")
+            _ico = load_svg_icon_dual(self._ft_proto_icons.get(proto), 18, '#ffffff', '#ffffff')
+            if _ico:
+                self.tftp_btn.setIcon(_ico)
+                self.tftp_btn.setIconSize(QSize(18, 18))
+            else:
+                self.tftp_btn.setIcon(QIcon())
 
     def _ft_mode_changed(self, mode):
         self._ft_mode = mode
@@ -23141,6 +23220,12 @@ class SerialTerminalGUI(QMainWindow):
                     border-radius: 8px; padding: 12px; font-weight: bold; font-size: 11pt; }
                 QPushButton:hover { background-color: #7B1FA2; }
                 QPushButton:pressed { background-color: #4A148C; }""")
+        _ico = load_svg_icon_dual(self._ft_proto_icons.get(proto), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.tftp_btn.setIcon(_ico)
+            self.tftp_btn.setIconSize(QSize(18, 18))
+        else:
+            self.tftp_btn.setIcon(QIcon())
 
     # ── SSH Server (systemctl) ────────────────────────────────────────────
     def _ft_ssh_srv_check_status(self):
@@ -23919,6 +24004,12 @@ class SerialTerminalGUI(QMainWindow):
         port_map = {'SSH': '22', 'Telnet': '23', 'VNC': '5900', 'RDP': '3389'}
         self.ssh_port.setText(port_map.get(protocol, '22'))
         self.ssh_connect_btn.setText(f"CONNECT {protocol}")
+        _ico = load_svg_icon_dual(self._ra_proto_icons.get(protocol), 18, '#ffffff', '#ffffff')
+        if _ico:
+            self.ssh_connect_btn.setIcon(_ico)
+            self.ssh_connect_btn.setIconSize(QSize(18, 18))
+        else:
+            self.ssh_connect_btn.setIcon(QIcon())
 
         # SSH Key fields only make sense for SSH
         is_ssh = (protocol == 'SSH')
@@ -25757,6 +25848,11 @@ class SerialTerminalGUI(QMainWindow):
         _btn_shadow.setBlurRadius(12); _btn_shadow.setXOffset(0); _btn_shadow.setYOffset(3)
         _btn_shadow.setColor(QColor(0, 0, 0, 60))
         self.iperf_run_btn.setGraphicsEffect(_btn_shadow)
+        _iperf_run_ico = load_svg_icon_dual(self.get_icon_path('globe.svg'), 18, '#ffffff', '#ffffff')
+        if _iperf_run_ico:
+            self.iperf_run_btn.setIcon(_iperf_run_ico)
+            self.iperf_run_btn.setIconSize(QSize(18, 18))
+            self.iperf_run_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         main_layout.addWidget(self.iperf_run_btn)
 
         page.setLayout(main_layout)
@@ -25770,6 +25866,11 @@ class SerialTerminalGUI(QMainWindow):
         is_udp = (proto == 'UDP')
         self.iperf_bw_input.setVisible(is_udp)
         self._iperf_bw_lbl.setVisible(is_udp)
+        if self._test_mode_iperf_btn.isChecked():
+            _ico = load_svg_icon_dual(self.get_icon_path(f'proto_{proto.lower()}.svg'), 18, '#ffffff', '#ffffff')
+            if _ico:
+                self.iperf_run_btn.setIcon(_ico)
+                self.iperf_run_btn.setIconSize(QSize(18, 18))
 
     def _iperf_mode_clicked(self, mode):
         for m, btn in self._iperf_mode_btns.items():
@@ -25958,9 +26059,18 @@ class SerialTerminalGUI(QMainWindow):
             ) == 'Server'
             self.iperf_run_btn.setText("START SERVER" if is_server else "RUN IPERF3")
             self.iperf_run_btn.clicked.connect(self._iperf_run)
+            _cur_proto = next((p for p, b in self._iperf_proto_btns.items() if b.isChecked()), 'TCP')
+            _iperf_ico = load_svg_icon_dual(self.get_icon_path(f'proto_{_cur_proto.lower()}.svg'), 18, '#ffffff', '#ffffff')
+            if _iperf_ico:
+                self.iperf_run_btn.setIcon(_iperf_ico)
+                self.iperf_run_btn.setIconSize(QSize(18, 18))
         else:
             self.iperf_run_btn.setText("SPEED TEST")
             self.iperf_run_btn.clicked.connect(self._speedtest_run)
+            _globe_ico = load_svg_icon_dual(self.get_icon_path('globe.svg'), 18, '#ffffff', '#ffffff')
+            if _globe_ico:
+                self.iperf_run_btn.setIcon(_globe_ico)
+                self.iperf_run_btn.setIconSize(QSize(18, 18))
         self.iperf_run_btn.setEnabled(True)
         self.iperf_run_btn.setStyleSheet("""
             QPushButton {

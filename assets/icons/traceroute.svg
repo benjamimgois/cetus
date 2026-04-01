@@ -33,7 +33,7 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="0.499375"
-     inkscape:cx="482.60325"
+     inkscape:cx="483.60451"
      inkscape:cy="633.79224"
      inkscape:window-width="1920"
      inkscape:window-height="1012"
@@ -78,15 +78,15 @@
     </g>
     <text
        xml:space="preserve"
-       style="font-size:7.2px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0213435"
-       x="-0.0091827586"
-       y="23.759743"
+       style="font-size:7.22px;writing-mode:lr-tb;direction:ltr;fill:#ffffff;stroke-width:0.0213435"
+       x="-0.069107644"
+       y="23.699669"
        id="text1"><tspan
          sodipodi:role="line"
          id="tspan1"
-         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:7.2px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';fill:#ffffff;stroke-width:0.0213435"
-         x="-0.0091827586"
-         y="23.759743">TRACERT</tspan></text>
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:7.22px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';fill:#ffffff;stroke-width:0.0213435"
+         x="-0.069107644"
+         y="23.699669">TRACERT</tspan></text>
     <text
        xml:space="preserve"
        transform="scale(0.03)"
