@@ -12085,8 +12085,9 @@ class TerminalDialog(QWidget):
         hdr_layout.setContentsMargins(10, 0, 6, 0)
         hdr_layout.setSpacing(4)
 
-        title_lbl = QLabel("Top Commands")
-        title_lbl.setStyleSheet("color: #89b4fa; font-size: 9pt; font-weight: bold; background: transparent; border: none;")
+        self._topcmds_title_lbl = QLabel("Top Commands")
+        self._topcmds_title_lbl.setStyleSheet("color: #89b4fa; font-size: 9pt; font-weight: bold; background: transparent; border: none;")
+        title_lbl = self._topcmds_title_lbl
         hdr_layout.addWidget(title_lbl)
         hdr_layout.addStretch()
 
@@ -12165,16 +12166,21 @@ class TerminalDialog(QWidget):
         return panel
 
     def _record_command(self, cmd):
-        """Increment the frequency counter for cmd, persist and refresh the panel."""
+        """Increment the frequency counter for cmd under the current vendor, persist and refresh."""
         if not cmd:
             return
-        self._cmd_counter[cmd] = self._cmd_counter.get(cmd, 0) + 1
+        vendor = self._current_vendor
+        vendor_cmds = self._cmd_counter.setdefault(vendor, {})
+        vendor_cmds[cmd] = vendor_cmds.get(cmd, 0) + 1
         self._save_cmd_counter()
         self._refresh_topcmds_list()
 
     def _refresh_topcmds_list(self):
-        """Rebuild the top-10 list sorted by frequency."""
-        top10 = sorted(self._cmd_counter.items(), key=lambda x: x[1], reverse=True)[:10]
+        """Rebuild the top-10 list for the current vendor, sorted by frequency."""
+        if hasattr(self, '_topcmds_title_lbl'):
+            self._topcmds_title_lbl.setText(f"Top — {self._current_vendor}")
+        vendor_cmds = self._cmd_counter.get(self._current_vendor, {})
+        top10 = sorted(vendor_cmds.items(), key=lambda x: x[1], reverse=True)[:10]
         self._topcmds_list.clear()
         for rank, (cmd, count) in enumerate(top10, 1):
             item = QListWidgetItem()
@@ -12200,14 +12206,27 @@ class TerminalDialog(QWidget):
             return os.path.join(Path.home(), '.config', 'opengrid', 'cmd_history.json')
 
     def _load_cmd_counter(self):
-        """Load the command frequency counter from disk."""
+        """Load the per-vendor command frequency counters from disk.
+
+        Returns a dict of {vendor: {cmd: count}}.
+        Handles migration from the old flat {cmd: count} format by moving
+        existing entries under the 'Default' vendor key.
+        """
         path = self._cmd_history_path()
         try:
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 if isinstance(data, dict):
-                    return {str(k): int(v) for k, v in data.items()}
+                    # Migrate old flat format: values are ints, not dicts
+                    if data and all(isinstance(v, int) for v in data.values()):
+                        return {'Default': {str(k): int(v) for k, v in data.items()}}
+                    # Normal nested format
+                    return {
+                        vendor: {str(cmd): int(cnt) for cmd, cnt in cmds.items()}
+                        for vendor, cmds in data.items()
+                        if isinstance(cmds, dict)
+                    }
         except Exception as e:
             print(f"[topcmds] Could not load cmd_history.json: {e}")
         return {}
@@ -12222,8 +12241,8 @@ class TerminalDialog(QWidget):
             print(f"[topcmds] Could not save cmd_history.json: {e}")
 
     def _clear_topcmds(self):
-        """Clear the command frequency counter, refresh the list and persist."""
-        self._cmd_counter.clear()
+        """Clear the counter for the current vendor, refresh the list and persist."""
+        self._cmd_counter.pop(self._current_vendor, None)
         self._topcmds_list.clear()
         self._save_cmd_counter()
 
@@ -12272,6 +12291,7 @@ class TerminalDialog(QWidget):
         self.terminal.set_vendor(vendor)
         self.update_vendor_icon(vendor)
         self._apply_autocomplete_commands(vendor)
+        self._refresh_topcmds_list()
 
         # Save vendor selection
         if self.config:
