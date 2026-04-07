@@ -262,7 +262,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox
+    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox, QStyledItemDelegate
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QBrush, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
@@ -815,6 +815,55 @@ class _CursorOverlay(QWidget):
         else:
             painter.fillRect(rect, QColor('#e0e0e0'))
         painter.end()
+
+
+class _AcItemDelegate(QStyledItemDelegate):
+    """Renders autocomplete items with command highlighted and description muted."""
+
+    def paint(self, painter, option, index):
+        from PyQt6.QtGui import QFont, QColor, QPalette
+        painter.save()
+
+        # Background
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, QColor('#363a4f'))
+        else:
+            painter.fillRect(option.rect, QColor('#1e2030'))
+
+        cmd  = index.data(Qt.ItemDataRole.UserRole) or ''
+        desc = index.data(Qt.ItemDataRole.UserRole + 1) or ''
+
+        x = option.rect.x() + 10
+        y = option.rect.y()
+        h = option.rect.height()
+
+        # Command — monospace, normal weight, accent colour when selected
+        cmd_font = QFont('Monospace', 9)
+        cmd_font.setWeight(QFont.Weight.Normal)
+        painter.setFont(cmd_font)
+        cmd_color = QColor('#89dceb') if (option.state & QStyle.StateFlag.State_Selected) else QColor('#cdd6f4')
+        painter.setPen(cmd_color)
+        fm_cmd = painter.fontMetrics()
+        painter.drawText(x, y, fm_cmd.horizontalAdvance(cmd), h,
+                         Qt.AlignmentFlag.AlignVCenter, cmd)
+        x += fm_cmd.horizontalAdvance(cmd)
+
+        # Separator + description — sans-serif, smaller, italic, muted gray
+        if desc:
+            sep = '   \u2014   '
+            desc_font = QFont('Sans Serif', 8)
+            desc_font.setItalic(True)
+            painter.setFont(desc_font)
+            painter.setPen(QColor('#585b70'))
+            fm_desc = painter.fontMetrics()
+            painter.drawText(x, y, fm_desc.horizontalAdvance(sep + desc), h,
+                             Qt.AlignmentFlag.AlignVCenter, sep + desc)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        from PyQt6.QtCore import QSize
+        return QSize(option.rect.width(), 22)
 
 
 class TerminalWidget(QTextEdit):
@@ -1377,9 +1426,10 @@ class TerminalWidget(QTextEdit):
         vbox.setSpacing(0)
         lst = QListWidget()
         lst.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        lst.setItemDelegate(_AcItemDelegate(lst))
         lst.itemClicked.connect(lambda item: self._ac_commit_item(item))
         vbox.addWidget(lst)
-        hint = QLabel("  → completar   ↑↓ navegar   Esc fechar")
+        hint = QLabel("  → Tab/Enter complete   ↑↓ navigate   Esc close")
         hint.setStyleSheet("""
             QLabel {
                 background: #161622;
@@ -1419,9 +1469,7 @@ class TerminalWidget(QTextEdit):
         self._ac_list.clear()
         for cmd, desc in matches:
             item = QListWidgetItem()
-            # Show typed part in normal color, remainder in accent, desc in gray
-            item.setText(f'{cmd}')
-            item.setToolTip(desc)
+            item.setText(cmd)   # used by delegate as fallback / accessibility
             item.setData(Qt.ItemDataRole.UserRole, cmd)
             item.setData(Qt.ItemDataRole.UserRole + 1, desc)
             self._ac_list.addItem(item)
@@ -1430,7 +1478,7 @@ class TerminalWidget(QTextEdit):
         hint_h   = 18
         max_vis  = 8
         visible  = min(len(matches), max_vis)
-        pop_w    = min(560, max(280, max(len(cmd) * 8 + 30 for cmd, _ in matches)))
+        pop_w    = min(900, max(400, max(len(cmd) * 8 + len(desc) * 7 + 40 for cmd, desc in matches)))
         list_h   = visible * row_h + 4
         pop_h    = list_h + hint_h
 
@@ -1444,9 +1492,9 @@ class TerminalWidget(QTextEdit):
         # Update hint text: show total count when there are more than visible
         total = len(matches)
         if total > max_vis:
-            hint_text = f"  → completar   ↑↓ navegar   Esc fechar   ({total} resultados)"
+            hint_text = f"  → Tab/Enter complete   ↑↓ navigate   Esc close   ({total} results)"
         else:
-            hint_text = "  → completar   ↑↓ navegar   Esc fechar"
+            hint_text = "  → Tab/Enter complete   ↑↓ navigate   Esc close"
         if hasattr(self, '_ac_hint'):
             self._ac_hint.setText(hint_text)
 
@@ -1669,9 +1717,13 @@ class TerminalWidget(QTextEdit):
             'systemctl', 'service', 'journalctl', 'dmesg', 'uname', 'hostname',
             'ifconfig', 'ip', 'route', 'netstat', 'ss', 'ping', 'traceroute', 'dig',
             'nslookup', 'host', 'curl', 'wget', 'ssh', 'scp', 'rsync', 'ftp', 'sftp',
+            'nmap', 'nc', 'netcat', 'tcpdump', 'wireshark', 'tshark',
             'apt', 'apt-get', 'dpkg', 'yum', 'dnf', 'rpm', 'pacman', 'zypper',
+            'flatpak', 'snap', 'snapd',
+            'podman', 'buildah', 'skopeo',
             'sudo', 'su', 'useradd', 'userdel', 'usermod', 'groupadd', 'groupdel',
-            'passwd', 'who', 'w', 'last', 'id', 'groups', 'finger',
+            'adduser', 'deluser', 'passwd', 'gpasswd', 'chpasswd',
+            'who', 'w', 'last', 'id', 'groups', 'finger', 'whoami',
             'echo', 'printf', 'read', 'export', 'env', 'set', 'unset', 'alias',
             'history', 'source', 'exec', 'exit', 'logout', 'clear', 'reset',
             'man', 'info', 'help', 'apropos', 'whatis', 'type', 'command',
@@ -10715,6 +10767,12 @@ class TerminalDialog(QWidget):
                     ('curl -v <url>', 'Make HTTP request with verbose output'),
                     ('ssh <user>@<host>', 'Connect via SSH'),
                     ('scp <src> <user>@<host>:<dst>', 'Copy file to remote host'),
+                    ('nmap <host>', 'Scan open ports on host'),
+                    ('nmap -sV <host>', 'Detect service versions on open ports'),
+                    ('nmap -sn <net>/<prefix>', 'Ping scan — discover live hosts in subnet'),
+                    ('nmap -p <port1>,<port2> <host>', 'Scan specific ports'),
+                    ('nmap -A <host>', 'Aggressive scan (OS, version, scripts, traceroute)'),
+                    ('nmap -oN <file> <host>', 'Save scan output to file'),
                 ],
                 'Static Routes': [
                     ('ip route add <net>/<prefix> via <gw>', 'Add static route via gateway'),
@@ -10782,6 +10840,143 @@ class TerminalDialog(QWidget):
                     ('sudo <command>', 'Run command as root'),
                     ('chmod <mode> <file>', 'Change file permissions'),
                     ('chown <user>:<group> <file>', 'Change file ownership'),
+                ],
+                'Podman': [
+                    ('podman ps', 'List running containers'),
+                    ('podman ps -a', 'List all containers (including stopped)'),
+                    ('podman images', 'List local images'),
+                    ('podman run -d --name <name> -p <host>:<cont> <image>', 'Run container in background with port mapping'),
+                    ('podman run -it --rm <image> bash', 'Run interactive container (auto-remove on exit)'),
+                    ('podman exec -it <name> bash', 'Open shell in running container'),
+                    ('podman logs -f <name>', 'Follow container logs'),
+                    ('podman stop <name>', 'Stop a running container'),
+                    ('podman rm <name>', 'Remove a stopped container'),
+                    ('podman rmi <image>', 'Remove an image'),
+                    ('podman pull <image>', 'Download image from registry'),
+                    ('podman build -t <name>:<tag> .', 'Build image from Containerfile/Dockerfile'),
+                    ('podman inspect <name>', 'Show container/image details (JSON)'),
+                    ('podman network ls', 'List Podman networks'),
+                    ('podman volume ls', 'List Podman volumes'),
+                    ('podman stats', 'Live resource usage per container'),
+                    ('podman pod ls', 'List pods'),
+                    ('podman pod create --name <name>', 'Create a new pod'),
+                    ('podman generate systemd --name <name> --files', 'Generate systemd unit for container'),
+                    ('podman play kube <file>.yaml', 'Deploy pod from Kubernetes YAML'),
+                ],
+                'APT (Debian/Ubuntu)': [
+                    ('apt update', 'Refresh package index'),
+                    ('apt upgrade', 'Upgrade all installed packages'),
+                    ('apt full-upgrade', 'Upgrade packages and handle dependency changes'),
+                    ('apt install <package>', 'Install a package'),
+                    ('apt remove <package>', 'Remove a package (keep config files)'),
+                    ('apt purge <package>', 'Remove package and its config files'),
+                    ('apt autoremove', 'Remove unused dependency packages'),
+                    ('apt search <keyword>', 'Search for packages by keyword'),
+                    ('apt show <package>', 'Show package details'),
+                    ('apt list --installed', 'List all installed packages'),
+                    ('apt list --upgradable', 'List packages with available upgrades'),
+                    ('dpkg -l', 'List all installed packages (dpkg)'),
+                    ('dpkg -i <file>.deb', 'Install a .deb package file'),
+                    ('dpkg --remove <package>', 'Remove an installed .deb package'),
+                    ('apt-cache policy <package>', 'Show installed and candidate version'),
+                ],
+                'DNF (Fedora/RHEL)': [
+                    ('dnf check-update', 'Check for available updates'),
+                    ('dnf upgrade', 'Upgrade all installed packages'),
+                    ('dnf install <package>', 'Install a package'),
+                    ('dnf remove <package>', 'Remove a package'),
+                    ('dnf autoremove', 'Remove unused dependency packages'),
+                    ('dnf search <keyword>', 'Search for packages by keyword'),
+                    ('dnf info <package>', 'Show package details'),
+                    ('dnf list installed', 'List all installed packages'),
+                    ('dnf list available', 'List available packages in repositories'),
+                    ('dnf repolist', 'List enabled repositories'),
+                    ('dnf history', 'Show transaction history'),
+                    ('dnf history undo <id>', 'Undo a previous transaction'),
+                    ('dnf group list', 'List available package groups'),
+                    ('dnf group install "<group>"', 'Install a package group'),
+                    ('rpm -qa', 'List all installed RPM packages'),
+                    ('rpm -ivh <file>.rpm', 'Install an RPM package file'),
+                ],
+                'Pacman (Arch Linux)': [
+                    ('pacman -Syu', 'Synchronize repositories and upgrade all packages'),
+                    ('pacman -S <package>', 'Install a package'),
+                    ('pacman -R <package>', 'Remove a package'),
+                    ('pacman -Rs <package>', 'Remove package and unneeded dependencies'),
+                    ('pacman -Rns <package>', 'Remove package, deps and config files'),
+                    ('pacman -Ss <keyword>', 'Search for packages in repositories'),
+                    ('pacman -Si <package>', 'Show package information from repository'),
+                    ('pacman -Qi <package>', 'Show information for installed package'),
+                    ('pacman -Ql <package>', 'List files installed by a package'),
+                    ('pacman -Qo <file>', 'Find which package owns a file'),
+                    ('pacman -Q', 'List all installed packages'),
+                    ('pacman -Qdt', 'List orphaned (unneeded) packages'),
+                    ('pacman -Sc', 'Clean package cache (keep latest version)'),
+                    ('pacman -Scc', 'Clean entire package cache'),
+                    ('pacman -U <file>.pkg.tar.zst', 'Install a local package file'),
+                ],
+                'Flatpak': [
+                    ('flatpak install <remote> <app-id>', 'Install a Flatpak application'),
+                    ('flatpak install flathub <app-id>', 'Install from Flathub repository'),
+                    ('flatpak uninstall <app-id>', 'Uninstall a Flatpak application'),
+                    ('flatpak uninstall --unused', 'Remove unused runtimes and extensions'),
+                    ('flatpak update', 'Update all installed Flatpak applications'),
+                    ('flatpak update <app-id>', 'Update a specific application'),
+                    ('flatpak list', 'List installed Flatpak applications and runtimes'),
+                    ('flatpak list --app', 'List installed applications only'),
+                    ('flatpak search <keyword>', 'Search for applications in configured remotes'),
+                    ('flatpak info <app-id>', 'Show information about an installed application'),
+                    ('flatpak run <app-id>', 'Run a Flatpak application'),
+                    ('flatpak remotes', 'List configured remote repositories'),
+                    ('flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo', 'Add Flathub remote'),
+                    ('flatpak remote-delete <remote>', 'Remove a remote repository'),
+                    ('flatpak override --user --filesystem=home <app-id>', 'Grant filesystem access to an application'),
+                    ('flatpak override --user --reset <app-id>', 'Reset all overrides for an application'),
+                ],
+                'Snap': [
+                    ('snap install <package>', 'Install a snap package'),
+                    ('snap install --classic <package>', 'Install a classic (unconfined) snap'),
+                    ('snap remove <package>', 'Remove a snap package'),
+                    ('snap refresh', 'Update all installed snaps'),
+                    ('snap refresh <package>', 'Update a specific snap'),
+                    ('snap list', 'List all installed snaps'),
+                    ('snap find <keyword>', 'Search for snaps in the store'),
+                    ('snap info <package>', 'Show detailed information about a snap'),
+                    ('snap run <package>', 'Run a snap application'),
+                    ('snap services', 'List snap service daemons'),
+                    ('snap start <package>.<service>', 'Start a snap service'),
+                    ('snap stop <package>.<service>', 'Stop a snap service'),
+                    ('snap enable <package>', 'Enable a disabled snap'),
+                    ('snap disable <package>', 'Disable a snap without removing it'),
+                    ('snap revert <package>', 'Revert snap to the previous version'),
+                    ('snap connections <package>', 'List interfaces connected to a snap'),
+                ],
+                'User Management': [
+                    ('useradd <username>', 'Create a new user account'),
+                    ('useradd -m <username>', 'Create user with home directory'),
+                    ('useradd -m -s /bin/bash <username>', 'Create user with home dir and bash shell'),
+                    ('useradd -m -G <group1>,<group2> <username>', 'Create user and add to groups'),
+                    ('useradd -m -u <uid> <username>', 'Create user with specific UID'),
+                    ('adduser <username>', 'Interactive user creation (Debian/Ubuntu)'),
+                    ('passwd <username>', 'Set or change user password'),
+                    ('passwd -l <username>', 'Lock a user account'),
+                    ('passwd -u <username>', 'Unlock a user account'),
+                    ('usermod -aG <group> <username>', 'Add user to a supplementary group'),
+                    ('usermod -aG sudo <username>', 'Grant sudo privileges to user'),
+                    ('usermod -s /bin/bash <username>', 'Change user login shell'),
+                    ('usermod -l <newname> <oldname>', 'Rename a user account'),
+                    ('usermod -d <homedir> -m <username>', 'Move user home directory'),
+                    ('userdel <username>', 'Delete a user account'),
+                    ('userdel -r <username>', 'Delete user and their home directory'),
+                    ('groupadd <group>', 'Create a new group'),
+                    ('groupdel <group>', 'Delete a group'),
+                    ('gpasswd -d <username> <group>', 'Remove user from a group'),
+                    ('id <username>', 'Show user UID, GID and groups'),
+                    ('whoami', 'Show current logged-in username'),
+                    ('w', 'Show who is logged in and what they are doing'),
+                    ('last', 'Show last login history'),
+                    ('cat /etc/passwd', 'List all user accounts'),
+                    ('cat /etc/group', 'List all groups'),
                 ],
             },
             'MikroTik': {
