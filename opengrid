@@ -1401,9 +1401,22 @@ class TerminalWidget(QTextEdit):
             MAX_FEED_BYTES = 8192  # 8 KB ≈ 11ms of pyte time → lock free ~89ms/100ms
             if len(text) > MAX_FEED_BYTES:
                 text = text[-MAX_FEED_BYTES:]
-                nl = text.find('\n')  # align to line boundary to avoid split escape seqs
-                if 0 < nl < 512:
-                    text = text[nl + 1:]
+                # TUI apps (htop, vim, …) redraw using cursor positioning, not newlines.
+                # A full htop frame on a 220-col terminal can exceed 8 KB, so the screen
+                # clear (ESC[2J) and cursor-home (ESC[H) that start the frame end up in
+                # the discarded prefix.  Without them pyte overlays the new frame on the
+                # old one → garbled display.  Try to align to a frame-start marker first.
+                aligned = False
+                for _marker in ('\x1b[2J', '\x1b[H', '\x1b[1;1H', '\x1b[?1049h'):
+                    _idx = text.find(_marker)
+                    if 0 < _idx < 1024:
+                        text = text[_idx:]
+                        aligned = True
+                        break
+                if not aligned:
+                    nl = text.find('\n')  # fallback: align to line boundary
+                    if 0 < nl < 512:
+                        text = text[nl + 1:]
 
             if self._DBG:
                 self._dbg_feed_bytes += len(text)  # bytes actually fed to pyte (after cap)
