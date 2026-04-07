@@ -12090,6 +12090,18 @@ class TerminalDialog(QWidget):
         hdr_layout.addWidget(title_lbl)
         hdr_layout.addStretch()
 
+        clear_btn = QPushButton("🗑")
+        clear_btn.setFixedSize(20, 20)
+        clear_btn.setFlat(True)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setToolTip("Clear command history")
+        clear_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #585b70; border: none; font-size: 9pt; }
+            QPushButton:hover { color: #f38ba8; }
+        """)
+        clear_btn.clicked.connect(self._clear_topcmds)
+        hdr_layout.addWidget(clear_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(20, 20)
         close_btn.setFlat(True)
@@ -12178,6 +12190,11 @@ class TerminalDialog(QWidget):
         if cmd:
             self.terminal.send_input.emit(cmd + '\r')
             self._topcmds_list.clearSelection()
+
+    def _clear_topcmds(self):
+        """Clear the command frequency counter and refresh the list."""
+        self._cmd_counter.clear()
+        self._topcmds_list.clear()
 
     def _toggle_topcmds_panel(self, checked=None):
         """Show or hide the Top Commands panel."""
