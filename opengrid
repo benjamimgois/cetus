@@ -17626,6 +17626,9 @@ class SerialTerminalGUI(QMainWindow):
         self.traceroute_target_input.setToolTip("Target IP address or hostname")
         self.traceroute_target_input.setFont(QFont("Sans Serif", 9))
         self.traceroute_target_input.setStyleSheet(traceroute_line_edit_style)
+        # Align right edge with the TCP method button:
+        # ICMP(90) + gap(4) + TCP(90) = 184 px from the start of the field column.
+        self.traceroute_target_input.setFixedWidth(184)
 
         _quick_targets = [
             ("Google DNS",          "8.8.8.8"),
