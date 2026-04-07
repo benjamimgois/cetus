@@ -1228,7 +1228,7 @@ class TerminalWidget(QTextEdit):
 
         # Handle special keys
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
-            if self._ac_buffer.strip():
+            if self._ac_buffer.strip() and not self._is_password_prompt():
                 self.command_executed.emit(self._ac_buffer.strip())
             self._ac_buffer = ""
             self._ac_hide()
@@ -1612,6 +1612,36 @@ class TerminalWidget(QTextEdit):
         if self._ac_popup and self._ac_popup.isVisible():
             self._ac_popup.hide()
         self._ac_sel = 0
+
+    _PASSWORD_PROMPT_RE = re.compile(
+        r'(password|passwd|passphrase|contraseña|senha|pin|secret'
+        r'|enter.*pass|retype|confirm.*pass'
+        r'|\[sudo\]'
+        r'|authentication required'
+        r'|new.*password|current.*password'
+        r'|private key)',
+        re.IGNORECASE,
+    )
+
+    def _is_password_prompt(self):
+        """Return True if the current terminal line looks like a password prompt.
+
+        Checks the visible line at the cursor row and the line immediately
+        above it, covering multi-line prompts like sudo's '[sudo] password for user:'.
+        """
+        try:
+            with self._pyte_lock:
+                rows_to_check = {self.screen.cursor.y}
+                if self.screen.cursor.y > 0:
+                    rows_to_check.add(self.screen.cursor.y - 1)
+                for row in rows_to_check:
+                    line = self.screen.buffer.get(row, {})
+                    text = ''.join(c.data for c in line.values())
+                    if self._PASSWORD_PROMPT_RE.search(text):
+                        return True
+        except Exception:
+            pass
+        return False
 
     # ─────────────────────────────────────────────────────────────────────────
 
