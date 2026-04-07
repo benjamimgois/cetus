@@ -866,12 +866,75 @@ class _AcItemDelegate(QStyledItemDelegate):
         return QSize(option.rect.width(), 22)
 
 
+class _TopCmdsDelegate(QStyledItemDelegate):
+    """Renders top-commands list items: rank badge + command text + usage count."""
+
+    _RANK_COLORS = ['#f9e2af', '#89dceb', '#a6e3a1']  # gold, cyan, green for top 3
+
+    def paint(self, painter, option, index):
+        from PyQt6.QtGui import QFont, QColor
+        painter.save()
+
+        row = index.row()
+        cmd   = index.data(Qt.ItemDataRole.UserRole) or ''
+        count = index.data(Qt.ItemDataRole.UserRole + 1) or 0
+
+        # Background
+        if option.state & QStyle.StateFlag.State_Selected or option.state & QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(option.rect, QColor('#1e2030'))
+        else:
+            bg = '#181825' if row % 2 == 0 else '#141420'
+            painter.fillRect(option.rect, QColor(bg))
+
+        x = option.rect.x()
+        y = option.rect.y()
+        h = option.rect.height()
+        w = option.rect.width()
+
+        # Rank badge (left gutter, 26px wide)
+        rank_color = self._RANK_COLORS[row] if row < 3 else '#45475a'
+        rank_font = QFont('Sans Serif', 7)
+        rank_font.setBold(True)
+        painter.setFont(rank_font)
+        painter.setPen(QColor(rank_color))
+        painter.drawText(x + 2, y, 22, h, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                         f'#{row + 1}')
+
+        # Command text
+        cmd_font = QFont('Monospace', 9)
+        painter.setFont(cmd_font)
+        cmd_color = QColor('#89dceb') if (option.state & QStyle.StateFlag.State_Selected or
+                                          option.state & QStyle.StateFlag.State_MouseOver) else QColor('#cdd6f4')
+        painter.setPen(cmd_color)
+        fm = painter.fontMetrics()
+        count_str = f'×{count}'
+        from PyQt6.QtGui import QFontMetrics
+        count_w = QFontMetrics(QFont('Sans Serif', 7)).horizontalAdvance(count_str) + 4
+        cmd_x = x + 28
+        cmd_w = w - 28 - count_w - 8
+        painter.drawText(cmd_x, y, cmd_w, h, Qt.AlignmentFlag.AlignVCenter, fm.elidedText(cmd, Qt.TextElideMode.ElideRight, cmd_w))
+
+        # Usage count (right-aligned)
+        count_font = QFont('Sans Serif', 7)
+        painter.setFont(count_font)
+        painter.setPen(QColor('#585b70'))
+        painter.drawText(x + w - count_w - 4, y, count_w + 4, h,
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, count_str)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        from PyQt6.QtCore import QSize
+        return QSize(option.rect.width(), 30)
+
+
 class TerminalWidget(QTextEdit):
     """Terminal widget using pyte for proper VT100/ANSI emulation"""
 
-    send_input = pyqtSignal(str)
-    size_changed = pyqtSignal(int, int)  # columns, lines
-    data_received = pyqtSignal()         # emitted on each screen render (main thread)
+    send_input       = pyqtSignal(str)
+    size_changed     = pyqtSignal(int, int)  # columns, lines
+    data_received    = pyqtSignal()          # emitted on each screen render (main thread)
+    command_executed = pyqtSignal(str)       # emitted with the command text when Enter is pressed
 
     def __init__(self, parent=None, columns=120, lines=40):
         super().__init__(parent)
@@ -1165,6 +1228,8 @@ class TerminalWidget(QTextEdit):
 
         # Handle special keys
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            if self._ac_buffer.strip():
+                self.command_executed.emit(self._ac_buffer.strip())
             self._ac_buffer = ""
             self._ac_hide()
             sequence = '\r'
@@ -11479,7 +11544,24 @@ class TerminalDialog(QWidget):
         self.terminal.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.terminal.set_vendor(initial_vendor)
         self._apply_autocomplete_commands(initial_vendor)
-        layout.addWidget(self.terminal, 1)
+
+        # Command frequency counter (cmd → use count) for Top Commands panel
+        self._cmd_counter = {}
+        self.terminal.command_executed.connect(self._record_command)
+
+        # Top Commands side panel (hidden by default)
+        self._topcmds_panel = self._build_topcmds_panel()
+        self._topcmds_panel.setVisible(False)
+
+        _terminal_row = QHBoxLayout()
+        _terminal_row.setContentsMargins(0, 0, 0, 0)
+        _terminal_row.setSpacing(0)
+        _terminal_row.addWidget(self.terminal, 1)
+        _terminal_row.addWidget(self._topcmds_panel)
+        _terminal_row_widget = QWidget()
+        _terminal_row_widget.setContentsMargins(0, 0, 0, 0)
+        _terminal_row_widget.setLayout(_terminal_row)
+        layout.addWidget(_terminal_row_widget, 1)
 
         # ── Status bar ─────────────────────────────────────────────────────────
         self._status_bar = QWidget()
@@ -11685,6 +11767,26 @@ class TerminalDialog(QWidget):
             s.setStyleSheet("background-color: #333333; border: none;")
             return s
 
+        # Top Commands toggle button
+        self.topcmds_btn = QPushButton()
+        self.topcmds_btn.setFixedSize(36, 36)
+        self.topcmds_btn.setFlat(True)
+        self.topcmds_btn.setCheckable(True)
+        self.topcmds_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.topcmds_btn.setToolTip("Top used commands")
+        self.topcmds_btn.setStyleSheet("""
+            QPushButton { border: none; border-radius: 6px; padding: 2px; background-color: transparent; }
+            QPushButton:hover { background-color: #3a3a3a; }
+            QPushButton:pressed { background-color: #4a4a4a; }
+            QPushButton:checked { background-color: #2a3a4a; }
+        """)
+        _tc_icon_path = self.get_icon_path('topcmds.svg')
+        _tc_pixmap = load_svg_pixmap(_tc_icon_path, 28)
+        if _tc_pixmap and not _tc_pixmap.isNull():
+            self.topcmds_btn.setIcon(QIcon(_tc_pixmap))
+            self.topcmds_btn.setIconSize(QSize(28, 28))
+        self.topcmds_btn.clicked.connect(self._toggle_topcmds_panel)
+
         # Group 1 – font size
         button_layout.addWidget(self.font_decrease_btn)
         button_layout.addSpacing(6)
@@ -11698,6 +11800,8 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.quickref_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.configtemplate_btn)
+        button_layout.addSpacing(6)
+        button_layout.addWidget(self.topcmds_btn)
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
         button_layout.addStretch()
@@ -11930,6 +12034,127 @@ class TerminalDialog(QWidget):
         from PyQt6.QtCore import QPoint
         pos = self.vendor_btn.mapToGlobal(QPoint(0, self.vendor_btn.height()))
         self._vendor_menu.exec(pos)
+
+    # ── Top Commands panel ────────────────────────────────────────────────────
+
+    def _build_topcmds_panel(self):
+        """Build the collapsible right-side Top Commands panel."""
+        panel = QWidget()
+        panel.setFixedWidth(230)
+        panel.setStyleSheet("background-color: #141414; border-left: 1px solid #2a2a2a;")
+
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        # Header
+        header = QWidget()
+        header.setFixedHeight(32)
+        header.setStyleSheet("background-color: #1a1a1a; border-bottom: 1px solid #2a2a2a;")
+        hdr_layout = QHBoxLayout(header)
+        hdr_layout.setContentsMargins(10, 0, 6, 0)
+        hdr_layout.setSpacing(4)
+
+        title_lbl = QLabel("Top Commands")
+        title_lbl.setStyleSheet("color: #89b4fa; font-size: 9pt; font-weight: bold; background: transparent; border: none;")
+        hdr_layout.addWidget(title_lbl)
+        hdr_layout.addStretch()
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(20, 20)
+        close_btn.setFlat(True)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #585b70; border: none; font-size: 9pt; }
+            QPushButton:hover { color: #cdd6f4; }
+        """)
+        close_btn.clicked.connect(lambda: self._toggle_topcmds_panel(False))
+        hdr_layout.addWidget(close_btn)
+        vbox.addWidget(header)
+
+        # List
+        self._topcmds_list = QListWidget()
+        self._topcmds_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._topcmds_list.setStyleSheet("""
+            QListWidget {
+                background-color: transparent;
+                border: none;
+                color: #cdd6f4;
+                font-family: Monospace;
+                font-size: 9pt;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 5px 10px;
+                border-bottom: 1px solid #1e1e1e;
+            }
+            QListWidget::item:hover {
+                background-color: #1e2030;
+                color: #89dceb;
+            }
+            QListWidget::item:selected {
+                background-color: #2a3a4a;
+                color: #89dceb;
+            }
+            QScrollBar:vertical {
+                background: #141414; width: 5px; border-radius: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #2a2a2a; border-radius: 2px; min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        """)
+        self._topcmds_list.itemClicked.connect(self._topcmds_send)
+        vbox.addWidget(self._topcmds_list, 1)
+
+        # Footer hint
+        hint = QLabel("Click to paste and run")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint.setStyleSheet("""
+            background-color: #111111;
+            color: #45475a;
+            font-size: 8pt;
+            padding: 4px;
+            border-top: 1px solid #2a2a2a;
+        """)
+        hint.setFixedHeight(20)
+        vbox.addWidget(hint)
+
+        return panel
+
+    def _record_command(self, cmd):
+        """Increment the frequency counter for cmd and refresh the panel."""
+        if not cmd:
+            return
+        self._cmd_counter[cmd] = self._cmd_counter.get(cmd, 0) + 1
+        self._refresh_topcmds_list()
+
+    def _refresh_topcmds_list(self):
+        """Rebuild the top-10 list sorted by frequency."""
+        top10 = sorted(self._cmd_counter.items(), key=lambda x: x[1], reverse=True)[:10]
+        self._topcmds_list.clear()
+        for rank, (cmd, count) in enumerate(top10, 1):
+            item = QListWidgetItem()
+            item.setText(cmd)
+            item.setToolTip(f"Used {count} time{'s' if count != 1 else ''}")
+            item.setData(Qt.ItemDataRole.UserRole, cmd)
+            item.setData(Qt.ItemDataRole.UserRole + 1, count)
+            self._topcmds_list.addItem(item)
+        self._topcmds_list.setItemDelegate(_TopCmdsDelegate(self._topcmds_list))
+
+    def _topcmds_send(self, item):
+        """Send the selected command to the terminal and execute it."""
+        cmd = item.data(Qt.ItemDataRole.UserRole)
+        if cmd:
+            self.terminal.send_input.emit(cmd + '\r')
+            self._topcmds_list.clearSelection()
+
+    def _toggle_topcmds_panel(self, checked=None):
+        """Show or hide the Top Commands panel."""
+        if checked is None:
+            checked = not self._topcmds_panel.isVisible()
+        self._topcmds_panel.setVisible(checked)
+        self.topcmds_btn.setChecked(bool(checked))
 
     def open_vendor_reference(self):
         """Open the vendor quick reference guide dialog"""
