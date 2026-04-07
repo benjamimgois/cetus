@@ -16870,6 +16870,7 @@ class SerialTerminalGUI(QMainWindow):
         timeout_label = QLabel("Timeout:")
         self.scan_timeout_combo = FlatComboButton()
         self.scan_timeout_combo.addItems(["1s", "2s", "3s", "5s"])
+        self.scan_timeout_combo.setCurrentIndex(3)
         self.scan_timeout_combo.setFixedWidth(80)
 
         options_layout.addWidget(timeout_label)
@@ -22312,6 +22313,7 @@ class SerialTerminalGUI(QMainWindow):
         menu.addSeparator()
         snmpwalk_action = menu.addAction("SNMP Walk")
         tracert_action  = menu.addAction("Traceroute (ICMP MTR)")
+        ping_action     = menu.addAction("PING ICMP")
         menu.addSeparator()
         add_ssh_action  = menu.addAction("Add to SSH List")
         menu.addSeparator()
@@ -22342,6 +22344,14 @@ class SerialTerminalGUI(QMainWindow):
             self._traceroute_method_changed('ICMP')
             self.switch_tab(3)
             self._start_traceroute()
+        elif action == ping_action:
+            self.traceroute_target_input.setText(ip)
+            for _k, _b in self._traceroute_method_btns.items():
+                _b.setChecked(_k == 'Ping ICMP')
+            self.traceroute_current_method = 'Ping ICMP'
+            self._traceroute_method_changed('Ping ICMP')
+            self.switch_tab(3)
+            self._start_ping()
         elif action == add_ssh_action:
             self._add_ip_to_ssh_list(ip)
         elif action == copy_action:
@@ -22410,6 +22420,7 @@ class SerialTerminalGUI(QMainWindow):
         ipscan_action  = menu.addAction("IP Scan (TCP)")
         snmpwalk_action = menu.addAction("SNMP Walk")
         tracert_action = menu.addAction("Traceroute (ICMP MTR)")
+        ping_action    = menu.addAction("PING ICMP")
         menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
         menu.addSeparator()
@@ -22449,6 +22460,14 @@ class SerialTerminalGUI(QMainWindow):
             self._traceroute_method_changed('ICMP')
             self.switch_tab(3)
             self._start_traceroute()
+        elif action == ping_action:
+            self.traceroute_target_input.setText(ip)
+            for _k, _b in self._traceroute_method_btns.items():
+                _b.setChecked(_k == 'Ping ICMP')
+            self.traceroute_current_method = 'Ping ICMP'
+            self._traceroute_method_changed('Ping ICMP')
+            self.switch_tab(3)
+            self._start_ping()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
