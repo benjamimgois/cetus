@@ -15540,6 +15540,11 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn.setCheckable(True)
         self._ft_mode_client_btn.setChecked(True)
         self._ft_mode_client_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ft_mode_client_btn.setToolTip(
+            "<b>Client mode</b><br>"
+            "OpenGrid connects to a remote server and transfers files.<br>"
+            "You initiate the upload or download to/from the target host."
+        )
         self._ft_mode_client_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
         )
@@ -15552,6 +15557,11 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_server_btn = QPushButton("Server")
         self._ft_mode_server_btn.setCheckable(True)
         self._ft_mode_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ft_mode_server_btn.setToolTip(
+            "<b>Server mode</b><br>"
+            "OpenGrid starts a local server (TFTP/FTP/SCP/SMB) on this machine.<br>"
+            "Remote devices can then connect and push or pull files."
+        )
         self._ft_mode_server_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
