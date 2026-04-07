@@ -11576,7 +11576,7 @@ class TerminalDialog(QWidget):
         self._apply_autocomplete_commands(initial_vendor)
 
         # Command frequency counter (cmd → use count) for Top Commands panel
-        self._cmd_counter = {}
+        self._cmd_counter = self._load_cmd_counter()
         self.terminal.command_executed.connect(self._record_command)
 
         # Top Commands side panel (hidden by default)
@@ -12165,10 +12165,11 @@ class TerminalDialog(QWidget):
         return panel
 
     def _record_command(self, cmd):
-        """Increment the frequency counter for cmd and refresh the panel."""
+        """Increment the frequency counter for cmd, persist and refresh the panel."""
         if not cmd:
             return
         self._cmd_counter[cmd] = self._cmd_counter.get(cmd, 0) + 1
+        self._save_cmd_counter()
         self._refresh_topcmds_list()
 
     def _refresh_topcmds_list(self):
@@ -12191,10 +12192,40 @@ class TerminalDialog(QWidget):
             self.terminal.send_input.emit(cmd + '\r')
             self._topcmds_list.clearSelection()
 
+    def _cmd_history_path(self):
+        """Return the path to the persistent command history file."""
+        try:
+            return os.path.join(self.config.config_dir, 'cmd_history.json')
+        except Exception:
+            return os.path.join(Path.home(), '.config', 'opengrid', 'cmd_history.json')
+
+    def _load_cmd_counter(self):
+        """Load the command frequency counter from disk."""
+        path = self._cmd_history_path()
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return {str(k): int(v) for k, v in data.items()}
+        except Exception as e:
+            print(f"[topcmds] Could not load cmd_history.json: {e}")
+        return {}
+
+    def _save_cmd_counter(self):
+        """Persist the command frequency counter to disk."""
+        path = self._cmd_history_path()
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(self._cmd_counter, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[topcmds] Could not save cmd_history.json: {e}")
+
     def _clear_topcmds(self):
-        """Clear the command frequency counter and refresh the list."""
+        """Clear the command frequency counter, refresh the list and persist."""
         self._cmd_counter.clear()
         self._topcmds_list.clear()
+        self._save_cmd_counter()
 
     def _toggle_topcmds_panel(self, checked=None):
         """Show or hide the Top Commands panel."""
