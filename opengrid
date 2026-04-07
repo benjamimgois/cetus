@@ -15185,12 +15185,23 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 5px 0px 0px 5px; }"
         )
+        _ft_client_ico_path = self.get_icon_path('speed_client.svg')
+        _ft_client_ico = load_svg_icon_dual(_ft_client_ico_path, 18, '#555555', '#ffffff') if _ft_client_ico_path else None
+        if _ft_client_ico:
+            self._ft_mode_client_btn.setIcon(_ft_client_ico)
+            self._ft_mode_client_btn.setIconSize(QSize(18, 18))
+
         self._ft_mode_server_btn = QPushButton("Server")
         self._ft_mode_server_btn.setCheckable(True)
         self._ft_mode_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ft_mode_server_btn.setStyleSheet(
             _mode_btn_style + "QPushButton { border-radius: 0px 5px 5px 0px; }"
         )
+        _ft_server_ico_path = self.get_icon_path('speed_server.svg')
+        _ft_server_ico = load_svg_icon_dual(_ft_server_ico_path, 18, '#555555', '#ffffff') if _ft_server_ico_path else None
+        if _ft_server_ico:
+            self._ft_mode_server_btn.setIcon(_ft_server_ico)
+            self._ft_mode_server_btn.setIconSize(QSize(18, 18))
         _mode_sep = QFrame()
         _mode_sep.setFixedWidth(1)
         _mode_sep.setStyleSheet("background-color: #b0b0b0; border: none;")
@@ -16317,7 +16328,6 @@ class SerialTerminalGUI(QMainWindow):
         net_widget = QWidget()
         net_widget.setContentsMargins(0, 0, 0, 0)
         net_widget.setLayout(net_input_layout)
-        scan_layout.addRow("Network:", net_widget)
 
         # Auto-detect network on startup
         self._scan_auto_detect_network()
@@ -16380,6 +16390,7 @@ class SerialTerminalGUI(QMainWindow):
         method_layout.addStretch()
         method_widget.setLayout(method_layout)
         scan_layout.addRow("Method:", method_widget)
+        scan_layout.addRow("Network:", net_widget)
 
         # Store method buttons for easy access
         self.scan_method_buttons = {
@@ -17379,7 +17390,6 @@ class SerialTerminalGUI(QMainWindow):
         _target_layout.addWidget(self.traceroute_dns_checkbox)
         _target_layout.addWidget(self.traceroute_autograph_checkbox)
         _target_layout.addStretch()
-        config_layout.addRow("Target:", _target_widget)
 
 
         # Method selector (ICMP/TCP/UDP) — toggle buttons in tab cyan colour
@@ -17458,6 +17468,7 @@ class SerialTerminalGUI(QMainWindow):
         _tr_method_layout.addWidget(self.traceroute_method_pingtcp_btn)
         _tr_method_layout.addStretch()
         config_layout.addRow("Method:", _tr_method_widget)
+        config_layout.addRow("Target:", _target_widget)
 
         # Proxy — internal state
         self._proxy_enabled = False
