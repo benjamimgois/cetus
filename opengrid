@@ -14049,10 +14049,10 @@ class SerialTerminalGUI(QMainWindow):
             'USB':    self.get_icon_path('usb.svg'),
             'Serial': self.get_icon_path('serial_port.svg'),
         }
-        _usb_ico = load_svg_icon_dual(self._port_type_icons['USB'], 14, '#444444', '#ffffff')
+        _usb_ico = load_svg_icon_dual(self._port_type_icons['USB'], 24, '#444444', '#ffffff')
         if _usb_ico:
             self._port_type_btns['USB'].setIcon(_usb_ico)
-            self._port_type_btns['USB'].setIconSize(QSize(14, 14))
+            self._port_type_btns['USB'].setIconSize(QSize(24, 24))
         _serial_ico = load_svg_icon_dual(self._port_type_icons['Serial'], 14, '#444444', '#ffffff')
         if _serial_ico:
             self._port_type_btns['Serial'].setIcon(_serial_ico)
