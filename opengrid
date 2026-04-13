@@ -21,12 +21,25 @@ import math
 import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
+    # Try standard telnetlib first (Python < 3.13)
     import telnetlib
     TELNET_AVAILABLE = True
 except ImportError:
-    telnetlib = None
-    TELNET_AVAILABLE = False
+    # Fall back to standard-telnetlib for Python 3.13+
+    try:
+        import standard_telnetlib as telnetlib
+        TELNET_AVAILABLE = True
+    except ImportError:
+        telnetlib = None
+        TELNET_AVAILABLE = False
 from pathlib import Path
+
+# Import secure storage (will be created as separate file)
+try:
+    from secure_storage import encrypt_password, decrypt_password
+    SECURE_STORAGE_AVAILABLE = True
+except ImportError:
+    SECURE_STORAGE_AVAILABLE = False
 
 # Application version
 VERSION = "1.7"
@@ -660,7 +673,18 @@ class ConfigManager:
         """Get list of saved SSH connection profiles"""
         profiles_json = self.settings.get('ssh_profiles', '[]')
         try:
-            return json.loads(profiles_json)
+            profiles = json.loads(profiles_json)
+            # Decrypt passwords for each profile
+            try:
+                from secure_storage import decrypt_password
+            except ImportError:
+                # Fallback if secure_storage is not available
+                def decrypt_password(data):
+                    return data
+            for profile in profiles:
+                if 'password' in profile and profile['password']:
+                    profile['password'] = decrypt_password(profile['password'])
+            return profiles
         except json.JSONDecodeError:
             return []
 
@@ -674,8 +698,14 @@ class ConfigManager:
             'vendor': vendor, 'group': group,
         }
         if password:
-            import base64
-            entry['password'] = base64.b64encode(password.encode()).decode()
+            try:
+                from secure_storage import encrypt_password
+            except ImportError:
+                # Fallback if secure_storage is not available
+                import base64
+                def encrypt_password(password):
+                    return base64.b64encode(password.encode()).decode()
+            entry['password'] = encrypt_password(password)
         # Update existing or add new
         for i, p in enumerate(profiles):
             if p.get('name') == name:
@@ -980,9 +1010,15 @@ class TerminalWidget(QTextEdit):
         self._in_unhandled_escape = False
         self._escape_discard_buffer = ""
 
-        # Refresh timer for rendering
+        # Refresh timer for rendering - use optimized rendering
         self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.render_screen)
+        # Import and apply optimizations
+        try:
+            from .terminal_optimizations import apply_terminal_optimizations
+            self._terminal_optimizer = apply_terminal_optimizations(self)
+        except ImportError:
+            # Fallback to original rendering if optimizations not available
+            self.refresh_timer.timeout.connect(self.render_screen)
         self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
 
         # Viewport size tracker: recalculates PTY dimensions when the widget
@@ -1560,10 +1596,12 @@ class TerminalWidget(QTextEdit):
         list_h   = visible * row_h + 4
         pop_h    = list_h + hint_h
 
-        # Position just above the bottom of the viewport
+        # Position at the bottom-right corner of the viewport
         vp = self.viewport()
-        x  = 10
+        x  = vp.width() - pop_w - 10    # 10px from the right edge
         y  = vp.height() - pop_h - 26   # ~26px above the bottom line
+        if x < 4:
+            x = 4
         if y < 4:
             y = 4
 
