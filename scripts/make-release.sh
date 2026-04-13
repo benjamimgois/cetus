@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.6"
+VERSION="1.7"
 PKGNAME="opengrid"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 

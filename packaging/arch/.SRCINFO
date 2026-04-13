@@ -1,6 +1,6 @@
 pkgbase = opengrid-git
 	pkgdesc = Modern graphical interface for network management with Serial, SSH, TFTP, IP Scanner, SNMP, Traceroute, VulnScan and Speed Test (iPerf3 / speedtest.net)
-	pkgver = r1.g0000000
+	pkgver = r416.g40cef91
 	pkgrel = 1
 	url = https://github.com/benjamimgois/opengrid
 	arch = any
