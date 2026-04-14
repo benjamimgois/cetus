@@ -4468,22 +4468,30 @@ class SshProfilesTree(QTreeWidget):
 
     def dragEnterEvent(self, event):
         item = self.currentItem()
-        if item is not None and item.parent() is not None:
+        if item is not None:
             event.accept()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
         item = self.currentItem()
-        if item is not None and item.parent() is not None:
-            event.accept()
-        else:
+        if item is None:
             event.ignore()
+            return
+        pos = event.position().toPoint()
+        target = self.itemAt(pos)
+        if item.parent() is None:
+            # Dragging a group — only valid over another group header
+            if target is not None and target is not item and target.parent() is None:
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
     def dropEvent(self, event):
         dragged = self.currentItem()
-        # Only profile items (children) can be dragged — not group headers (root items)
-        if dragged is None or dragged.parent() is None:
+        if dragged is None:
             event.ignore()
             return
 
@@ -4494,6 +4502,29 @@ class SshProfilesTree(QTreeWidget):
             return
 
         indicator = self.dropIndicatorPosition()
+
+        # --- Group drag: reorder entire group among sibling groups ---
+        if dragged.parent() is None:
+            # Resolve target to a group header
+            target_group = target if target.parent() is None else target.parent()
+            if target_group is dragged:
+                event.ignore()
+                return
+            root = self.invisibleRootItem()
+            dragged_idx = root.indexOfChild(dragged)
+            target_idx = root.indexOfChild(target_group)
+            insert_idx = target_idx + 1 if indicator == QAbstractItemView.DropIndicatorPosition.BelowItem else target_idx
+            root.takeChild(dragged_idx)
+            if dragged_idx < insert_idx:
+                insert_idx -= 1
+            root.insertChild(insert_idx, dragged)
+            dragged.setExpanded(True)
+            self.setCurrentItem(dragged)
+            event.accept()
+            self.reordered.emit()
+            return
+
+        # --- Profile drag: existing logic ---
         if target.parent() is None:
             # Dropped on a group header → append at end of that group
             target_group = target
@@ -4506,14 +4537,11 @@ class SshProfilesTree(QTreeWidget):
         old_parent = dragged.parent()
         old_idx = old_parent.indexOfChild(dragged)
 
-        # Remove from current position
         old_parent.takeChild(old_idx)
 
-        # Adjust index if moving down within the same group
         if target_group is old_parent and old_idx < insert_idx:
             insert_idx -= 1
 
-        # Insert at new position
         target_group.insertChild(insert_idx, dragged)
         target_group.setExpanded(True)
         self.setCurrentItem(dragged)
@@ -25237,10 +25265,12 @@ class SerialTerminalGUI(QMainWindow):
         for group_name, group_profiles in groups.items():
             # Group header item (non-selectable, spans visually)
             group_item = QTreeWidgetItem(self.ssh_profiles_tree)
-            group_item.setText(0, f"  ▼   {group_name.upper()}")
+            count = len(group_profiles)
+            group_item.setText(0, f"  ▼   {group_name.upper()}  ({count})")
             group_item.setData(0, Qt.ItemDataRole.UserRole, None)
             group_item.setData(0, Qt.ItemDataRole.UserRole + 1, group_name)  # original name for drag-drop
-            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsDropEnabled)
+            group_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
+                                Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
             font = group_item.font(0)
             font.setBold(True)
             font.setPointSize(font.pointSize() + 1)
