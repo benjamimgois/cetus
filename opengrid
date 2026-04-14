@@ -973,11 +973,6 @@ class TerminalWidget(QTextEdit):
         self._render_needed = True  # Dirty flag to avoid redundant setHtml calls
         self._in_scrollback_mode = False  # True when user is browsing history
         self._search_active = False  # True when search is active, freezes display updates
-        
-        # Event-driven render: schedule a singleShot(16ms) when data arrives so
-        # the screen updates in ≈16ms instead of waiting up to 100ms for the
-        # polling timer. _render_scheduled prevents stacking multiple shots.
-        self._render_scheduled = False
         self._in_alt_screen = False  # True when in alternate screen mode (nano, vim, htop…)
         self._line_height_px: float = 0.0  # Exact px line-height to fill viewport with no gaps
 
@@ -1431,12 +1426,6 @@ class TerminalWidget(QTextEdit):
             if self._DBG:
                 self._dbg_feed_pyte_ms += (_t.perf_counter() - t2) * 1000
             self._render_needed = True  # bool write is atomic under CPython GIL
-            
-            # Schedule render on the next event-loop tick (0ms = as soon as
-            # the event loop is free).  Falls back to the 100ms polling timer.
-            if not self._render_scheduled:
-                self._render_scheduled = True
-                QTimer.singleShot(0, self._schedule_render)
 
         if self._DBG:
             self._dbg_report_if_due(_t.perf_counter())
@@ -1452,18 +1441,6 @@ class TerminalWidget(QTextEdit):
             with self._pyte_lock:
                 self.stream.feed(text)
             self._render_needed = True
-            
-            if not self._render_scheduled:
-                self._render_scheduled = True
-                QTimer.singleShot(0, self._schedule_render)
-
-    def _schedule_render(self):
-        """Called by the event-driven singleShot(0ms) after data arrives.
-        Clears the scheduling flag and triggers a render if still needed.
-        The 100ms polling timer remains as a safety-net fallback."""
-        self._render_scheduled = False
-        if self._render_needed:
-            self.render_screen()
 
     def set_vendor(self, vendor):
         """Set the vendor for syntax highlighting"""
@@ -1583,12 +1560,10 @@ class TerminalWidget(QTextEdit):
         list_h   = visible * row_h + 4
         pop_h    = list_h + hint_h
 
-        # Position at the bottom-right of the viewport
+        # Position just above the bottom-right of the viewport
         vp = self.viewport()
-        x = vp.width() - pop_w - 20  # 20px margin from the right edge
-        if x < 4:
-            x = 4
-        y = vp.height() - pop_h - 26   # ~26px above the bottom line
+        x  = vp.width() - pop_w - 10
+        y  = vp.height() - pop_h - 26   # ~26px above the bottom line
         if y < 4:
             y = 4
 
@@ -3119,84 +3094,6 @@ def _get_mac_vendor(mac):
     return vendors.get(oui, 'Unknown')
 
 
-def _get_picocom_install_hint():
-    """Return the appropriate install command for picocom based on the running distro."""
-    try:
-        with open('/etc/os-release', 'r') as f:
-            text = f.read().lower()
-        if any(k in text for k in ('arch', 'manjaro', 'endeavouros', 'garuda', 'artix')):
-            return "sudo pacman -S picocom"
-        if any(k in text for k in ('debian', 'ubuntu', 'mint', 'pop!_os', 'elementary', 'kali', 'mx linux')):
-            return "sudo apt install picocom"
-        if any(k in text for k in ('fedora', 'rhel', 'centos', 'rocky', 'almalinux', 'oracle')):
-            return "sudo dnf install picocom"
-        if any(k in text for k in ('opensuse', 'suse')):
-            return "sudo zypper install picocom"
-        if 'gentoo' in text:
-            return "sudo emerge app-misc/picocom"
-        if 'void' in text:
-            return "sudo xbps-install picocom"
-        if 'alpine' in text:
-            return "sudo apk add picocom"
-    except Exception:
-        pass
-    return "Install picocom using your distribution's package manager"
-
-
-def _get_opengrid_known_hosts_path():
-    """Return the path to the OpenGrid known_hosts file (~/.config/opengrid/known_hosts)."""
-    xdg_config = os.environ.get('XDG_CONFIG_HOME', os.path.join(Path.home(), '.config'))
-    return os.path.join(xdg_config, 'opengrid', 'known_hosts')
-
-
-class OpenGridHostKeyPolicy:
-    """Trust-On-First-Use (TOFU) SSH host key policy.
-
-    First connection to a host: saves the fingerprint to
-    ~/.config/opengrid/known_hosts.
-
-    Subsequent connections: paramiko verifies against the saved key
-    automatically.  A mismatch raises BadHostKeyException (possible MITM).
-
-    Usage:
-        ssh_client = paramiko.SSHClient()
-        _apply_opengrid_host_key_policy(ssh_client)
-        ssh_client.connect(...)
-    """
-
-    def __init__(self):
-        self._path = _get_opengrid_known_hosts_path()
-
-    def missing_host_key(self, client, hostname, key):
-        """Save the new host key (TOFU) so future connections can verify it."""
-        try:
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            # Re-load to pick up keys saved by other sessions
-            if os.path.exists(self._path):
-                client.load_host_keys(self._path)
-            client.get_host_keys().add(hostname, key.get_name(), key)
-            client.save_host_keys(self._path)
-        except Exception:
-            pass  # best-effort: don't block connection on file I/O failure
-
-
-def _apply_opengrid_host_key_policy(ssh_client):
-    """Load saved known hosts and set the TOFU policy on an SSHClient.
-
-    Call this right after creating the SSHClient and before connecting.
-    After this call, paramiko will:
-      - Auto-verify saved host keys (raise BadHostKeyException on mismatch).
-      - Call OpenGridHostKeyPolicy.missing_host_key() for new hosts.
-    """
-    known_hosts_path = _get_opengrid_known_hosts_path()
-    try:
-        if os.path.exists(known_hosts_path):
-            ssh_client.load_host_keys(known_hosts_path)
-    except Exception:
-        pass
-    ssh_client.set_missing_host_key_policy(OpenGridHostKeyPolicy())
-
-
 class ConnectionWorker(QThread):
     """Worker thread for establishing SSH/Telnet connections without blocking UI"""
     
@@ -3231,8 +3128,8 @@ class ConnectionWorker(QThread):
                 
                 import paramiko
                 ssh_client = paramiko.SSHClient()
-                _apply_opengrid_host_key_policy(ssh_client)
-
+                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                
                 # Connect with password or key
                 if self.key_path:
                     ssh_client.connect(
@@ -3273,17 +3170,7 @@ class ConnectionWorker(QThread):
                 self.connection_ready.emit('ssh', ssh_client, channel,
                                           (self.host, self.port, self.username))
         except Exception as e:
-            import paramiko as _pko
-            if isinstance(e, _pko.BadHostKeyException):
-                self.connection_failed.emit(
-                    f"Host key MISMATCH for {self.host}!\n\n"
-                    "The server's fingerprint changed since the last connection.\n"
-                    "This may indicate a man-in-the-middle attack.\n\n"
-                    f"To accept the new key, remove the entry for '{self.host}' "
-                    f"from:\n{_get_opengrid_known_hosts_path()}"
-                )
-            else:
-                self.connection_failed.emit(str(e))
+            self.connection_failed.emit(str(e))
 
 
 class TracerouteWorker(QThread):
@@ -6751,7 +6638,7 @@ class FileConnectWorker(QThread):
             if self._protocol == 'SSH':
                 import paramiko
                 ssh = paramiko.SSHClient()
-                _apply_opengrid_host_key_policy(ssh)
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(self._host, port=self._port, username=self._user,
                             password=self._pass, timeout=10)
                 sftp = ssh.open_sftp()
@@ -6765,17 +6652,7 @@ class FileConnectWorker(QThread):
             else:
                 self.error.emit(f"Client mode for {self._protocol} not yet implemented")
         except Exception as e:
-            import paramiko as _pko
-            if isinstance(e, _pko.BadHostKeyException):
-                self.error.emit(
-                    f"Host key MISMATCH for {self._host}!\n\n"
-                    "The server's fingerprint changed since the last connection.\n"
-                    "This may indicate a man-in-the-middle attack.\n\n"
-                    f"To accept the new key, remove the entry for '{self._host}' "
-                    f"from:\n{_get_opengrid_known_hosts_path()}"
-                )
-            else:
-                self.error.emit(str(e))
+            self.error.emit(str(e))
 
 
 class FileListWorker(QThread):
@@ -8737,55 +8614,27 @@ class _DisconnectOverlay(QWidget):
         msg_lbl.setStyleSheet("color: #e0e0e0; font-size: 13pt; font-weight: bold; background: transparent; border: none;")
         msg_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        _btn_base = """
-            QPushButton {
-                border-radius: 6px;
-                padding: 8px 24px;
-                font-size: 10pt;
-            }
-        """
-
-        reconnect_btn = QPushButton("Reconnect")
-        reconnect_btn.setStyleSheet(_btn_base + """
-            QPushButton {
-                background-color: #1b5e20;
-                color: #a5d6a7;
-                border: 1px solid #2e7d32;
-            }
-            QPushButton:hover { background-color: #2e7d32; }
-            QPushButton:pressed { background-color: #1b5e20; }
-        """)
-        reconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        reconnect_btn.clicked.connect(self._on_reconnect)
-
         close_btn = QPushButton("Close tab")
-        close_btn.setStyleSheet(_btn_base + """
+        close_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2a2a2a;
                 color: #c0c0c0;
                 border: 1px solid #444444;
+                border-radius: 6px;
+                padding: 8px 24px;
+                font-size: 10pt;
             }
             QPushButton:hover { background-color: #3a3a3a; }
             QPushButton:pressed { background-color: #222222; }
         """)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self._on_close)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
-        btn_row.addWidget(reconnect_btn)
-        btn_row.addWidget(close_btn)
 
         card_layout.addWidget(icon_lbl)
         card_layout.addWidget(msg_lbl)
         card_layout.addSpacing(4)
-        card_layout.addLayout(btn_row)
+        card_layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         outer.addWidget(card)
-
-    def _on_reconnect(self):
-        self.hide()
-        self.reconnect_requested.emit()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -10010,7 +9859,6 @@ write
         }
 
 
-
 class TerminalDialog(QWidget):
     """Widget containing the embedded terminal (lives inside TerminalTabbedWindow tabs
     or, when detached, inside a DetachedTerminalWindow)."""
@@ -10043,10 +9891,6 @@ class TerminalDialog(QWidget):
         self._note_name = ''       # profile name of current device
         self._note_ip   = ''       # IP of current device
         self._sticky_note_dlg = None  # open StickyNoteDialog instance (if any)
-        # Saved connection params for auto-reconnect
-        self._reconnect_params = None  # dict or None
-        # Session logging
-        self._session_log_file = None   # open file handle or None
 
         self.init_ui()
 
@@ -10130,44 +9974,6 @@ class TerminalDialog(QWidget):
         self._disconnect_overlay.show()
         self._disconnect_overlay.raise_()
 
-    def _on_reconnect_requested(self):
-        """Reconnect using the saved connection parameters (called from overlay button)."""
-        if not self._reconnect_params:
-            return
-        p = self._reconnect_params
-        self.terminal.clear()
-        self.terminal.append_output("[Reconnecting...]\n\n")
-        if p.get('type') == 'ssh':
-            self._do_reconnect_ssh(p)
-        elif p.get('type') == 'telnet':
-            host, port = p.get('host', ''), p.get('port', 23)
-            username = p.get('username', '')
-            self.start_telnet(host, port, username)
-
-    def _do_reconnect_ssh(self, p, attempt=1, max_attempts=5):
-        """Reconnect SSH with exponential backoff (up to max_attempts attempts)."""
-        host = p.get('host', '')
-        port = p.get('port', 22)
-        username = p.get('username', '')
-        password = p.get('password')
-        key_path = p.get('key_path')
-
-        if self.start_ssh(host, port, username, password=password, key_path=key_path):
-            return  # success
-
-        if attempt >= max_attempts:
-            self.terminal.append_output(
-                f"\n[Reconnect failed after {max_attempts} attempts]\n"
-            )
-            self._on_session_ended()
-            return
-
-        delay_ms = min(2 ** attempt * 1000, 30000)  # 2s, 4s, 8s, 16s, 30s cap
-        self.terminal.append_output(
-            f"[Attempt {attempt}/{max_attempts} failed — retrying in {delay_ms // 1000}s...]\n"
-        )
-        QTimer.singleShot(delay_ms, lambda: self._do_reconnect_ssh(p, attempt + 1, max_attempts))
-
     def get_arrow_icon_path(self):
         """Get the path to arrow_down.svg"""
         return self.get_icon_path('arrow_down.svg') or ''
@@ -10180,54 +9986,6 @@ class TerminalDialog(QWidget):
             return path
         # Fallback to default
         return self.get_icon_path('default.svg', 'vendors') or ''
-
-    # ── Session logging ────────────────────────────────────────────────────────
-
-    def _toggle_session_log(self, checked):
-        """Start or stop logging all terminal output to a file."""
-        if checked:
-            default_name = f"session_{time.strftime('%Y%m%d_%H%M%S')}.log"
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Session Log", os.path.join(os.path.expanduser('~'), default_name),
-                "Log files (*.log);;Text files (*.txt);;All files (*)"
-            )
-            if not path:
-                # User cancelled — uncheck the button
-                self.log_btn.setChecked(False)
-                return
-            try:
-                self._session_log_file = open(path, 'w', encoding='utf-8')
-                self._session_log_file.write(f"# OpenGrid session log — {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                self.log_btn.setToolTip(f"Logging to: {os.path.basename(path)}\nClick to stop (Ctrl+L)")
-                self.terminal.append_output(f"[Logging to {path}]\n")
-            except OSError as e:
-                self.log_btn.setChecked(False)
-                QMessageBox.warning(self, "Log Error", f"Cannot open file for writing:\n{e}")
-        else:
-            self._stop_session_log()
-
-    def _stop_session_log(self):
-        """Close the log file and update the button state."""
-        if self._session_log_file:
-            try:
-                self._session_log_file.write(f"\n# Session log ended — {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                self._session_log_file.close()
-            except Exception:
-                pass
-            self._session_log_file = None
-        self.log_btn.setChecked(False)
-        self.log_btn.setToolTip("Log session to file (Ctrl+L)")
-
-    def _write_to_session_log(self, text):
-        """Write raw terminal output to the log file (called from feed_from_worker path)."""
-        if self._session_log_file:
-            try:
-                # Strip ANSI escape sequences before writing to log
-                clean = re.sub(r'\x1b\[[0-9;]*[mKHJABCDEFGfhilnprstu]|\x1b[\(\)\[\]#]|\x0f|\x0e', '', text)
-                self._session_log_file.write(clean)
-                self._session_log_file.flush()
-            except Exception:
-                self._stop_session_log()
 
     @staticmethod
     def get_vendor_reference():
@@ -11091,11 +10849,8 @@ class TerminalDialog(QWidget):
                     ('mv <src> <dst>', 'Move or rename files'),
                     ('rm -rf <path>', 'Remove files/directories recursively'),
                     ('find <dir> -name "<pattern>"', 'Search for files by name'),
-                    ('df -h', 'Show partitions and disk usage'),
-                    ('du -h', 'Show size of files in current directory'),
-                    ('du -s -h', 'Show total size of current directory'),
-                    ('du -sh * | sort -h', 'Show subdirectory sizes in ascending order'),
-                    ('du -a / | sort -n -r | head -n 10', 'Top 10 directories by disk usage'),
+                    ('du -sh <dir>', 'Show directory size'),
+                    ('df -h', 'Show disk space usage'),
                 ],
                 'Text Processing': [
                     ('grep -r "<pattern>" <dir>', 'Search text in files recursively'),
@@ -12075,22 +11830,6 @@ class TerminalDialog(QWidget):
             self.topcmds_btn.setIconSize(QSize(28, 28))
         self.topcmds_btn.clicked.connect(self._toggle_topcmds_panel)
 
-        # Log to file button
-        self.log_btn = QPushButton()
-        self.log_btn.setFixedSize(36, 36)
-        self.log_btn.setFlat(True)
-        self.log_btn.setCheckable(True)
-        self.log_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.log_btn.setToolTip("Log session to file (Ctrl+L)")
-        self.log_btn.setText("⏺")
-        self.log_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 6px; padding: 2px;
-                          background-color: transparent; color: #888888; font-size: 13pt; }
-            QPushButton:hover { background-color: #3a3a3a; color: #c0c0c0; }
-            QPushButton:checked { background-color: #2a1a1a; color: #e53935; }
-        """)
-        self.log_btn.clicked.connect(self._toggle_session_log)
-
         # Group 1 – font size
         button_layout.addWidget(self.font_decrease_btn)
         button_layout.addSpacing(6)
@@ -12098,7 +11837,7 @@ class TerminalDialog(QWidget):
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
         button_layout.addSpacing(10)
-        # Group 2 – vendor + tools
+        # Group 2 – vendor
         button_layout.addWidget(self.vendor_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.quickref_btn)
@@ -12106,18 +11845,11 @@ class TerminalDialog(QWidget):
         button_layout.addWidget(self.configtemplate_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.topcmds_btn)
-        button_layout.addSpacing(6)
-        button_layout.addWidget(_make_vsep())
-        button_layout.addSpacing(6)
-        # Group 3 – notes / log (right of topcmds)
-        button_layout.addWidget(self.stickynote_btn)
-        button_layout.addSpacing(4)
-        button_layout.addWidget(self.log_btn)
         button_layout.addSpacing(10)
         button_layout.addWidget(_make_vsep())
         button_layout.addStretch()
 
-        # Search widgets (right side)
+        # Search widgets (centered)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search...")
         self.search_input.setMinimumHeight(35)
@@ -12174,13 +11906,15 @@ class TerminalDialog(QWidget):
         self.search_status = QLabel()
         self.search_status.setStyleSheet("color: #b0b0b0; font-size: 9pt;")
 
-        # Search group (far right)
+        # Group 3 – search + quick notes
         button_layout.addWidget(self.search_input)
         button_layout.addSpacing(4)
         button_layout.addWidget(self.search_prev_btn)
         button_layout.addWidget(self.search_next_btn)
         button_layout.addSpacing(6)
         button_layout.addWidget(self.search_status)
+        button_layout.addSpacing(6)
+        button_layout.addWidget(self.stickynote_btn)
 
         button_bar = QWidget()
         button_bar.setStyleSheet("background-color: #1e1e1e;")
@@ -12191,18 +11925,14 @@ class TerminalDialog(QWidget):
         self._disconnect_overlay = _DisconnectOverlay(self)
         self._disconnect_overlay.hide()
         self.session_disconnected.connect(self._on_session_ended)
-        self._disconnect_overlay.reconnect_requested.connect(self._on_reconnect_requested)
 
         self.setLayout(layout)
 
     def keyPressEvent(self, event):
-        """Handle Ctrl+F (search), Ctrl+L (log toggle) keyboard shortcuts."""
+        """Handle Ctrl+F to focus search input"""
         if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.search_input.setFocus()
             self.search_input.selectAll()
-        elif event.key() == Qt.Key.Key_L and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self.log_btn.setChecked(not self.log_btn.isChecked())
-            self._toggle_session_log(self.log_btn.isChecked())
         elif event.key() == Qt.Key.Key_Escape and self.search_input.hasFocus():
             self.search_input.clear()
             self.search_status.clear()
@@ -12734,18 +12464,12 @@ Router#_\r
             self.terminal.append_output("Install with: pip install paramiko\n")
             return False
 
-        # Save params so the user can reconnect after session ends
-        self._reconnect_params = {
-            'type': 'ssh', 'host': host, 'port': port,
-            'username': username, 'password': password, 'key_path': key_path,
-        }
-
         self.connection_type = 'ssh'
         self.setWindowTitle(f"OpenGrid Terminal - SSH: {username}@{host}")
 
         try:
             self.ssh_client = paramiko.SSHClient()
-            _apply_opengrid_host_key_policy(self.ssh_client)
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
             self.terminal.append_output(f"Connecting to {host}:{port}...\n")
 
@@ -12794,15 +12518,6 @@ Router#_\r
             self.terminal.setFocus()
             return True
 
-        except paramiko.BadHostKeyException:
-            self.terminal.append_output(
-                f"[ERROR] Host key MISMATCH for {host}!\n"
-                "The server's fingerprint changed since the last connection.\n"
-                "This may indicate a man-in-the-middle attack.\n"
-                f"To accept the new key, remove the entry for '{host}' "
-                f"from:\n{_get_opengrid_known_hosts_path()}\n"
-            )
-            return False
         except paramiko.AuthenticationException:
             self.terminal.append_output("[ERROR] Authentication failed\n")
             return False
@@ -12818,10 +12533,7 @@ Router#_\r
         import time
         buf = []
         last_emit = time.monotonic()
-        # Flush after at most 20ms when data keeps arriving (caps CPU on bulk output).
-        # A single-keystroke echo is flushed immediately via the recv_ready() check,
-        # so this only affects continuous streams (e.g. 'show run').
-        BATCH_INTERVAL = 0.020
+        BATCH_INTERVAL = 0.05  # emit at most 20x/s
 
         while self.ssh_running and self.ssh_channel:
             try:
@@ -12831,14 +12543,12 @@ Router#_\r
                         buf.append(data.decode('utf-8', errors='replace'))
                 now = time.monotonic()
                 if buf and (now - last_emit >= BATCH_INTERVAL or not self.ssh_channel.recv_ready()):
-                    chunk = ''.join(buf)
                     # Feed pyte HERE in the worker thread — avoids blocking the main thread
-                    self.terminal.feed_from_worker(chunk)
-                    self._write_to_session_log(chunk)
+                    self.terminal.feed_from_worker(''.join(buf))
                     buf.clear()
                     last_emit = now
                 elif not buf:
-                    time.sleep(0.002)  # 2ms idle poll — reduces echo latency vs. 10ms
+                    time.sleep(0.01)
             except socket.timeout:
                 continue
             except Exception as e:
@@ -12852,7 +12562,6 @@ Router#_\r
 
     def _on_ssh_output(self, text):
         """Slot for error/status messages that need to appear in the terminal."""
-        self._write_to_session_log(text)
         self.terminal.append_output(text)
 
     def send_to_ssh(self, text):
@@ -12906,9 +12615,6 @@ Router#_\r
             self.terminal.append_output("[ERROR] telnetlib not available\n")
             self.terminal.append_output("Install with: pip install standard-telnetlib\n")
             return False
-
-        self._reconnect_params = {'type': 'telnet', 'host': host, 'port': port, 'username': username}
-
         self.connection_type = 'telnet'
         self.setWindowTitle(f"OpenGrid Terminal - Telnet: {host}")
 
@@ -13047,13 +12753,11 @@ Router#_\r
 
             if reply == QMessageBox.StandardButton.Yes:
                 self.disconnect()
-                self._stop_session_log()
                 event.accept()
                 self.terminal_closed.emit()
             else:
                 event.ignore()
         else:
-            self._stop_session_log()
             event.accept()
             self.terminal_closed.emit()
 
@@ -14007,7 +13711,16 @@ class SerialTerminalGUI(QMainWindow):
 
         tab_layout.addStretch()
 
-        _sidebar_icon_btn_style = """
+        # About button (bottom of sidebar)
+        self.about_tab_btn = QPushButton()
+        self.about_tab_btn.setFixedSize(62, 52)
+        about_icon_path = self.get_tab_icon_path('about.svg')
+        about_icon = load_svg_icon(about_icon_path, icon_size) if about_icon_path else None
+        if about_icon:
+            self.about_tab_btn.setIcon(about_icon)
+            self.about_tab_btn.setIconSize(self.about_tab_btn.size() * 0.55)
+        self.about_tab_btn.setToolTip("About OpenGrid")
+        self.about_tab_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: none;
@@ -14021,31 +13734,7 @@ class SerialTerminalGUI(QMainWindow):
             QPushButton:pressed {
                 background-color: rgba(255,255,255,0.15);
             }
-        """
-
-        # Theme toggle button
-        self._is_dark_theme = False
-        self.theme_btn = QPushButton()
-        self.theme_btn.setFixedSize(62, 42)
-        self.theme_btn.setText("☀")
-        self.theme_btn.setToolTip("Switch to dark theme")
-        self.theme_btn.setStyleSheet(_sidebar_icon_btn_style + """
-            QPushButton { font-size: 16pt; }
         """)
-        self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.theme_btn.clicked.connect(self._toggle_theme)
-        tab_layout.addWidget(self.theme_btn)
-
-        # About button (bottom of sidebar)
-        self.about_tab_btn = QPushButton()
-        self.about_tab_btn.setFixedSize(62, 52)
-        about_icon_path = self.get_tab_icon_path('about.svg')
-        about_icon = load_svg_icon(about_icon_path, icon_size) if about_icon_path else None
-        if about_icon:
-            self.about_tab_btn.setIcon(about_icon)
-            self.about_tab_btn.setIconSize(self.about_tab_btn.size() * 0.55)
-        self.about_tab_btn.setToolTip("About OpenGrid")
-        self.about_tab_btn.setStyleSheet(_sidebar_icon_btn_style)
         self.about_tab_btn.clicked.connect(self._show_about_dialog)
         tab_layout.addWidget(self.about_tab_btn)
 
@@ -23494,115 +23183,6 @@ class SerialTerminalGUI(QMainWindow):
                 return path
         return None
 
-    def keyPressEvent(self, event):
-        """Handle global keyboard shortcuts for the main window."""
-        if (event.key() == Qt.Key.Key_Slash and
-                event.modifiers() == Qt.KeyboardModifier.ControlModifier):
-            self._show_keyboard_shortcuts()
-        else:
-            super().keyPressEvent(event)
-
-    def _show_keyboard_shortcuts(self):
-        """Display a dialog listing all keyboard shortcuts."""
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Keyboard Shortcuts")
-        dlg.setMinimumSize(500, 460)
-        dlg.resize(540, 500)
-        dlg.setStyleSheet("QDialog { background-color: #1e1e2e; }")
-
-        layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
-
-        title_lbl = QLabel("Keyboard Shortcuts")
-        title_lbl.setStyleSheet(
-            "color: #cdd6f4; font-size: 13pt; font-weight: bold;"
-        )
-        layout.addWidget(title_lbl)
-
-        _SHORTCUTS = [
-            ("Main Window", [
-                ("Ctrl+/", "Show this keyboard shortcuts dialog"),
-            ]),
-            ("Terminal", [
-                ("Ctrl+F",  "Search in terminal output"),
-                ("Ctrl+L",  "Toggle session log to file"),
-                ("Ctrl++",  "Increase font size"),
-                ("Ctrl+-",  "Decrease font size"),
-                ("Ctrl+C",  "Copy selected text"),
-                ("Ctrl+V",  "Paste from clipboard"),
-                ("Escape",  "Close search bar"),
-            ]),
-            ("Serial (picocom)", [
-                ("Ctrl+A  Ctrl+X", "Exit picocom"),
-                ("Ctrl+A  Ctrl+H", "Show all picocom commands"),
-                ("Ctrl+A  Ctrl+B", "Set baud rate"),
-                ("Ctrl+A  Ctrl+P", "Add parity"),
-            ]),
-        ]
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollBar:vertical { background: #181825; width: 6px; border-radius: 3px; }"
-            "QScrollBar::handle:vertical { background: #45475a; border-radius: 3px; }"
-        )
-
-        inner = QWidget()
-        inner.setStyleSheet("background: transparent;")
-        inner_layout = QVBoxLayout(inner)
-        inner_layout.setContentsMargins(0, 0, 0, 0)
-        inner_layout.setSpacing(10)
-
-        _cat_style = "color: #89b4fa; font-size: 10pt; font-weight: bold; padding: 4px 0;"
-        _key_style  = (
-            "color: #cdd6f4; background-color: #313244; font-family: monospace;"
-            " font-size: 9pt; padding: 2px 8px; border-radius: 4px;"
-            " border: 1px solid #45475a;"
-        )
-        _desc_style = "color: #a6adc8; font-size: 9pt;"
-
-        for category, shortcuts in _SHORTCUTS:
-            cat_lbl = QLabel(category)
-            cat_lbl.setStyleSheet(_cat_style)
-            inner_layout.addWidget(cat_lbl)
-
-            for key, desc in shortcuts:
-                row = QHBoxLayout()
-                row.setContentsMargins(8, 0, 0, 0)
-                key_lbl = QLabel(key)
-                key_lbl.setStyleSheet(_key_style)
-                key_lbl.setFixedWidth(180)
-                desc_lbl = QLabel(desc)
-                desc_lbl.setStyleSheet(_desc_style)
-                row.addWidget(key_lbl)
-                row.addSpacing(12)
-                row.addWidget(desc_lbl)
-                row.addStretch()
-                row_w = QWidget()
-                row_w.setStyleSheet("background: transparent;")
-                row_w.setLayout(row)
-                inner_layout.addWidget(row_w)
-
-            inner_layout.addSpacing(4)
-
-        inner_layout.addStretch()
-        scroll.setWidget(inner)
-        layout.addWidget(scroll, 1)
-
-        close_btn = QPushButton("Close")
-        close_btn.setStyleSheet("""
-            QPushButton { background-color: #313244; color: #cdd6f4;
-                          border: 1px solid #45475a; border-radius: 6px; padding: 8px 24px; }
-            QPushButton:hover { background-color: #45475a; }
-        """)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.clicked.connect(dlg.accept)
-        layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
-
-        dlg.exec()
-
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange and self.isMinimized():
@@ -23804,121 +23384,8 @@ class SerialTerminalGUI(QMainWindow):
             }
         """)
 
-    def _toggle_theme(self):
-        """Switch between light and dark theme for the main window."""
-        self._is_dark_theme = not self._is_dark_theme
-        if self._is_dark_theme:
-            self.apply_dark_styles()
-            self.theme_btn.setText("☾")
-            self.theme_btn.setToolTip("Switch to light theme")
-        else:
-            self.apply_styles()
-            self.theme_btn.setText("☀")
-            self.theme_btn.setToolTip("Switch to dark theme")
-        self.config.set('dark_theme', self._is_dark_theme)
-
-    def apply_dark_styles(self):
-        """Apply dark theme to the main window UI."""
-        self.setStyleSheet("""
-            QMainWindow { background-color: #1a1a2e; }
-            QGroupBox {
-                border: 1px solid #2d2d3d;
-                border-radius: 8px;
-                margin-top: 15px;
-                padding-top: 18px;
-                padding-left: 6px;
-                padding-right: 6px;
-                padding-bottom: 6px;
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 15px;
-                padding: 0 8px;
-                color: #cdd6f4;
-                font-size: 10pt;
-                font-weight: bold;
-                background-color: #1e1e2e;
-            }
-            QComboBox {
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                padding: 4px 28px 4px 10px;
-                background-color: #313244;
-                min-height: 24px;
-                color: #cdd6f4;
-                font-size: 10pt;
-            }
-            QComboBox:hover { border: 1px solid #7f849c; background-color: #45475a; }
-            QComboBox:focus { border: 2px solid #89b4fa; }
-            QComboBox::drop-down {
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border-left: 1px solid #45475a;
-                border-top-right-radius: 5px;
-                border-bottom-right-radius: 5px;
-                background-color: transparent;
-            }
-            QComboBox::down-arrow { image: url(""" + self.get_arrow_icon_path() + """); width: 12px; height: 12px; }
-            QComboBox QAbstractItemView {
-                border: 1px solid #45475a;
-                background-color: #313244;
-                selection-background-color: #45475a;
-                selection-color: #cdd6f4;
-                color: #cdd6f4;
-                padding: 4px;
-            }
-            QPushButton {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-                border: none;
-                border-radius: 8px;
-                padding: 12px;
-                font-weight: bold;
-                font-size: 10pt;
-            }
-            QPushButton:hover { background-color: #b4befe; }
-            QPushButton:disabled { background-color: #45475a; color: #7f849c; }
-            QLineEdit {
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                padding: 6px 10px;
-                background-color: #313244;
-                color: #cdd6f4;
-                font-size: 10pt;
-            }
-            QLineEdit:focus { border: 2px solid #89b4fa; }
-            QLabel { color: #cdd6f4; }
-            QScrollArea { background-color: #1e1e2e; border: none; }
-            QWidget { background-color: #1e1e2e; color: #cdd6f4; }
-            QScrollBar:vertical {
-                background: #1e1e2e; width: 8px; border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background: #45475a; border-radius: 4px; min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover { background: #7f849c; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-            QFormLayout QLabel { color: #cdd6f4; font-size: 9pt; }
-            QCheckBox { color: #cdd6f4; }
-            QCheckBox::indicator {
-                border: 1px solid #45475a; background-color: #313244;
-                border-radius: 3px; width: 14px; height: 14px;
-            }
-            QCheckBox::indicator:checked { background-color: #89b4fa; border-color: #89b4fa; }
-        """)
-
     def load_settings(self):
         """Load saved settings and apply to ComboBoxes"""
-        # Load theme preference
-        if self.config.get('dark_theme'):
-            self._is_dark_theme = True
-            self.apply_dark_styles()
-            self.theme_btn.setText("☾")
-            self.theme_btn.setToolTip("Switch to light theme")
-
         # Load and set port type
         port_type = self.config.get('port_type') or 'USB'
         self._port_type_clicked(port_type if port_type in self._port_type_btns else 'USB')
@@ -26388,7 +25855,7 @@ class SerialTerminalGUI(QMainWindow):
                 self,
                 "Error",
                 "picocom is not installed.\n\n"
-                f"Install with:\n{_get_picocom_install_hint()}"
+                "Install with:\nsudo pacman -S picocom"
             )
             return
 
