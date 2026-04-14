@@ -13711,16 +13711,16 @@ class SerialTerminalGUI(QMainWindow):
 
         tab_layout.addStretch()
 
-        # About button (bottom of sidebar)
-        self.about_tab_btn = QPushButton()
-        self.about_tab_btn.setFixedSize(62, 52)
-        about_icon_path = self.get_tab_icon_path('about.svg')
-        about_icon = load_svg_icon(about_icon_path, icon_size) if about_icon_path else None
-        if about_icon:
-            self.about_tab_btn.setIcon(about_icon)
-            self.about_tab_btn.setIconSize(self.about_tab_btn.size() * 0.55)
-        self.about_tab_btn.setToolTip("About OpenGrid")
-        self.about_tab_btn.setStyleSheet("""
+        # Settings button (bottom of sidebar)
+        self.settings_tab_btn = QPushButton()
+        self.settings_tab_btn.setFixedSize(62, 52)
+        settings_icon_path = self.get_tab_icon_path('settings.svg')
+        settings_icon = load_svg_icon(settings_icon_path, icon_size) if settings_icon_path else None
+        if settings_icon:
+            self.settings_tab_btn.setIcon(settings_icon)
+            self.settings_tab_btn.setIconSize(self.settings_tab_btn.size() * 0.55)
+        self.settings_tab_btn.setToolTip("Settings")
+        self.settings_tab_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: none;
@@ -13735,8 +13735,8 @@ class SerialTerminalGUI(QMainWindow):
                 background-color: rgba(255,255,255,0.15);
             }
         """)
-        self.about_tab_btn.clicked.connect(self._show_about_dialog)
-        tab_layout.addWidget(self.about_tab_btn)
+        self.settings_tab_btn.clicked.connect(self._show_settings_menu)
+        tab_layout.addWidget(self.settings_tab_btn)
 
         self.tab_widget.setLayout(tab_layout)
 
@@ -13803,6 +13803,316 @@ class SerialTerminalGUI(QMainWindow):
         modes = {0: 'ssh', 1: 'serial', 2: 'ipscan', 3: 'snmp',
                  4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp', 8: 'traffic'}
         self.config.set('connection_mode', modes.get(index, 'ssh'))
+
+    def _show_settings_menu(self):
+        """Show settings popup menu with Import/Export config and About."""
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtGui import QAction
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #263238;
+                border: 1px solid #37474f;
+                color: #eceff1;
+                padding: 4px 0px;
+            }
+            QMenu::item {
+                padding: 8px 20px 8px 12px;
+            }
+            QMenu::item:selected {
+                background-color: #37474f;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #37474f;
+                margin: 4px 8px;
+            }
+        """)
+
+        import_action = QAction("Import Config", self)
+        import_action.triggered.connect(self._import_config)
+        menu.addAction(import_action)
+
+        export_action = QAction("Export Config", self)
+        export_action.triggered.connect(self._export_config)
+        menu.addAction(export_action)
+
+        remmina_action = QAction("Import from Remmina", self)
+        remmina_action.triggered.connect(self._import_remmina)
+        menu.addAction(remmina_action)
+
+        menu.addSeparator()
+
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        menu.addAction(about_action)
+
+        # Position menu above the button
+        btn = self.settings_tab_btn
+        pos = btn.mapToGlobal(btn.rect().topLeft())
+        menu.adjustSize()
+        pos.setY(pos.y() - menu.sizeHint().height())
+        menu.exec(pos)
+
+    def _import_remmina(self):
+        """Import SSH, VNC and RDP profiles from Remmina .remmina files."""
+        import configparser
+        from PyQt6.QtWidgets import (QFileDialog, QMessageBox, QDialog,
+                                      QVBoxLayout, QHBoxLayout, QLabel,
+                                      QPushButton, QScrollArea, QWidget,
+                                      QCheckBox, QFrame)
+        from PyQt6.QtCore import Qt
+
+        # Protocol mapping: Remmina name → OpenGrid name, default port
+        SUPPORTED = {
+            'SSH':    ('SSH',    '22'),
+            'VNC':    ('VNC',    '5900'),
+            'RDP':    ('RDP',    '3389'),
+            'TELNET': ('Telnet', '23'),
+        }
+
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Remmina profile files",
+            os.path.expanduser("~/.local/share/remmina"),
+            "Remmina Files (*.remmina);;All Files (*)"
+        )
+        if not files:
+            return
+
+        parsed = []
+        skipped_protocols = []
+        for path in files:
+            cfg = configparser.RawConfigParser()
+            try:
+                cfg.read(path, encoding='utf-8')
+            except Exception:
+                continue
+            if not cfg.has_section('remmina'):
+                continue
+
+            remmina_proto = cfg.get('remmina', 'protocol', fallback='').upper()
+            if remmina_proto not in SUPPORTED:
+                proto_name = cfg.get('remmina', 'name', fallback=os.path.basename(path))
+                skipped_protocols.append(f"{proto_name} ({remmina_proto or 'unknown'})")
+                continue
+
+            og_protocol, default_port = SUPPORTED[remmina_proto]
+            name     = cfg.get('remmina', 'name',     fallback='').strip() or os.path.basename(path)
+            server   = cfg.get('remmina', 'server',   fallback='').strip()
+            username = cfg.get('remmina', 'username', fallback='').strip()
+            group    = cfg.get('remmina', 'group',    fallback='').strip() or 'Default'
+            raw_pw   = cfg.get('remmina', 'password', fallback='').strip()
+
+            # Parse host:port — Remmina may include port in server field
+            if ':' in server:
+                host, port = server.rsplit(':', 1)
+                if not port.isdigit():
+                    host, port = server, default_port
+            else:
+                host, port = server, default_port
+
+            # SSH-specific fields
+            key_path = ''
+            auth_method = 'password'
+            if og_protocol == 'SSH':
+                key_path = cfg.get('remmina', 'ssh_privatekey', fallback='').strip()
+                ssh_auth = cfg.get('remmina', 'ssh_auth', fallback='0').strip()
+                # ssh_auth: 0=password, 1=publickey, 2=ssh-agent, 3=kerberos
+                if ssh_auth == '1' or key_path:
+                    auth_method = 'key'
+
+            # Remmina stores "." when password lives in the system keyring — skip those
+            password = raw_pw if raw_pw and raw_pw != '.' else ''
+
+            parsed.append({
+                'name': name, 'host': host, 'port': port,
+                'username': username, 'auth_method': auth_method,
+                'key_path': key_path, 'group': group,
+                'password': password, 'protocol': og_protocol,
+            })
+
+        if not parsed:
+            msg = "No supported profiles found in the selected files."
+            if skipped_protocols:
+                msg += "\n\nSkipped (unsupported protocols):\n" + "\n".join(f"  • {s}" for s in skipped_protocols)
+            QMessageBox.information(self, "Import from Remmina", msg)
+            return
+
+        # Preview dialog — user can deselect individual profiles
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Import from Remmina")
+        dlg.setMinimumWidth(520)
+        dlg.setStyleSheet("background-color: #263238; color: #eceff1;")
+        lay = QVBoxLayout(dlg)
+        lay.setSpacing(10)
+        lay.setContentsMargins(16, 16, 16, 16)
+
+        title = QLabel(f"Found <b>{len(parsed)}</b> profile(s) to import:")
+        title.setStyleSheet("font-size: 13px;")
+        lay.addWidget(title)
+
+        # Protocol color badges
+        proto_colors = {'SSH': '#4CAF50', 'VNC': '#2196F3', 'RDP': '#FF9800', 'Telnet': '#9C27B0'}
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: 1px solid #37474f; background: #1c2b30; }")
+        scroll_area.setMaximumHeight(280)
+        scroll_widget = QWidget()
+        scroll_widget.setStyleSheet("background: #1c2b30;")
+        scroll_lay = QVBoxLayout(scroll_widget)
+        scroll_lay.setSpacing(2)
+        scroll_lay.setContentsMargins(8, 8, 8, 8)
+
+        checkboxes = []
+        for p in parsed:
+            color = proto_colors.get(p['protocol'], '#78909c')
+            user_part = f"{p['username']}@" if p['username'] else ''
+            label = (f"[<span style='color:{color}'>{p['protocol']}</span>]  "
+                     f"{p['name']}  —  {user_part}{p['host']}:{p['port']}  "
+                     f"<span style='color:#78909c'>[{p['group']}]</span>")
+            cb = QCheckBox()
+            cb.setChecked(True)
+            cb.setStyleSheet("QCheckBox { color: #eceff1; padding: 2px; } QCheckBox::indicator { width: 14px; height: 14px; }")
+            cb.setProperty('profile', p)
+            lbl = QLabel(label)
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            lbl.setStyleSheet("color: #eceff1; font-size: 12px;")
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            row.addWidget(cb)
+            row.addWidget(lbl)
+            row.addStretch()
+            row_widget = QWidget()
+            row_widget.setStyleSheet("background: transparent;")
+            row_widget.setLayout(row)
+            # clicking the label also toggles the checkbox
+            lbl.mousePressEvent = lambda _ev, c=cb: c.setChecked(not c.isChecked())
+            scroll_lay.addWidget(row_widget)
+            checkboxes.append(cb)
+
+        scroll_area.setWidget(scroll_widget)
+        lay.addWidget(scroll_area)
+
+        if skipped_protocols:
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.HLine)
+            sep.setStyleSheet("color: #37474f;")
+            lay.addWidget(sep)
+            skip_lbl = QLabel("Skipped (unsupported protocols):\n" + "\n".join(f"  • {s}" for s in skipped_protocols))
+            skip_lbl.setStyleSheet("color: #78909c; font-size: 11px;")
+            lay.addWidget(skip_lbl)
+
+        note = QLabel("Profiles with the same name will be updated. Passwords stored in the system keyring will not be imported.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #78909c; font-size: 11px;")
+        lay.addWidget(note)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet("QPushButton { background: #37474f; color: #eceff1; border: none; padding: 6px 18px; border-radius: 4px; } QPushButton:hover { background: #455a64; }")
+        cancel_btn.clicked.connect(dlg.reject)
+        import_btn = QPushButton("Import Selected")
+        import_btn.setStyleSheet("QPushButton { background: #4CAF50; color: white; border: none; padding: 6px 18px; border-radius: 4px; } QPushButton:hover { background: #43A047; }")
+        import_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(import_btn)
+        lay.addLayout(btn_row)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected = [cb.property('profile') for cb in checkboxes if cb.isChecked()]
+        if not selected:
+            return
+
+        for p in selected:
+            self.config.save_ssh_profile(
+                name=p['name'], host=p['host'], port=p['port'],
+                username=p['username'], auth_method=p['auth_method'],
+                key_path=p['key_path'], protocol=p['protocol'],
+                vendor='Default', group=p['group'],
+                password=p['password']
+            )
+
+        if hasattr(self, 'refresh_ssh_profiles'):
+            self.refresh_ssh_profiles()
+
+        counts = {}
+        for p in selected:
+            counts[p['protocol']] = counts.get(p['protocol'], 0) + 1
+        summary = ', '.join(f"{v} {k}" for k, v in sorted(counts.items()))
+        QMessageBox.information(
+            self, "Import from Remmina",
+            f"Successfully imported {len(selected)} profile(s): {summary}."
+        )
+
+    def _export_config(self):
+        """Export settings.json to a user-chosen location."""
+        import shutil
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+        src = self.config.config_file
+        dst, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Config",
+            "opengrid_config.json",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        if not dst:
+            return
+        try:
+            shutil.copy2(src, dst)
+            QMessageBox.information(self, "Export Config", f"Configuration exported to:\n{dst}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"Could not export configuration:\n{e}")
+
+    def _import_config(self):
+        """Import a settings.json from a user-chosen file."""
+        import shutil
+        import json
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+        src, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Config",
+            "",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        if not src:
+            return
+
+        # Validate JSON before overwriting
+        try:
+            with open(src, 'r') as f:
+                json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", f"Invalid configuration file:\n{e}")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Import Config",
+            "This will replace your current configuration.\nRestart may be required for all changes to take effect.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            shutil.copy2(src, self.config.config_file)
+            self.config.settings = self.config.load()
+            QMessageBox.information(
+                self,
+                "Import Config",
+                "Configuration imported successfully.\nSome changes may require a restart to take effect."
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", f"Could not import configuration:\n{e}")
 
     def _show_about_dialog(self):
         """Show the About OpenGrid dialog."""
