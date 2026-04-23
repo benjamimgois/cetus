@@ -986,7 +986,7 @@ class TerminalWidget(QTextEdit):
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.render_screen)
-        self.refresh_timer.start(100)  # Refresh every 100ms (10 fps is enough for a terminal)
+        self.refresh_timer.start(50)  # Refresh every 50ms (20 fps for snappier terminal)
 
         # Viewport size tracker: recalculates PTY dimensions when the widget
         # gets its final layout size (after Qt's layout engine settles).
@@ -1047,6 +1047,9 @@ class TerminalWidget(QTextEdit):
         # ── Render line cache ─────────────────────────────────────────────
         self._render_line_cache: dict[int, str] = {}
         self._render_line_cache_cols = 0
+
+        # ── Syntax highlight compiled regex cache ─────────────────────────
+        self._hl_re_cache: dict[str, re.Pattern] | None = None
 
     def _on_slider_moved(self, value):
         """Called when the user drags the scrollbar manually."""
@@ -1454,10 +1457,23 @@ class TerminalWidget(QTextEdit):
             self._render_needed = True
 
     def set_vendor(self, vendor):
-        """Set the vendor for syntax highlighting"""
+        """Set the vendor for syntax highlighting and pre-compile regexes."""
         self.vendor = vendor
         self._render_line_cache.clear()
         self._render_line_cache_cols = 0
+        keywords = self.get_vendor_keywords()
+        if keywords:
+            # Pre-compile one big alternation for all keywords (~10x faster than 150 separate re.sub)
+            keyword_pattern = r'\b(' + '|'.join(re.escape(kw) for kw in keywords) + r')\b'
+            self._hl_re_cache = {
+                'keywords': re.compile(keyword_pattern, re.IGNORECASE),
+                'ip': re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)\b'),
+                'mac': re.compile(r'\b([0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\b'),
+                'number': re.compile(r'(?<![\d\x5C.])\b(\d+)\b(?![\d\x5C.])'),
+                'prompt': re.compile(r'^([\[<]?[A-Za-z0-9_-]+[\]>]?(?:[#]|&gt;))', re.MULTILINE),
+            }
+        else:
+            self._hl_re_cache = None
 
     # ── Autocomplete ──────────────────────────────────────────────────────────
 
@@ -2034,8 +2050,8 @@ class TerminalWidget(QTextEdit):
         return html_text
 
     def apply_syntax_highlighting(self, text):
-        """Apply syntax highlighting for network equipment commands"""
-        import re
+        """Apply syntax highlighting for network equipment commands.
+        Uses pre-compiled regexes from _hl_re_cache when available."""
 
         # Don't highlight if text is empty or whitespace
         if not text.strip():
@@ -2044,32 +2060,24 @@ class TerminalWidget(QTextEdit):
         # Escape HTML
         text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # Get keywords for selected vendor
-        keywords = self.get_vendor_keywords()
-
-        # Highlight keywords (cyan - vibrant)
-        for keyword in keywords:
-            # Match whole words only, case insensitive
-            pattern = r'\b(' + re.escape(keyword) + r')\b'
-            text = re.sub(pattern, r'<span style="color: #00ffff; font-weight: bold;">\1</span>', text, flags=re.IGNORECASE)
-
-        # Highlight IP addresses (green - vibrant)
-        ip_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)\b'
-        text = re.sub(ip_pattern, r'<span style="color: #00ff00; font-weight: bold;">\1</span>', text)
-
-        # Highlight MAC addresses (lime green - vibrant)
-        mac_pattern = r'\b([0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\b'
-        text = re.sub(mac_pattern, r'<span style="color: #00ff88; font-weight: bold;">\1</span>', text)
-
-        # Highlight numbers (yellow - vibrant)
-        # Avoid matching numbers already highlighted (in IP/MAC)
-        number_pattern = r'(?<![\d\.])\b(\d+)\b(?![\d\.])'
-        text = re.sub(number_pattern, r'<span style="color: #ffff00;">\1</span>', text)
-
-        # Highlight prompts (magenta - vibrant) - patterns like [SWITCH]#, Router>, etc.
-        # Note: '>' is HTML-escaped to '&gt;' at this point, so match it as a literal string.
-        prompt_pattern = r'^([\[<]?[A-Za-z0-9_-]+[\]>]?(?:[#]|&gt;))'
-        text = re.sub(prompt_pattern, r'<span style="color: #ff00ff; font-weight: bold;">\1</span>', text, flags=re.MULTILINE)
+        cache = self._hl_re_cache
+        if cache:
+            text = cache['keywords'].sub(r'<span style="color: #00ffff; font-weight: bold;">\1</span>', text)
+            text = cache['ip'].sub(r'<span style="color: #00ff00; font-weight: bold;">\1</span>', text)
+            text = cache['mac'].sub(r'<span style="color: #00ff88; font-weight: bold;">\1</span>', text)
+            text = cache['number'].sub(r'<span style="color: #ffff00;">\1</span>', text)
+            text = cache['prompt'].sub(r'<span style="color: #ff00ff; font-weight: bold;">\1</span>', text)
+        else:
+            # Fallback (Default vendor — no keyword highlighting)
+            import re
+            text = re.sub(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)\b',
+                          r'<span style="color: #00ff00; font-weight: bold;">\1</span>', text)
+            text = re.sub(r'\b([0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\b',
+                          r'<span style="color: #00ff88; font-weight: bold;">\1</span>', text)
+            text = re.sub(r'(?<![\d\.])\b(\d+)\b(?![\d\.])',
+                          r'<span style="color: #ffff00;">\1</span>', text)
+            text = re.sub(r'^([\[<]?[A-Za-z0-9_-]+[\]>]?(?:[#]|&gt;))',
+                          r'<span style="color: #ff00ff; font-weight: bold;">\1</span>', text, flags=re.MULTILINE)
 
         return text
 
