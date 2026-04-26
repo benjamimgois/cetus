@@ -1,5 +1,5 @@
 # Maintainer: Benjamim Gois <benjamimgois@gmail.com>
-pkgname=opengrid-git
+pkgname=cetus-git
 pkgver=r416.g40cef91
 pkgrel=1
 pkgdesc="Modern graphical interface for network management with Serial, SSH, TFTP, IP Scanner, SNMP, Traceroute, VulnScan and Speed Test (iPerf3 / speedtest.net)"
@@ -12,9 +12,9 @@ optdepends=('python-speedtest-cli: speedtest.net speed test support'
             'tigervnc: VNC remote desktop viewer'
             'freerdp: RDP remote desktop client (provides wlfreerdp for Wayland)')
 makedepends=('git')
-provides=('opengrid')
-conflicts=('opengrid')
-install=opengrid.install
+provides=('cetus')
+conflicts=('cetus')
+install=cetus.install
 source=("${pkgname}::git+https://github.com/benjamimgois/opengrid.git")
 sha256sums=('SKIP')
 
@@ -27,33 +27,33 @@ package() {
     cd "${srcdir}/${pkgname}"
 
     # Install main script
-    install -Dm755 opengrid "${pkgdir}/usr/bin/opengrid"
+    install -Dm755 cetus "${pkgdir}/usr/bin/cetus"
 
     # Install pre-built PNG sizes
     for size in 16 32 48 64 128 256 512; do
-        install -Dm644 "assets/icons/opengrid-${size}.png" \
-            "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/opengrid.png"
+        install -Dm644 "assets/icons/cetus-${size}.png" \
+            "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/cetus.png"
     done
 
     # Install author photo for About dialog
-    install -Dm644 assets/photo.png "${pkgdir}/usr/share/opengrid/photo.png"
+    install -Dm644 assets/photo.png "${pkgdir}/usr/share/cetus/photo.png"
 
     # Install UI icons (sidebar and misc) — all SVGs
     for icon in assets/icons/*.svg; do
-        install -Dm644 "${icon}" "${pkgdir}/usr/share/opengrid/icons/$(basename ${icon})"
+        install -Dm644 "${icon}" "${pkgdir}/usr/share/cetus/icons/$(basename ${icon})"
     done
 
     # Install vendor icons
     for vendor in assets/vendors/*.svg; do
-        install -Dm644 "${vendor}" "${pkgdir}/usr/share/opengrid/vendors/$(basename ${vendor})"
+        install -Dm644 "${vendor}" "${pkgdir}/usr/share/cetus/vendors/$(basename ${vendor})"
     done
 
     # Install desktop file
-    install -Dm644 opengrid.desktop "${pkgdir}/usr/share/applications/opengrid.desktop"
+    install -Dm644 cetus.desktop "${pkgdir}/usr/share/applications/cetus.desktop"
 
     # Install documentation
-    install -Dm644 README.md "${pkgdir}/usr/share/doc/opengrid/README.md"
-    install -Dm644 docs/INTERFACE.md "${pkgdir}/usr/share/doc/opengrid/INTERFACE.md"
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/cetus/README.md"
+    install -Dm644 docs/INTERFACE.md "${pkgdir}/usr/share/doc/cetus/INTERFACE.md"
 
     # Install license
     install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Three arcs — higher frequency -->
+  <path d="M2 13 A13 13 0 0 1 22 13" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <path d="M5.5 16.5 A9 9 0 0 1 18.5 16.5" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <path d="M9 19.5 A4.5 4.5 0 0 1 15 19.5" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <!-- Dot -->
+  <circle cx="12" cy="22" r="1.5" fill="#555555"/>
+</svg>

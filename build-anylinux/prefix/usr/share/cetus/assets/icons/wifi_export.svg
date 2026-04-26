@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Table rows -->
+  <rect x="2" y="3" width="20" height="3.5" rx="1" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <rect x="2" y="8" width="20" height="3.5" rx="1" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <rect x="2" y="13" width="20" height="3.5" rx="1" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <!-- Column divider -->
+  <line x1="9" y1="3" x2="9" y2="16.5" stroke="#555555" stroke-width="1"/>
+  <line x1="15" y1="3" x2="15" y2="16.5" stroke="#555555" stroke-width="1"/>
+  <!-- Download arrow -->
+  <line x1="12" y1="18" x2="12" y2="23" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="9,21 12,24 15,21" fill="none" stroke="#555555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

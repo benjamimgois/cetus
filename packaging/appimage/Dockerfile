@@ -1,4 +1,4 @@
-# Builds the Anylinux AppImage for OpenGrid inside an Ubuntu 22.04 container.
+# Builds the Anylinux AppImage for Cetus inside an Ubuntu 22.04 container.
 #
 # WHY Ubuntu 22.04 (NOT Arch/CachyOS)?
 #   Arch/CachyOS ships glibc with AVX-512 IFUNC resolvers baked into ld-linux.
@@ -8,10 +8,10 @@
 #   AppImages that run on virtually any x86-64 machine.
 #
 # Usage (from repo root):
-#   docker build -f packaging/appimage/Dockerfile -t opengrid-appimage-builder .
+#   docker build -f packaging/appimage/Dockerfile -t cetus-appimage-builder .
 #   docker run --rm --cap-add SYS_PTRACE --security-opt seccomp=unconfined \
 #     -v "$(pwd)/dist:/out" \
-#     opengrid-appimage-builder
+#     cetus-appimage-builder
 #
 # The finished AppImage will appear in ./dist/
 
@@ -51,5 +51,5 @@ COPY . .
 
 RUN bash scripts/make-anylinux-appimage.sh
 
-CMD cp /src/OpenGrid-*.AppImage /out/ \
+CMD cp /src/Cetus-*.AppImage /out/ \
     && echo "AppImage copied to /out/"

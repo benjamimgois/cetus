@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Windows logo: four squares in 2x2 grid with slight perspective -->
+  <path d="M2 4.8L10.5 3.5V11.5H2Z" fill="#ffffff"/>
+  <path d="M11.5 3.2L22 1.7V11.5H11.5Z" fill="#ffffff"/>
+  <path d="M2 12.5H10.5V20.5L2 19.2Z" fill="#ffffff"/>
+  <path d="M11.5 12.5H22V22.3L11.5 20.8Z" fill="#ffffff"/>
+</svg>

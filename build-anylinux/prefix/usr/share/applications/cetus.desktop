@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cetus
+GenericName=Network Management
+Comment=Network management tools
+Exec=/usr/bin/cetus
+Icon=cetus
+Terminal=false
+Categories=Network;Internet;
+StartupWMClass=cetus
+Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;

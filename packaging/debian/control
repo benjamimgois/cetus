@@ -1,4 +1,4 @@
-Source: opengrid
+Source: cetus
 Section: utils
 Priority: optional
 Maintainer: Benjamim Gois <benjamimgois@example.com>
@@ -6,12 +6,12 @@ Build-Depends: debhelper (>= 10)
 Standards-Version: 4.5.0
 Homepage: https://github.com/benjamimgois/opengrid
 
-Package: opengrid
+Package: cetus
 Architecture: all
 Depends: python3 (>= 3.10), python3-pip, python3-pyte, python3-paramiko, picocom, beep, openssh-client, samba, samba-common-bin, mtr | mtr-tiny, snmp, iw, network-manager, traceroute, whois, iperf3, nmap, ${misc:Depends}
 Recommends: nodejs, npm, python3-pyftpdlib, tigervnc-viewer, freerdp3-wayland | freerdp2-x11
 Description: Modern graphical interface for network management
- OpenGrid is a modern and elegant graphical interface for network device
+ Cetus is a modern and elegant graphical interface for network device
  management, supporting Serial, SSH, Telnet, TFTP, IP Scanner, SNMP,
  Traceroute, Vulnerability Scanning and Speed Testing.
  .

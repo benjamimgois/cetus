@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- shield -->
+  <path d="M12 2 L21 6 L21 13 Q21 18 12 22 Q3 18 3 13 L3 6 Z" fill="#E53935"/>
+  <!-- lock body -->
+  <rect x="8.5" y="11" width="7" height="6" rx="1.2" fill="#B71C1C"/>
+  <!-- lock shackle -->
+  <path d="M9.5 11 L9.5 8.5 Q9.5 6 12 6 Q14.5 6 14.5 8.5 L14.5 11" fill="none" stroke="#FFCDD2" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- keyhole -->
+  <circle cx="12" cy="14" r="1.3" fill="#FFCDD2"/>
+  <rect x="11.3" y="14.5" width="1.4" height="1.8" rx="0.3" fill="#FFCDD2"/>
+</svg>

@@ -1,4 +1,4 @@
-# OpenGrid
+# Cetus
 
 Modern graphical interface for serial communication via picocom.
 
@@ -16,16 +16,16 @@ Modern graphical interface for serial communication via picocom.
 ### From AUR
 
 ```bash
-yay -S opengrid
+yay -S cetus
 # or
-paru -S opengrid
+paru -S cetus
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://aur.archlinux.org/opengrid.git
-cd opengrid
+git clone https://aur.archlinux.org/cetus.git
+cd cetus
 makepkg -si
 ```
 
@@ -34,7 +34,7 @@ makepkg -si
 Simply run:
 
 ```bash
-opengrid
+cetus
 ```
 
 Or launch from your application menu.
@@ -78,4 +78,4 @@ MIT
 ## Links
 
 - GitHub: https://github.com/benjamimgois/opengrid
-- AUR: https://aur.archlinux.org/packages/opengrid
+- AUR: https://aur.archlinux.org/packages/cetus

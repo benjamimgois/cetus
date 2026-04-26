@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="128" height="128" alt="OpenGrid" src="assets/icons/opengrid_icon.svg" />
+  <img width="128" height="128" alt="Cetus" src="assets/icons/cetus_icon.svg" />
 </p>
 
 <p align="center">
@@ -13,9 +13,9 @@
     <img src="https://img.shields.io/badge/Flatpak-Stable-blue?style=for-the-badge&logo=flatpak" alt="Flatpak">
   </a>
 
-  <a href="https://aur.archlinux.org/packages/opengrid-git">
+  <a href="https://aur.archlinux.org/packages/cetus-git">
     <img
-      src="https://img.shields.io/aur/version/opengrid-git?color=1793d1&label=AUR&style=for-the-badge"
+      src="https://img.shields.io/aur/version/cetus-git?color=1793d1&label=AUR&style=for-the-badge"
       alt="AUR version">
   </a>
 
@@ -173,13 +173,13 @@ npm install -g fast-cli
 
 2. Install the package:
 ```bash
-sudo dpkg -i opengrid_1.6-1_all.deb
+sudo dpkg -i cetus_1.6-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
 3. Launch from application menu or terminal:
 ```bash
-opengrid
+cetus
 ```
 
 ### Debian / Ubuntu (build from source)
@@ -198,15 +198,15 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../opengrid_1.6-1_all.deb
+sudo dpkg -i ../cetus_1.6-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
 
 ```bash
-yay -S opengrid
+yay -S cetus
 # or
-paru -S opengrid
+paru -S cetus
 ```
 
 ### Arch Linux / Manjaro (from package file)
@@ -215,25 +215,25 @@ paru -S opengrid
 
 2. Install:
 ```bash
-sudo pacman -U opengrid-1.6-1-any.pkg.tar.zst
+sudo pacman -U cetus-1.6-1-any.pkg.tar.zst
 ```
 
 ### Flatpak
 
 1. Install from Flathub (when available):
 ```bash
-flatpak install flathub io.github.benjamimgois.opengrid
+flatpak install flathub io.github.benjamimgois.cetus
 ```
 
 2. Or build from source:
 ```bash
 cd packaging/flatpak
-flatpak-builder --install --user build io.github.benjamimgois.opengrid.yml
+flatpak-builder --install --user build io.github.benjamimgois.cetus.yml
 ```
 
 3. Run:
 ```bash
-flatpak run io.github.benjamimgois.opengrid
+flatpak run io.github.benjamimgois.cetus
 ```
 
 ### Other Linux Distributions
@@ -258,7 +258,7 @@ pip3 install standard-telnetlib
 
 2. Make executable:
 ```bash
-chmod +x opengrid
+chmod +x cetus
 ```
 
 3. (Optional) Install system-wide:
@@ -270,9 +270,9 @@ chmod +x opengrid
 ## Usage
 
 ```bash
-./opengrid
+./cetus
 # or
-python3 opengrid
+python3 cetus
 ```
 
 ### Serial Connection
@@ -349,8 +349,8 @@ Log out and back in to apply.
 ## Links
 
 - **GitHub**: https://github.com/benjamimgois/opengrid
-- **AUR Package**: https://aur.archlinux.org/packages/opengrid
-- **Flathub**: https://flathub.org/apps/io.github.benjamimgois.opengrid
+- **AUR Package**: https://aur.archlinux.org/packages/cetus
+- **Flathub**: https://flathub.org/apps/io.github.benjamimgois.cetus
 - **Releases**: https://github.com/benjamimgois/opengrid/releases
 - **Issues**: https://github.com/benjamimgois/opengrid/issues
 

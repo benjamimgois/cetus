@@ -5,42 +5,42 @@
 
 override_dh_auto_install:
 	# Install main script
-	install -Dm755 opengrid debian/opengrid/usr/bin/opengrid
+	install -Dm755 cetus debian/cetus/usr/bin/cetus
 
 	# Install SVG icon (scalable)
-	install -Dm644 assets/icons/opengrid_icon.svg debian/opengrid/usr/share/icons/hicolor/scalable/apps/opengrid.svg
+	install -Dm644 assets/icons/cetus_icon.svg debian/cetus/usr/share/icons/hicolor/scalable/apps/cetus.svg
 	# Install pre-built PNG sizes
 	for size in 16 32 48 64 128 256 512; do \
-		install -Dm644 assets/icons/opengrid-$${size}.png \
-			debian/opengrid/usr/share/icons/hicolor/$${size}x$${size}/apps/opengrid.png; \
+		install -Dm644 assets/icons/cetus-$${size}.png \
+			debian/cetus/usr/share/icons/hicolor/$${size}x$${size}/apps/cetus.png; \
 	done
 
 	# Install author photo for About dialog
-	install -Dm644 assets/photo.png debian/opengrid/usr/share/opengrid/photo.png
+	install -Dm644 assets/photo.png debian/cetus/usr/share/cetus/photo.png
 
 	# Install UI icons (sidebar and misc) — all SVGs
 	for icon in assets/icons/*.svg; do \
-		install -Dm644 "$$icon" "debian/opengrid/usr/share/opengrid/icons/$$(basename $$icon)"; \
+		install -Dm644 "$$icon" "debian/cetus/usr/share/cetus/icons/$$(basename $$icon)"; \
 	done
 
 	# Install vendor icons
-	install -Dm644 assets/vendors/default.svg debian/opengrid/usr/share/opengrid/vendors/default.svg
-	install -Dm644 assets/vendors/cisco.svg debian/opengrid/usr/share/opengrid/vendors/cisco.svg
-	install -Dm644 assets/vendors/huawei.svg debian/opengrid/usr/share/opengrid/vendors/huawei.svg
-	install -Dm644 assets/vendors/juniper.svg debian/opengrid/usr/share/opengrid/vendors/juniper.svg
-	install -Dm644 assets/vendors/fortinet.svg debian/opengrid/usr/share/opengrid/vendors/fortinet.svg
-	install -Dm644 assets/vendors/d-link.svg debian/opengrid/usr/share/opengrid/vendors/d-link.svg
-	install -Dm644 assets/vendors/h3c.svg debian/opengrid/usr/share/opengrid/vendors/h3c.svg
-	install -Dm644 assets/vendors/brocade.svg debian/opengrid/usr/share/opengrid/vendors/brocade.svg
-	install -Dm644 assets/vendors/datacom.svg debian/opengrid/usr/share/opengrid/vendors/datacom.svg
-	install -Dm644 assets/vendors/aruba.svg debian/opengrid/usr/share/opengrid/vendors/aruba.svg
-	install -Dm644 assets/vendors/linux.svg debian/opengrid/usr/share/opengrid/vendors/linux.svg
-	install -Dm644 assets/vendors/mikrotik.svg debian/opengrid/usr/share/opengrid/vendors/mikrotik.svg
+	install -Dm644 assets/vendors/default.svg debian/cetus/usr/share/cetus/vendors/default.svg
+	install -Dm644 assets/vendors/cisco.svg debian/cetus/usr/share/cetus/vendors/cisco.svg
+	install -Dm644 assets/vendors/huawei.svg debian/cetus/usr/share/cetus/vendors/huawei.svg
+	install -Dm644 assets/vendors/juniper.svg debian/cetus/usr/share/cetus/vendors/juniper.svg
+	install -Dm644 assets/vendors/fortinet.svg debian/cetus/usr/share/cetus/vendors/fortinet.svg
+	install -Dm644 assets/vendors/d-link.svg debian/cetus/usr/share/cetus/vendors/d-link.svg
+	install -Dm644 assets/vendors/h3c.svg debian/cetus/usr/share/cetus/vendors/h3c.svg
+	install -Dm644 assets/vendors/brocade.svg debian/cetus/usr/share/cetus/vendors/brocade.svg
+	install -Dm644 assets/vendors/datacom.svg debian/cetus/usr/share/cetus/vendors/datacom.svg
+	install -Dm644 assets/vendors/aruba.svg debian/cetus/usr/share/cetus/vendors/aruba.svg
+	install -Dm644 assets/vendors/linux.svg debian/cetus/usr/share/cetus/vendors/linux.svg
+	install -Dm644 assets/vendors/mikrotik.svg debian/cetus/usr/share/cetus/vendors/mikrotik.svg
 
 	# Install desktop file
-	install -Dm644 opengrid.desktop debian/opengrid/usr/share/applications/opengrid.desktop
+	install -Dm644 cetus.desktop debian/cetus/usr/share/applications/cetus.desktop
 
 	# Install documentation
-	install -Dm644 README.md debian/opengrid/usr/share/doc/opengrid/README.md
-	install -Dm644 docs/INTERFACE.md debian/opengrid/usr/share/doc/opengrid/INTERFACE.md
-	install -Dm644 LICENSE debian/opengrid/usr/share/doc/opengrid/copyright
+	install -Dm644 README.md debian/cetus/usr/share/doc/cetus/README.md
+	install -Dm644 docs/INTERFACE.md debian/cetus/usr/share/doc/cetus/INTERFACE.md
+	install -Dm644 LICENSE debian/cetus/usr/share/doc/cetus/copyright

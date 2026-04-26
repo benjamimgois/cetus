@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- First node (current) -->
+  <rect x="1" y="14" width="8" height="7" rx="2" stroke="#555555" stroke-width="2" fill="none"/>
+  <!-- Down arrow into first node -->
+  <line x1="5" y1="3" x2="5" y2="13" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="3,10 5,13 7,10" stroke="#555555" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Forward arrow to next node -->
+  <line x1="9" y1="17.5" x2="14" y2="17.5" stroke="#555555" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="12,15 15,17.5 12,20" stroke="#555555" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Second node (next) -->
+  <rect x="15" y="14" width="8" height="7" rx="2" stroke="#555555" stroke-width="2" fill="none"/>
+</svg>

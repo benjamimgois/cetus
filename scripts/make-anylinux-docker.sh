@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a portable Anylinux AppImage for OpenGrid inside an Ubuntu 22.04
+# Build a portable Anylinux AppImage for Cetus inside an Ubuntu 22.04
 # Docker/Podman container.
 #
 # WHY DOCKER?
@@ -21,7 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # repo root
 DOCKERFILE="$SCRIPT_DIR/scripts/Dockerfile.appimage-builder"
-IMAGE_TAG="opengrid-appimage-builder:latest"
+IMAGE_TAG="cetus-appimage-builder:latest"
 NO_CACHE=""
 
 # ── Parse arguments ────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ _detect_engine() {
 }
 
 ENGINE="$(_detect_engine)"
-echo "=== OpenGrid Docker AppImage Builder ==="
+echo "=== Cetus Docker AppImage Builder ==="
 echo "Engine  : $ENGINE"
 echo "Image   : $IMAGE_TAG"
 echo "Repo    : $SCRIPT_DIR"
@@ -71,7 +71,7 @@ echo "      (first run downloads ~500 MB; subsequent runs use cache)"
 
 echo ""
 echo "[2/2] Running build inside container..."
-echo "      Output AppImage → $SCRIPT_DIR/OpenGrid-x86_64.AppImage"
+echo "      Output AppImage → $SCRIPT_DIR/Cetus-x86_64.AppImage"
 echo ""
 
 # ── Run the build ──────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ echo ""
     --tmpfs /tmp:exec,size=4G \
     -e DISPLAY=:99 \
     -e OUTPATH=/output \
-    -e OUTNAME="OpenGrid-x86_64.AppImage" \
+    -e OUTNAME="Cetus-x86_64.AppImage" \
     "$IMAGE_TAG" \
     bash -c '
         set -euo pipefail
@@ -109,10 +109,10 @@ echo ""
         bash scripts/make-anylinux-appimage.sh
 
         # Copy the result to the output mount
-        if ls /build/OpenGrid-*.AppImage 1>/dev/null 2>&1; then
-            cp /build/OpenGrid-*.AppImage /output/
+        if ls /build/Cetus-*.AppImage 1>/dev/null 2>&1; then
+            cp /build/Cetus-*.AppImage /output/
             echo ""
-            echo "✓ AppImage copied to host: /output/OpenGrid-x86_64.AppImage"
+            echo "✓ AppImage copied to host: /output/Cetus-x86_64.AppImage"
         else
             echo "ERROR: No AppImage generated." >&2
             kill $XVFB_PID 2>/dev/null || true
@@ -124,12 +124,12 @@ echo ""
 
 echo ""
 echo "=== Build complete! ==="
-if [ -f "$SCRIPT_DIR/OpenGrid-x86_64.AppImage" ]; then
-    echo "AppImage : $SCRIPT_DIR/OpenGrid-x86_64.AppImage"
-    echo "Size     : $(du -sh "$SCRIPT_DIR/OpenGrid-x86_64.AppImage" | cut -f1)"
+if [ -f "$SCRIPT_DIR/Cetus-x86_64.AppImage" ]; then
+    echo "AppImage : $SCRIPT_DIR/Cetus-x86_64.AppImage"
+    echo "Size     : $(du -sh "$SCRIPT_DIR/Cetus-x86_64.AppImage" | cut -f1)"
     echo ""
     echo "The AppImage is built against Ubuntu 22.04 (glibc 2.35) and runs on"
     echo "any x86-64 Linux system — including CPUs without AVX2 / AVX-512."
 fi
 echo ""
-echo "Run:  chmod +x OpenGrid-x86_64.AppImage && ./OpenGrid-x86_64.AppImage"
+echo "Run:  chmod +x Cetus-x86_64.AppImage && ./Cetus-x86_64.AppImage"

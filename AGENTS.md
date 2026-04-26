@@ -1,12 +1,12 @@
-# OpenGrid — Agent Context File
+# Cetus — Agent Context File
 
 > This file is intended for AI agents and automated tooling. It describes the project architecture, conventions, and workflows so agents can make safe, useful changes.
 
 ---
 
-## 1. What is OpenGrid?
+## 1. What is Cetus?
 
-OpenGrid is a **desktop GUI application for Linux** that provides an easy, modern interface to manage network devices. It targets network engineers and system administrators who need serial, SSH, Telnet, VNC, RDP, SNMP, file transfer, speed tests, Wi-Fi surveys, and network discovery tools in a single PyQt6 application.
+Cetus is a **desktop GUI application for Linux** that provides an easy, modern interface to manage network devices. It targets network engineers and system administrators who need serial, SSH, Telnet, VNC, RDP, SNMP, file transfer, speed tests, Wi-Fi surveys, and network discovery tools in a single PyQt6 application.
 
 - **Language**: Python 3.8+
 - **GUI Framework**: PyQt6 (Qt6)
@@ -22,7 +22,7 @@ OpenGrid is a **desktop GUI application for Linux** that provides an easy, moder
 
 The entire application logic lives in a single executable Python file:
 
-- **`opengrid`** (≈27k lines) — Main application entrypoint and all modules.
+- **`cetus`** (≈27k lines) — Main application entrypoint and all modules.
 
 This is by design for easy distribution (AppImage, .deb, AUR). All classes, workers, widgets, and protocol handlers are defined in this file.
 
@@ -60,7 +60,7 @@ This is by design for easy distribution (AppImage, .deb, AUR). All classes, work
 
 ### 2.4 Configuration & State
 
-- **Config path**: `~/.config/opengrid/settings.json` (XDG compliant).
+- **Config path**: `~/.config/cetus/settings.json` (XDG compliant).
 - **ConfigManager** merges defaults with loaded JSON on startup.
 - Profiles (SSH, serial) are stored as JSON strings inside the settings dict (legacy reason: flat JSON structure).
 - Passwords in profiles are **base64-encoded only** — not encrypted. This is a known limitation.
@@ -120,15 +120,15 @@ Additional packaging:
 ## 4. Project Structure
 
 ```
-opengrid/
-├── opengrid                  ← Main application (Python executable, ~27k lines)
-├── opengrid.desktop          ← Linux .desktop launcher
+cetus/
+├── cetus                  ← Main application (Python executable, ~27k lines)
+├── cetus.desktop          ← Linux .desktop launcher
 ├── appinfo                   ← AppStream / app metadata
 ├── README.md                 ← Human-facing documentation
 ├── LICENSE                   ← GPL-3.0
 │
 ├── assets/
-│   ├── icons/                ← SVG icons (opengrid_icon.svg, etc.)
+│   ├── icons/                ← SVG icons (cetus_icon.svg, etc.)
 │   └── remmina/              ← Remmina integration assets
 │
 ├── scripts/                  ← Build and packaging scripts
@@ -139,7 +139,7 @@ opengrid/
 │
 ├── packaging/
 │   └── flatpak/
-│       └── io.github.benjamimgois.opengrid.yml
+│       └── io.github.benjamimgois.cetus.yml
 │
 ├── debian/                   ← Debian package metadata
 ├── build-anylinux/           ← AppImage build artifacts
@@ -167,19 +167,19 @@ sudo apt install python3-pyqt6 python3-pyqt6.qtserialport picocom \
 pip3 install pyte paramiko pysnmp
 
 # Run directly
-chmod +x opengrid
-./opengrid
+chmod +x cetus
+./cetus
 # or
-python3 opengrid
+python3 cetus
 ```
 
 ### 5.2 Development Mode
 
-Because it's a single file, no build step is required. Just edit `opengrid` and rerun.
+Because it's a single file, no build step is required. Just edit `cetus` and rerun.
 
 ```bash
 # Syntax check after editing
-python3 -m py_compile opengrid
+python3 -m py_compile cetus
 ```
 
 ### 5.3 Build Debian Package
@@ -188,7 +188,7 @@ python3 -m py_compile opengrid
 cd scripts
 chmod +x make-deb.sh
 ./make-deb.sh
-sudo dpkg -i ../opengrid_1.6-1_all.deb
+sudo dpkg -i ../cetus_1.6-1_all.deb
 ```
 
 ### 5.4 Build AppImage
@@ -241,7 +241,7 @@ chmod +x make-anylinux-appimage.sh
 
 ## 7. Known Issues & Limitations
 
-- **Monolithic file**: `opengrid` is very large (27k lines). Refactoring into modules is desirable but must preserve single-file distribution compatibility.
+- **Monolithic file**: `cetus` is very large (27k lines). Refactoring into modules is desirable but must preserve single-file distribution compatibility.
 - **Password storage**: SSH profile passwords are base64-encoded, not encrypted.
 - **Thread safety**: Some workers may still emit signals under high load that race with UI updates. Always use `QMetaObject.invokeMethod` for direct widget mutations from threads.
 - **Telnet deprecation**: `telnetlib` is deprecated in Python 3.13+; the app uses `standard-telnetlib` as a fallback.
@@ -275,7 +275,7 @@ chmod +x make-anylinux-appimage.sh
 
 1. Add `from typing import Any, Optional, Callable` near the top imports.
 2. Annotate method signatures: `def method(self, arg: str) -> dict[str, Any]:`.
-3. Run `python3 -m py_compile opengrid` to verify syntax.
+3. Run `python3 -m py_compile cetus` to verify syntax.
 
 ---
 
@@ -283,9 +283,9 @@ chmod +x make-anylinux-appimage.sh
 
 When cutting a new release:
 
-1. Update `VERSION` and `VERSION_LABEL` constants at the top of `opengrid`.
+1. Update `VERSION` and `VERSION_LABEL` constants at the top of `cetus`.
 2. Update version in `PKGBUILD`, `debian/changelog`, and `appinfo`.
-3. Run `python3 -m py_compile opengrid`.
+3. Run `python3 -m py_compile cetus`.
 4. Build packages: `.deb`, AppImage, Flatpak.
 5. Test on clean VMs (Debian, Arch, Fedora).
 6. Tag release on GitHub and upload artifacts.

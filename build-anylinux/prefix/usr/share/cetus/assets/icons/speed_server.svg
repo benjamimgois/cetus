@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Server rack (three units) -->
+  <rect x="4" y="3"  width="16" height="5" rx="1.5" stroke="#555555" stroke-width="2" fill="none"/>
+  <rect x="4" y="10" width="16" height="5" rx="1.5" stroke="#555555" stroke-width="2" fill="none"/>
+  <rect x="4" y="17" width="16" height="5" rx="1.5" stroke="#555555" stroke-width="2" fill="none"/>
+  <!-- Status dot on each unit -->
+  <circle cx="18" cy="5.5"  r="1.2" fill="#555555"/>
+  <circle cx="18" cy="12.5" r="1.2" fill="#555555"/>
+  <circle cx="18" cy="19.5" r="1.2" fill="#555555"/>
+</svg>

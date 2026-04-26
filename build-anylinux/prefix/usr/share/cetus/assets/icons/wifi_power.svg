@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Signal strength bars -->
+  <rect x="2"  y="18" width="4" height="3" rx="1" fill="#555555"/>
+  <rect x="7"  y="14" width="4" height="7" rx="1" fill="#555555"/>
+  <rect x="12" y="9"  width="4" height="12" rx="1" fill="#555555"/>
+  <rect x="17" y="4"  width="4" height="17" rx="1" fill="#555555"/>
+  <!-- Horizontal baseline -->
+  <line x1="1" y1="22" x2="23" y2="22" stroke="#555555" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

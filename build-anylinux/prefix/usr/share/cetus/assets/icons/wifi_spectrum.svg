@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Spectrum analyzer bars -->
+  <rect x="2"  y="14" width="3" height="7" rx="1" fill="#555555"/>
+  <rect x="6"  y="9"  width="3" height="12" rx="1" fill="#555555"/>
+  <rect x="10" y="5"  width="3" height="16" rx="1" fill="#555555"/>
+  <rect x="14" y="10" width="3" height="11" rx="1" fill="#555555"/>
+  <rect x="18" y="15" width="3" height="6"  rx="1" fill="#555555"/>
+  <!-- Peak line -->
+  <polyline points="3.5,13 7.5,8 11.5,4 15.5,9 19.5,14" fill="none" stroke="#555555" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2,1"/>
+</svg>

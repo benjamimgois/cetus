@@ -1,7 +1,7 @@
 #!/bin/bash
-# OpenGrid installation script
+# Cetus installation script
 
-echo "=== OpenGrid - Installation ==="
+echo "=== Cetus - Installation ==="
 echo ""
 
 # Detect package manager
@@ -91,15 +91,15 @@ fi
 # Install .desktop file
 echo "6. Installing menu shortcut..."
 mkdir -p ~/.local/share/applications
-cp opengrid.desktop ~/.local/share/applications/
+cp cetus.desktop ~/.local/share/applications/
 echo "   ✓ Shortcut installed at ~/.local/share/applications/"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "To run the application:"
-echo "  - From terminal: ./opengrid"
-echo "  - From menu: Look for 'OpenGrid'"
+echo "  - From terminal: ./cetus"
+echo "  - From menu: Look for 'Cetus'"
 echo ""
 echo "IMPORTANT: If added to dialout group now,"
 echo "logout and login again to avoid password prompts."

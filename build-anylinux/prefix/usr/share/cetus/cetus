@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenGrid - Graphical interface for serial communication via picocom
+Cetus - Graphical interface for serial communication via picocom
 Version: 1.7
 """
 
@@ -591,8 +591,8 @@ class ConfigManager:
         if not xdg_config_home:
             xdg_config_home = os.path.join(Path.home(), '.config')
 
-        # Create opengrid config directory
-        self.config_dir = os.path.join(xdg_config_home, 'opengrid')
+        # Create cetus config directory
+        self.config_dir = os.path.join(xdg_config_home, 'cetus')
         os.makedirs(self.config_dir, exist_ok=True)
 
         # Config file path
@@ -3322,11 +3322,11 @@ class TracerouteWorker(QThread):
                         'Operação não permitida', 'Permissão negada')):
                     if self.method in ('TCP', 'UDP'):
                         self.route_error.emit(f"{self.method} traceroute requires root privileges.\n\n"
-                                             f"Run OpenGrid with: sudo python3 opengrid\n"
+                                             f"Run Cetus with: sudo python3 cetus\n"
                                              f"Or use ICMP method instead.")
                     else:
                         self.route_error.emit(f"Traceroute requires root privileges.\n\n"
-                                             f"Run OpenGrid with: sudo python3 opengrid")
+                                             f"Run Cetus with: sudo python3 cetus")
                 else:
                     self.route_error.emit(f"Traceroute error: {stderr_output}")
             else:
@@ -3340,10 +3340,10 @@ class TracerouteWorker(QThread):
         except PermissionError:
             if self.method in ('TCP', 'UDP'):
                 self.route_error.emit(f"{self.method} traceroute requires root privileges.\n\n"
-                                     f"Run OpenGrid with: sudo python3 opengrid\n"
+                                     f"Run Cetus with: sudo python3 cetus\n"
                                      f"Or use ICMP method instead.")
             else:
-                self.route_error.emit("Traceroute requires root privileges.\n\nRun OpenGrid with: sudo python3 opengrid")
+                self.route_error.emit("Traceroute requires root privileges.\n\nRun Cetus with: sudo python3 cetus")
         except Exception as e:
             self.route_error.emit(f"Error: {str(e)}")
 
@@ -3481,7 +3481,7 @@ class GeoFlagWorker(QThread):
 
             try:
                 url = f"http://ip-api.com/json/{ip}?fields=status,countryCode"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 OpenGrid'})
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 Cetus'})
                 with urllib.request.urlopen(req, timeout=3) as response:
                     data = json.loads(response.read().decode('utf-8'))
                 
@@ -3710,7 +3710,7 @@ class NmapDiscoverWorker(QThread):
                 ctx.verify_mode    = ssl.CERT_NONE
                 s = ctx.wrap_socket(s, server_hostname=self.host)
             s.sendall((f'GET / HTTP/1.1\r\nHost: {self.host}\r\n'
-                        'User-Agent: OpenGrid/1.7\r\nConnection: close\r\n\r\n').encode())
+                        'User-Agent: Cetus/1.7\r\nConnection: close\r\n\r\n').encode())
             s.settimeout(4)
             resp = b''
             try:
@@ -4159,7 +4159,7 @@ class MtrWorker(QThread):
                 if 'permission' in low or 'not permitted' in low:
                     self.mtr_error.emit(
                         "MTR requires elevated privileges for ICMP.\n\n"
-                        "Run OpenGrid with: sudo python3 opengrid\n"
+                        "Run Cetus with: sudo python3 cetus\n"
                         "Or install mtr with setuid bit: sudo chmod u+s /usr/bin/mtr"
                     )
                     return
@@ -4178,7 +4178,7 @@ class MtrWorker(QThread):
         except PermissionError:
             self.mtr_error.emit(
                 "MTR requires elevated privileges.\n\n"
-                "Run OpenGrid with: sudo python3 opengrid"
+                "Run Cetus with: sudo python3 cetus"
             )
             return
         except Exception as e:
@@ -9946,7 +9946,7 @@ class TerminalDialog(QWidget):
 
     def __init__(self, parent=None, config=None):
         super().__init__(parent)
-        self.setWindowTitle("OpenGrid Terminal")
+        self.setWindowTitle("Cetus Terminal")
         self.setMinimumSize(400, 300)
         self.banner_color = None   # assigned by TerminalTabbedWindow.add_terminal
         self.process = None
@@ -9988,13 +9988,13 @@ class TerminalDialog(QWidget):
     def get_icon_path(self, icon_name, subdir='icons'):
         """Get the path to an icon for different installation types"""
         # Check for Flatpak
-        flatpak_path = f'/app/share/io.github.benjamimgois.opengrid/{subdir}/{icon_name}'
+        flatpak_path = f'/app/share/io.github.benjamimgois.cetus/{subdir}/{icon_name}'
         if os.path.exists(flatpak_path):
             return flatpak_path
         # Check for AppImage
         if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            appimage_path = os.path.join(appdir, f'usr/share/opengrid/{subdir}/{icon_name}')
+            appimage_path = os.path.join(appdir, f'usr/share/cetus/{subdir}/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
         # Local/development assets (prioritized over system install)
@@ -10002,7 +10002,7 @@ class TerminalDialog(QWidget):
         if os.path.exists(assets_path):
             return assets_path
         # Check for system installation (AUR, Debian, etc.)
-        system_path = f'/usr/share/opengrid/{subdir}/{icon_name}'
+        system_path = f'/usr/share/cetus/{subdir}/{icon_name}'
         if os.path.exists(system_path):
             return system_path
         # Try root directory (legacy)
@@ -12290,7 +12290,7 @@ class TerminalDialog(QWidget):
         try:
             return os.path.join(self.config.config_dir, 'cmd_history.json')
         except Exception:
-            return os.path.join(Path.home(), '.config', 'opengrid', 'cmd_history.json')
+            return os.path.join(Path.home(), '.config', 'cetus', 'cmd_history.json')
 
     def _load_cmd_counter(self):
         """Load the per-vendor command frequency counters from disk.
@@ -12430,7 +12430,7 @@ class TerminalDialog(QWidget):
 
     def start_debug_mode(self):
         """Start terminal in debug mode with simulated Cisco router output"""
-        self.setWindowTitle("OpenGrid Terminal [DEBUG MODE]")
+        self.setWindowTitle("Cetus Terminal [DEBUG MODE]")
 
         # Simulated Cisco router configuration
         cisco_output = """\r
@@ -12539,7 +12539,7 @@ Router#_\r
             return False
 
         self.connection_type = 'ssh'
-        self.setWindowTitle(f"OpenGrid Terminal - SSH: {username}@{host}")
+        self.setWindowTitle(f"Cetus Terminal - SSH: {username}@{host}")
 
         try:
             self.ssh_client = paramiko.SSHClient()
@@ -12690,7 +12690,7 @@ Router#_\r
             self.terminal.append_output("Install with: pip install standard-telnetlib\n")
             return False
         self.connection_type = 'telnet'
-        self.setWindowTitle(f"OpenGrid Terminal - Telnet: {host}")
+        self.setWindowTitle(f"Cetus Terminal - Telnet: {host}")
 
         try:
             self.terminal.append_output(f"Connecting to {host}:{port}...\n")
@@ -13083,7 +13083,7 @@ class _OverflowTiledWindow(QMainWindow):
 
     def __init__(self, tiled_widget, group, main_win):
         super().__init__()
-        self.setWindowTitle("OpenGrid — Terminais")
+        self.setWindowTitle("Cetus — Terminais")
         self._group = group
         self._main_win = main_win
         self.resize(main_win.width(), main_win.height())
@@ -13102,7 +13102,7 @@ class TerminalTabbedWindow(QMainWindow):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("OpenGrid — Terminais")
+        self.setWindowTitle("Cetus — Terminais")
         self.resize(1280, 750)
 
         self.tab_widget = QTabWidget()
@@ -13546,7 +13546,7 @@ class _CollapsibleGroupBox(QGroupBox):
 class SerialTerminalGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"OpenGrid v{VERSION_LABEL}")
+        self.setWindowTitle(f"Cetus v{VERSION_LABEL}")
         self.setMinimumSize(600, 780)
         self.resize(750, 780)
         self.terminal_dialog = None
@@ -13953,7 +13953,7 @@ class SerialTerminalGUI(QMainWindow):
                                       QCheckBox, QFrame)
         from PyQt6.QtCore import Qt
 
-        # Protocol mapping: Remmina name → OpenGrid name, default port
+        # Protocol mapping: Remmina name → Cetus name, default port
         SUPPORTED = {
             'SSH':    ('SSH',    '22'),
             'VNC':    ('VNC',    '5900'),
@@ -14149,7 +14149,7 @@ class SerialTerminalGUI(QMainWindow):
         dst, _ = QFileDialog.getSaveFileName(
             self,
             "Export Config",
-            "opengrid_config.json",
+            "cetus_config.json",
             "JSON Files (*.json);;All Files (*)"
         )
         if not dst:
@@ -14204,14 +14204,14 @@ class SerialTerminalGUI(QMainWindow):
             QMessageBox.critical(self, "Import Failed", f"Could not import configuration:\n{e}")
 
     def _show_about_dialog(self):
-        """Show the About OpenGrid dialog."""
+        """Show the About Cetus dialog."""
         import os
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
         from PyQt6.QtGui import QPixmap, QFont, QCursor
         from PyQt6.QtCore import Qt, QSize
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("About OpenGrid")
+        dlg.setWindowTitle("About Cetus")
         dlg.setFixedSize(500, 400)
         dlg.setStyleSheet("QDialog { background-color: #1e1e2e; }")
 
@@ -14226,7 +14226,7 @@ class SerialTerminalGUI(QMainWindow):
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(24, 0, 24, 0)
 
-        app_icon_path = self.get_icon_path('opengrid-64.png')
+        app_icon_path = self.get_icon_path('cetus-64.png')
         app_pix = QPixmap(app_icon_path).scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation) if app_icon_path else None
         if app_pix and not app_pix.isNull():
             icon_lbl = QLabel()
@@ -14237,7 +14237,7 @@ class SerialTerminalGUI(QMainWindow):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
-        app_name = QLabel("OpenGrid")
+        app_name = QLabel("Cetus")
         app_name.setStyleSheet("color: #ffffff; font-size: 20pt; font-weight: bold; background: transparent;")
         version_lbl = QLabel("v1.7  ·  Network Management Toolkit")
         version_lbl.setStyleSheet("color: #8888aa; font-size: 9pt; background: transparent;")
@@ -14258,7 +14258,7 @@ class SerialTerminalGUI(QMainWindow):
 
         # Description
         desc = QLabel(
-            "OpenGrid is an open-source network management GUI built with PyQt6.\n"
+            "Cetus is an open-source network management GUI built with PyQt6.\n"
             "It integrates SSH, Serial, TFTP/FTP/SMB file transfer, IP scanning,\n"
             "SNMP queries, Traceroute, WiFi survey and bandwidth testing\n"
             "into a single, unified interface."
@@ -14283,8 +14283,8 @@ class SerialTerminalGUI(QMainWindow):
         photo_paths = [
             os.path.join(_local, 'assets', 'photo.png'),
             os.path.join(_local, 'assets', 'photo.jpg'),
-            os.path.join(_appdir, 'usr/share/opengrid/photo.png') if _appdir else '',
-            '/usr/share/opengrid/photo.png',
+            os.path.join(_appdir, 'usr/share/cetus/photo.png') if _appdir else '',
+            '/usr/share/cetus/photo.png',
         ]
         photo_pix = None
         for p in photo_paths:
@@ -15941,7 +15941,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_client_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ft_mode_client_btn.setToolTip(
             "<b>Client mode</b><br>"
-            "OpenGrid connects to a remote server and transfers files.<br>"
+            "Cetus connects to a remote server and transfers files.<br>"
             "You initiate the upload or download to/from the target host."
         )
         self._ft_mode_client_btn.setStyleSheet(
@@ -15958,7 +15958,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_mode_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ft_mode_server_btn.setToolTip(
             "<b>Server mode</b><br>"
-            "OpenGrid starts a local server (TFTP/FTP/SCP/SMB) on this machine.<br>"
+            "Cetus starts a local server (TFTP/FTP/SCP/SMB) on this machine.<br>"
             "Remote devices can then connect and push or pull files."
         )
         self._ft_mode_server_btn.setStyleSheet(
@@ -16363,7 +16363,7 @@ class SerialTerminalGUI(QMainWindow):
             "<b>SSH Server (sshd) — File transfer via SFTP</b><br><br>"
             "The SSH server is managed by your system's OpenSSH service.<br>"
             "File transfers use the <b>SFTP</b> subsystem (SSH File Transfer Protocol).<br>"
-            "OpenGrid can show its status and start/stop it via systemctl."
+            "Cetus can show its status and start/stop it via systemctl."
         )
         ssh_info.setWordWrap(True)
         ssh_info.setStyleSheet("font-size: 9pt; color: #333333;")
@@ -16437,13 +16437,13 @@ class SerialTerminalGUI(QMainWindow):
         smb_dir_w = QWidget(); smb_dir_w.setContentsMargins(0,0,0,0); smb_dir_w.setLayout(smb_dir_row)
         smb_cfg_form.addRow("Directory:", smb_dir_w)
 
-        self._smb_share_name = QLineEdit("opengrid-share")
+        self._smb_share_name = QLineEdit("cetus-share")
         self._smb_share_name.setFixedWidth(combo_width)
         self._smb_share_name.setStyleSheet(_smb_le)
         self._smb_share_name.setToolTip("Name visible on the network (no spaces)")
         smb_cfg_form.addRow("Share Name:", self._smb_share_name)
 
-        self._smb_comment = QLineEdit("OpenGrid shared folder")
+        self._smb_comment = QLineEdit("Cetus shared folder")
         self._smb_comment.setFixedWidth(combo_width)
         self._smb_comment.setStyleSheet(_smb_le)
         smb_cfg_form.addRow("Comment:", self._smb_comment)
@@ -23530,17 +23530,17 @@ class SerialTerminalGUI(QMainWindow):
         if os.path.exists(assets_path):
             return assets_path
         # Check for Flatpak
-        flatpak_path = f'/app/share/io.github.benjamimgois.opengrid/icons/{icon_name}'
+        flatpak_path = f'/app/share/io.github.benjamimgois.cetus/icons/{icon_name}'
         if os.path.exists(flatpak_path):
             return flatpak_path
         # Check for AppImage
         if os.environ.get('APPDIR'):
             appdir = os.environ.get('APPDIR')
-            appimage_path = os.path.join(appdir, f'usr/share/opengrid/icons/{icon_name}')
+            appimage_path = os.path.join(appdir, f'usr/share/cetus/icons/{icon_name}')
             if os.path.exists(appimage_path):
                 return appimage_path
         # Check for system installation (AUR, Debian, etc.)
-        system_path = f'/usr/share/opengrid/icons/{icon_name}'
+        system_path = f'/usr/share/cetus/icons/{icon_name}'
         if os.path.exists(system_path):
             return system_path
         # Legacy: root directory
@@ -23562,20 +23562,20 @@ class SerialTerminalGUI(QMainWindow):
         vendor_file = vendor.lower().replace(' ', '') + '.svg'
         # Check multiple install paths for vendors subdir
         for base in [
-            '/app/share/io.github.benjamimgois.opengrid/vendors',
-            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/opengrid/vendors'),
+            '/app/share/io.github.benjamimgois.cetus/vendors',
+            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/cetus/vendors'),
             os.path.join(os.path.dirname(__file__), 'assets/vendors'),
-            '/usr/share/opengrid/vendors',
+            '/usr/share/cetus/vendors',
         ]:
             path = os.path.join(base, vendor_file)
             if os.path.exists(path):
                 return path
         # Fallback to generic
         for base in [
-            '/app/share/io.github.benjamimgois.opengrid/vendors',
-            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/opengrid/vendors'),
+            '/app/share/io.github.benjamimgois.cetus/vendors',
+            os.path.join(os.environ.get('APPDIR', ''), 'usr/share/cetus/vendors'),
             os.path.join(os.path.dirname(__file__), 'assets/vendors'),
-            '/usr/share/opengrid/vendors',
+            '/usr/share/cetus/vendors',
         ]:
             path = os.path.join(base, 'default.svg')
             if os.path.exists(path):
@@ -24260,8 +24260,8 @@ class SerialTerminalGUI(QMainWindow):
 
             try:
                 # Redirect TFTP server output to terminal for debugging
-                print(f"[OpenGrid] Starting TFTP server on {ip}:69")
-                print(f"[OpenGrid] Directory: {directory}")
+                print(f"[Cetus] Starting TFTP server on {ip}:69")
+                print(f"[Cetus] Directory: {directory}")
                 
                 self.tftp_process = subprocess.Popen(
                     cmd,
@@ -24290,7 +24290,7 @@ class SerialTerminalGUI(QMainWindow):
                     self.tftp_process = None
                     return
 
-                print(f"[OpenGrid] TFTP server started successfully")
+                print(f"[Cetus] TFTP server started successfully")
                 
                 QMessageBox.information(
                     self,
@@ -24582,7 +24582,7 @@ class SerialTerminalGUI(QMainWindow):
     def _ft_smb_apply_config(self):
         """Write share block + workgroup to /etc/samba/smb.conf via pkexec."""
         import subprocess, tempfile, os, getpass
-        share      = self._smb_share_name.text().strip().replace(' ', '-') or 'opengrid-share'
+        share      = self._smb_share_name.text().strip().replace(' ', '-') or 'cetus-share'
         path       = self._smb_srv_dir.text().strip()
         comment    = self._smb_comment.text().strip()
         wg         = self._smb_workgroup.text().strip() or 'WORKGROUP'
@@ -26397,7 +26397,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.telnet_running = True
             terminal_dialog.connection_type = 'telnet'
             tab_label = profile_name or f"Telnet: {host_info[0]}"
-            terminal_dialog.setWindowTitle(f"OpenGrid Terminal - {tab_label}")
+            terminal_dialog.setWindowTitle(f"Cetus Terminal - {tab_label}")
             terminal_dialog.set_connection_status(host=host_info[0], color=color, name=tab_label)
         else:  # SSH
             terminal_dialog.ssh_client = client
@@ -26405,7 +26405,7 @@ class SerialTerminalGUI(QMainWindow):
             terminal_dialog.ssh_running = True
             terminal_dialog.connection_type = 'ssh'
             tab_label = profile_name or f"SSH: {host_info[2]}@{host_info[0]}"
-            terminal_dialog.setWindowTitle(f"OpenGrid Terminal - {tab_label}")
+            terminal_dialog.setWindowTitle(f"Cetus Terminal - {tab_label}")
             terminal_dialog.set_connection_status(
                 user=host_info[2], host=host_info[0], color=color, name=tab_label
             )
@@ -27436,8 +27436,8 @@ class SerialTerminalGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("opengrid")
-    app.setDesktopFileName("opengrid")
+    app.setApplicationName("cetus")
+    app.setDesktopFileName("cetus")
 
     # Set default font
     font = QFont("Sans Serif", 9)
@@ -27446,7 +27446,7 @@ def main():
     window = SerialTerminalGUI()
 
     # Set application window icon
-    icon_path = window.get_icon_path('opengrid-256.png')
+    icon_path = window.get_icon_path('cetus-256.png')
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))
 

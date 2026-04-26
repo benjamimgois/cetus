@@ -1,13 +1,13 @@
 #!/bin/bash
-# Script to prepare OpenGrid for AUR submission
+# Script to prepare Cetus for AUR submission
 
 set -e
 
 VERSION="1.7"
-PKGNAME="opengrid"
+PKGNAME="cetus"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 
-echo "=== OpenGrid Release Builder ==="
+echo "=== Cetus Release Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
@@ -23,9 +23,9 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 
 # Copy necessary files
 echo "Copying files..."
-cp opengrid "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp cetus "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r assets "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
-cp opengrid.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp cetus.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r docs "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp LICENSE "${BUILD_DIR}/${PKGNAME}-${VERSION}/"

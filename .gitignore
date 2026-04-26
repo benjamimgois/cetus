@@ -13,7 +13,7 @@ repo/
 
 # Debian build
 /debian/
-debian/opengrid/
+debian/cetus/
 *.deb
 *.buildinfo
 *.changes

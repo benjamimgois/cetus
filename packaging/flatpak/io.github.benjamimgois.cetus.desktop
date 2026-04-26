@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=OpenGrid
+Name=Cetus
 GenericName=Network Management
 Comment=Network management tools
-Exec=opengrid
-Icon=io.github.benjamimgois.opengrid
+Exec=cetus
+Icon=io.github.benjamimgois.cetus
 Terminal=false
 Categories=Network;Internet;
 Keywords=serial;ssh;telnet;vnc;rdp;tftp;sftp;ftp;smb;snmp;traceroute;iperf;wifi;scanner;network;picocom;tty;uart;
 StartupNotify=true
-StartupWMClass=opengrid
+StartupWMClass=cetus

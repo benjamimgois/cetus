@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Radar circle -->
+  <circle cx="12" cy="12" r="9" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <!-- Crosshair lines -->
+  <line x1="12" y1="3"  x2="12" y2="21" stroke="#555555" stroke-width="1" stroke-dasharray="2,2"/>
+  <line x1="3"  y1="12" x2="21" y2="12" stroke="#555555" stroke-width="1" stroke-dasharray="2,2"/>
+  <!-- Radar sweep wedge -->
+  <path d="M12 12 L12 3 A9 9 0 0 1 19.4 6.5 Z" fill="#555555" opacity="0.5"/>
+  <!-- Center dot -->
+  <circle cx="12" cy="12" r="1.5" fill="#555555"/>
+</svg>

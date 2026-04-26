@@ -1,12 +1,12 @@
 #!/bin/bash
-# Script to build Debian package for OpenGrid
+# Script to build Debian package for Cetus
 
 set -e
 
 VERSION="1.6"
-PKGNAME="opengrid"
+PKGNAME="cetus"
 
-echo "=== OpenGrid Debian Package Builder ==="
+echo "=== Cetus Debian Package Builder ==="
 echo "Version: ${VERSION}"
 echo ""
 
