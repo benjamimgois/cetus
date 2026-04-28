@@ -26518,14 +26518,33 @@ class SerialTerminalGUI(QMainWindow):
             self.status_led.setStyleSheet("color: #fab387; font-size: 14px;")
             QApplication.processEvents()
 
-            # Create and show terminal dialog in debug mode
-            terminal_dialog = TerminalDialog(self, self.config)
+            # Create terminal dialog in debug mode (own window via manager)
+            terminal_dialog = TerminalDialog(None, self.config)
             terminal_dialog.start_debug_mode()
+
+            color = TerminalDialog.BANNER_COLORS[
+                TerminalDialog._banner_index % len(TerminalDialog.BANNER_COLORS)
+            ]
+            TerminalDialog._banner_index += 1
+            terminal_dialog.banner_color = color
+            terminal_dialog.setWindowTitle("Cetus Terminal - Debug Mode")
+            terminal_dialog.set_connection_status(host='Debug', color=color, name='Debug Mode')
+
             self.open_terminals.append(terminal_dialog)
+            terminal_dialog.terminal_closed.connect(
+                lambda: self._on_terminal_closed(terminal_dialog)
+            )
+
+            if self._terminal_manager is None or not self._terminal_manager.isVisible():
+                self._terminal_manager = TerminalTabbedWindow()
+            self._terminal_manager.add_terminal(terminal_dialog, "Debug Mode", color)
+            self._terminal_manager.show()
+            self._terminal_manager.raise_()
+            self._terminal_manager.activateWindow()
+
             self.status_label.setText("Debug Mode - Terminal opened")
             self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
             self.status_led.setStyleSheet("color: #a6e3a1; font-size: 14px;")
-            terminal_dialog.show()
 
             # Status remains in debug mode (don't reset immediately)
             # Will reset when terminal is closed
@@ -26559,8 +26578,16 @@ class SerialTerminalGUI(QMainWindow):
         self.status_led.setStyleSheet("color: #fab387; font-size: 14px;")
         QApplication.processEvents()
 
-        # Create and show terminal dialog
-        terminal_dialog = TerminalDialog(self, self.config)
+        # Create terminal dialog (no parent so it opens in its own window via
+        # TerminalTabbedWindow, matching SSH/Telnet behaviour).
+        terminal_dialog = TerminalDialog(None, self.config)
+
+        # Assign banner colour (cycles through BANNER_COLORS)
+        color = TerminalDialog.BANNER_COLORS[
+            TerminalDialog._banner_index % len(TerminalDialog.BANNER_COLORS)
+        ]
+        TerminalDialog._banner_index += 1
+        terminal_dialog.banner_color = color
 
         # Start picocom
         if terminal_dialog.start_picocom(cmd):
@@ -26568,11 +26595,28 @@ class SerialTerminalGUI(QMainWindow):
             if hasattr(self, '_pending_vendor') and self._pending_vendor:
                 terminal_dialog.change_vendor(self._pending_vendor)
                 self._pending_vendor = None
+
+            port_name = self.port.currentText() or 'Serial'
+            tab_label = f"Serial: {port_name}"
+            terminal_dialog.setWindowTitle(f"Cetus Terminal - {tab_label}")
+            terminal_dialog.set_connection_status(host=port_name, color=color, name=tab_label)
+
             self.open_terminals.append(terminal_dialog)
+            terminal_dialog.terminal_closed.connect(
+                lambda: self._on_terminal_closed(terminal_dialog)
+            )
+
+            # Add to tabbed manager window (same as SSH/Telnet)
+            if self._terminal_manager is None or not self._terminal_manager.isVisible():
+                self._terminal_manager = TerminalTabbedWindow()
+            self._terminal_manager.add_terminal(terminal_dialog, tab_label, color)
+            self._terminal_manager.show()
+            self._terminal_manager.raise_()
+            self._terminal_manager.activateWindow()
+
             self.status_label.setText("Connected - Terminal opened")
             self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
             self.status_led.setStyleSheet("color: #a6e3a1; font-size: 14px;")
-            terminal_dialog.show()
 
             # Status remains connected (don't reset immediately)
             # Will reset when terminal is closed
