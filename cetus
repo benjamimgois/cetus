@@ -263,7 +263,8 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QRadioButton, QButtonGroup, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy,
     QMenu, QScrollArea, QTabWidget, QTabBar, QFrame, QToolButton, QListWidget, QListWidgetItem,
-    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox, QStyledItemDelegate
+    QProgressBar, QSpinBox, QSplitter, QStyle, QDialogButtonBox, QStyledItemDelegate,
+    QToolTip
 )
 from PyQt6.QtCore import Qt, QProcess, pyqtSignal, QTimer, QThread, QSize, QPointF, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QFont, QTextCursor, QKeyEvent, QTextBlockFormat, QTextCharFormat, QColor, QBrush, QPixmap, QIcon, QTextOption, QPainter, QPainterPath, QLinearGradient, QPen, QRadialGradient, QImage, QSyntaxHighlighter, QTextListFormat
@@ -1133,6 +1134,8 @@ class TerminalWidget(QTextEdit):
         cursor = self.textCursor()
         if cursor.hasSelection():
             QApplication.clipboard().setText(cursor.selectedText())
+            # Show a brief tooltip near the cursor to confirm the copy
+            QToolTip.showText(self.mapToGlobal(event.pos()), 'Copied to clipboard', self, QRect(), 800)
 
     def contextMenuEvent(self, event):
         """Show right-click context menu with copy, paste and export options"""
