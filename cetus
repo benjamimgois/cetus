@@ -2616,18 +2616,31 @@ class ScanWorker(QThread):
         return None
 
     def _ping(self, ip):
-        try:
-            start = time.time()
-            result = subprocess.run(
-                ['ping', '-c', '1', '-W', str(self.timeout), ip],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=self.timeout + 2
-            )
-            latency = (time.time() - start) * 1000
-            if result.returncode == 0:
-                return (ip, "Active", round(latency, 1), "ICMP")
-        except (subprocess.TimeoutExpired, Exception):
-            pass
+        """Ping a host with retry to reduce false negatives from packet loss.
+
+        Sends up to 2 ICMP echo requests per host.  Many switches and hosts
+        silently drop a small percentage of ICMP traffic under load, so a
+        single lost packet should not be reported as "down".
+        """
+        for _ in range(2):
+            if self._stop_flag:
+                return None
+            try:
+                start = time.time()
+                result = subprocess.run(
+                    ['ping', '-c', '1', '-W', str(self.timeout), ip],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=self.timeout + 2
+                )
+                latency = (time.time() - start) * 1000
+                if result.returncode == 0:
+                    return (ip, "Active", round(latency, 1), "ICMP")
+                # If ping returned non-zero but quickly, wait a short
+                # random backoff before retry to avoid colliding with
+                # other threads pinging the same switch/broadcast domain.
+                time.sleep(0.05)
+            except (subprocess.TimeoutExpired, Exception):
+                pass
         return None
 
     def _tcp_scan(self, ip):
