@@ -17739,39 +17739,10 @@ class SerialTerminalGUI(QMainWindow):
         results_layout.addWidget(self.scan_results_table)
         self._enable_table_tooltips(self.scan_results_table)
 
-        # Action buttons
+        # Occupancy bar (replaces the old Export CSV / Clear buttons —
+        # those actions moved to the right-click context menu on the table)
         actions_layout = QHBoxLayout()
         actions_layout.addStretch()
-
-        btn_style = """
-            QPushButton {
-                background-color: #78909c;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #607d8b;
-            }
-        """
-
-        self.scan_export_btn = QPushButton("Export CSV")
-        self.scan_export_btn.setFixedWidth(110)
-        self.scan_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_export_btn.setStyleSheet(btn_style)
-        self.scan_export_btn.clicked.connect(self._scan_export_csv)
-        actions_layout.addWidget(self.scan_export_btn)
-
-        self.scan_clear_btn = QPushButton("Clear")
-        self.scan_clear_btn.setFixedWidth(110)
-        self.scan_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.scan_clear_btn.setStyleSheet(btn_style)
-        self.scan_clear_btn.clicked.connect(self._scan_clear_results)
-        actions_layout.addWidget(self.scan_clear_btn)
-
-        actions_layout.addSpacing(16)
 
         # Network occupancy bar
         self.scan_occupancy_bar = QProgressBar()
@@ -23188,6 +23159,9 @@ class SerialTerminalGUI(QMainWindow):
         menu.addSeparator()
         add_ssh_action  = menu.addAction("Add to SSH List")
         menu.addSeparator()
+        export_action   = menu.addAction("Export CSV")
+        clear_action    = menu.addAction("Clear Results")
+        menu.addSeparator()
         copy_action = menu.addAction("Copy IP Address")
 
         action = menu.exec(self.scan_results_table.viewport().mapToGlobal(pos))
@@ -23225,6 +23199,10 @@ class SerialTerminalGUI(QMainWindow):
             self._start_ping()
         elif action == add_ssh_action:
             self._add_ip_to_ssh_list(ip)
+        elif action == export_action:
+            self._scan_export_csv()
+        elif action == clear_action:
+            self._scan_clear_results()
         elif action == copy_action:
             QApplication.clipboard().setText(ip)
 
