@@ -14822,7 +14822,7 @@ class TerminalTabbedWindow(QMainWindow):
         self._tile_btn.clicked.connect(self._toggle_tiled_mode)
         self.tab_widget.setCornerWidget(self._tile_btn, Qt.Corner.TopLeftCorner)
 
-        self._close_icon_path, self._close_icon_hover_path = self._make_close_icons()
+        self._close_btn_icon = self._make_close_btn_icon()
         self._apply_tab_style()
 
     def _on_tab_changed(self, index: int):
@@ -14850,17 +14850,7 @@ class TerminalTabbedWindow(QMainWindow):
                 font-weight: bold;
             }
             QTabBar::tab:hover:!selected { background: #212121; }
-            QTabBar::close-button {
-                image: url(%s);
-                subcontrol-position: right;
-                subcontrol-origin: padding;
-                padding-right: 2px;
-            }
-            QTabBar::close-button:hover {
-                image: url(%s);
-                background-color: #ff4444;
-                border-radius: 4px;
-            }""" % (self._close_icon_path, self._close_icon_hover_path))
+        """)
 
     # ── Tiled / grid mode ─────────────────────────────────────────────────────
 
@@ -14879,37 +14869,44 @@ class TerminalTabbedWindow(QMainWindow):
         p.end()
         return QIcon(px)
 
-    def _make_close_icons(self):
-        """Generate light-coloured close-icon PNGs for the tab bar."""
-        import os
-        cache_dir = os.path.expanduser('~/.cache/cetus')
-        os.makedirs(cache_dir, exist_ok=True)
-        normal_path = os.path.join(cache_dir, 'tab_close_normal.png')
-        hover_path = os.path.join(cache_dir, 'tab_close_hover.png')
+    def _make_close_btn_icon(self):
+        """Draw a small light-coloured '×' icon for the tab close button."""
+        size = 16
+        px = QPixmap(size, size)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor('#bbbbbb'), 1.8))
+        m = 4
+        p.drawLine(m, m, size - m, size - m)
+        p.drawLine(size - m, m, m, size - m)
+        p.end()
+        return QIcon(px)
 
-        if not os.path.exists(normal_path):
-            px = QPixmap(12, 12)
-            px.fill(Qt.GlobalColor.transparent)
-            p = QPainter(px)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            p.setPen(QPen(QColor('#aaaaaa'), 1.5))
-            p.drawLine(3, 3, 9, 9)
-            p.drawLine(9, 3, 3, 9)
-            p.end()
-            px.save(normal_path)
+    def _add_tab_close_btn(self, index: int):
+        """Attach a tiny '×' button to the right side of a tab."""
+        btn = QToolButton(self.tab_widget)
+        btn.setIcon(self._close_btn_icon)
+        btn.setIconSize(QSize(12, 12))
+        btn.setFixedSize(18, 18)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent; border-radius: 4px; }"
+            "QToolButton:hover { background-color: #ff4444; }"
+        )
+        btn.setToolTip("Close tab")
 
-        if not os.path.exists(hover_path):
-            px = QPixmap(12, 12)
-            px.fill(Qt.GlobalColor.transparent)
-            p = QPainter(px)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            p.setPen(QPen(QColor('#ffffff'), 1.5))
-            p.drawLine(3, 3, 9, 9)
-            p.drawLine(9, 3, 3, 9)
-            p.end()
-            px.save(hover_path)
+        def _on_close_clicked():
+            # Resolve the tab index dynamically because earlier tabs may
+            # have been closed since this button was created.
+            bar = self.tab_widget.tabBar()
+            for i in range(bar.count()):
+                if bar.tabButton(i, QTabBar.ButtonPosition.RightSide) is btn:
+                    self._close_tab(i)
+                    return
 
-        return normal_path, hover_path
+        btn.clicked.connect(_on_close_clicked)
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
 
     def _toggle_tiled_mode(self):
         if self._tiled_mode:
@@ -15136,6 +15133,7 @@ class TerminalTabbedWindow(QMainWindow):
         idx = self.tab_widget.addTab(dialog, label)
         tab_bar.setTabTextColor(idx, QColor(color))
         tab_bar.set_tab_color(idx, color)
+        self._add_tab_close_btn(idx)
         self.tab_widget.setCurrentIndex(idx)
 
     # ── End tiled mode ─────────────────────────────────────────────────────────
@@ -15164,6 +15162,7 @@ class TerminalTabbedWindow(QMainWindow):
         # Colour the tab text AND draw the indicator strip via paintEvent
         tab_bar.setTabTextColor(idx, QColor(color))
         tab_bar.set_tab_color(idx, color)
+        self._add_tab_close_btn(idx)
         self.tab_widget.setCurrentIndex(idx)
         # Connect terminal_closed to auto-remove this tab
         dialog.terminal_closed.connect(lambda: self._remove_tab_for_dialog(dialog))
