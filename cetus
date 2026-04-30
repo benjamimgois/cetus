@@ -14822,6 +14822,7 @@ class TerminalTabbedWindow(QMainWindow):
         self._tile_btn.clicked.connect(self._toggle_tiled_mode)
         self.tab_widget.setCornerWidget(self._tile_btn, Qt.Corner.TopLeftCorner)
 
+        self._close_icon_path, self._close_icon_hover_path = self._make_close_icons()
         self._apply_tab_style()
 
     def _on_tab_changed(self, index: int):
@@ -14839,7 +14840,7 @@ class TerminalTabbedWindow(QMainWindow):
             QTabWidget::pane { border: 0; background: #0a0a0a; }
             QTabBar::tab {
                 background: #1a1a1a;
-                padding: 8px 20px 6px 14px;
+                padding: 8px 24px 6px 14px;
                 border: none;
                 border-right: 1px solid #2a2a2a;
                 min-width: 130px;
@@ -14849,7 +14850,17 @@ class TerminalTabbedWindow(QMainWindow):
                 font-weight: bold;
             }
             QTabBar::tab:hover:!selected { background: #212121; }
-        """)
+            QTabBar::close-button {
+                image: url(%s);
+                subcontrol-position: right;
+                subcontrol-origin: padding;
+                padding-right: 2px;
+            }
+            QTabBar::close-button:hover {
+                image: url(%s);
+                background-color: #ff4444;
+                border-radius: 4px;
+            }""" % (self._close_icon_path, self._close_icon_hover_path))
 
     # ── Tiled / grid mode ─────────────────────────────────────────────────────
 
@@ -14867,6 +14878,38 @@ class TerminalTabbedWindow(QMainWindow):
         p.drawLine(m, mid, size - m - 1, mid)
         p.end()
         return QIcon(px)
+
+    def _make_close_icons(self):
+        """Generate light-coloured close-icon PNGs for the tab bar."""
+        import os
+        cache_dir = os.path.expanduser('~/.cache/cetus')
+        os.makedirs(cache_dir, exist_ok=True)
+        normal_path = os.path.join(cache_dir, 'tab_close_normal.png')
+        hover_path = os.path.join(cache_dir, 'tab_close_hover.png')
+
+        if not os.path.exists(normal_path):
+            px = QPixmap(12, 12)
+            px.fill(Qt.GlobalColor.transparent)
+            p = QPainter(px)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor('#aaaaaa'), 1.5))
+            p.drawLine(3, 3, 9, 9)
+            p.drawLine(9, 3, 3, 9)
+            p.end()
+            px.save(normal_path)
+
+        if not os.path.exists(hover_path):
+            px = QPixmap(12, 12)
+            px.fill(Qt.GlobalColor.transparent)
+            p = QPainter(px)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor('#ffffff'), 1.5))
+            p.drawLine(3, 3, 9, 9)
+            p.drawLine(9, 3, 3, 9)
+            p.end()
+            px.save(hover_path)
+
+        return normal_path, hover_path
 
     def _toggle_tiled_mode(self):
         if self._tiled_mode:
