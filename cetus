@@ -17771,6 +17771,32 @@ class SerialTerminalGUI(QMainWindow):
         self.scan_clear_btn.clicked.connect(self._scan_clear_results)
         actions_layout.addWidget(self.scan_clear_btn)
 
+        actions_layout.addSpacing(16)
+
+        # Network occupancy bar
+        self.scan_occupancy_bar = QProgressBar()
+        self.scan_occupancy_bar.setFixedWidth(200)
+        self.scan_occupancy_bar.setFixedHeight(20)
+        self.scan_occupancy_bar.setRange(0, 100)
+        self.scan_occupancy_bar.setValue(0)
+        self.scan_occupancy_bar.setTextVisible(True)
+        self.scan_occupancy_bar.setFormat("Occupancy: 0% (0 / 0)")
+        self.scan_occupancy_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #e0e0e0;
+                border: 1px solid #b0b0b0;
+                border-radius: 6px;
+                text-align: center;
+                font-size: 9pt;
+                color: #333333;
+            }
+            QProgressBar::chunk {
+                background-color: #4caf50;
+                border-radius: 6px;
+            }
+        """)
+        actions_layout.addWidget(self.scan_occupancy_bar)
+
         actions_layout.addStretch()
         results_layout.addLayout(actions_layout)
 
@@ -22938,6 +22964,42 @@ class SerialTerminalGUI(QMainWindow):
         """Handle scan completion"""
         self.scan_results_group.setTitle(f"Results — {total_found} host{'s' if total_found != 1 else ''} found")
 
+        # Update occupancy bar
+        try:
+            net_addr = self.scan_network_input.text().strip()
+            prefix = self.scan_mask_combo.currentText().strip()
+            scanned_net = ipaddress.ip_network(f"{net_addr}/{prefix}", strict=False)
+            total_ips = scanned_net.num_addresses
+            # Subtract network and broadcast for IPv4
+            if scanned_net.version == 4 and total_ips > 2:
+                total_ips -= 2
+            occupancy = int(total_found * 100 / total_ips) if total_ips else 0
+            self.scan_occupancy_bar.setValue(min(occupancy, 100))
+            self.scan_occupancy_bar.setFormat(f"Occupancy: {occupancy}% ({total_found} / {total_ips})")
+            # Change colour based on occupancy
+            if occupancy >= 90:
+                colour = "#f44336"  # red
+            elif occupancy >= 70:
+                colour = "#ff9800"  # orange
+            else:
+                colour = "#4caf50"  # green
+            self.scan_occupancy_bar.setStyleSheet(f"""
+                QProgressBar {{
+                    background-color: #e0e0e0;
+                    border: 1px solid #b0b0b0;
+                    border-radius: 6px;
+                    text-align: center;
+                    font-size: 9pt;
+                    color: #333333;
+                }}
+                QProgressBar::chunk {{
+                    background-color: {colour};
+                    border-radius: 6px;
+                }}
+            """)
+        except Exception:
+            pass
+
         # Sort rows numerically by IP (UserRole on col 1 holds the 32-bit integer).
         # sortItems() is text-based and would mis-order 10.0.0.2 after 10.0.0.100.
         row_count = self.scan_results_table.rowCount()
@@ -23066,6 +23128,22 @@ class SerialTerminalGUI(QMainWindow):
         """Clear scan results"""
         self.scan_results_table.setRowCount(0)
         self.scan_results_group.setTitle("Results")
+        self.scan_occupancy_bar.setValue(0)
+        self.scan_occupancy_bar.setFormat("Occupancy: 0% (0 / 0)")
+        self.scan_occupancy_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #e0e0e0;
+                border: 1px solid #b0b0b0;
+                border-radius: 6px;
+                text-align: center;
+                font-size: 9pt;
+                color: #333333;
+            }
+            QProgressBar::chunk {
+                background-color: #4caf50;
+                border-radius: 6px;
+            }
+        """)
 
     def _scan_context_menu(self, pos):
         """Show context menu for scan results table"""
