@@ -8791,6 +8791,10 @@ class TerminalDialog(QWidget):
         self.telnet_client = None
         self.telnet_read_thread = None
         self.telnet_running = False
+        # Serial (pyserial) attributes for Windows
+        self.serial_conn = None
+        self.serial_read_thread = None
+        self.serial_running = False
         self.connection_type = 'serial'
         self._note_name = ''       # profile name of current device
         self._note_ip   = ''       # IP of current device
@@ -12867,7 +12871,10 @@ class TerminalDialog(QWidget):
         self.terminal.set_autocomplete_commands(cmds)
 
     def start_picocom(self, cmd):
-        """Start picocom process with sudo"""
+        """Start serial connection via picocom (Linux) or pyserial (Windows)"""
+        if sys.platform == 'win32':
+            return self._start_pyserial(cmd)
+        # Linux path - use picocom via QProcess
         password, ok = QInputDialog.getText(
             self, "Sudo Password Required",
             "Please enter your sudo password to access serial port:",
@@ -12903,6 +12910,75 @@ class TerminalDialog(QWidget):
         self.terminal.append_output("Connecting...\n\n")
 
         return True
+
+    def _start_pyserial(self, cmd):
+        """Start serial connection using pyserial on Windows.
+        cmd is the picocom command list; we parse parameters from it."""
+        try:
+            import serial
+        except ImportError:
+            self.terminal.append_output("[ERROR] pyserial not installed. Run: pip install pyserial\n")
+            return False
+
+        # Parse picocom-style command to extract params
+        # cmd format: ['picocom', '-b', '9600', '-d', '8', '-p', 'n', '-f', 'n', 'COM3']
+        port = cmd[-1]
+        baudrate = '9600'
+        databits = 8
+        parity = serial.PARITY_NONE
+        stopbits = serial.STOPBITS_ONE
+        flow = serial.XOFF
+
+        i = 0
+        while i < len(cmd) - 1:
+            if cmd[i] == '-b' and i + 1 < len(cmd):
+                baudrate = cmd[i + 1]
+            elif cmd[i] == '-d' and i + 1 < len(cmd):
+                databits = int(cmd[i + 1])
+            elif cmd[i] == '-p' and i + 1 < len(cmd):
+                p = cmd[i + 1].lower()
+                parity = {'n': serial.PARITY_NONE, 'e': serial.PARITY_EVEN, 'o': serial.PARITY_ODD}.get(p, serial.PARITY_NONE)
+            elif cmd[i] == '-f' and i + 1 < len(cmd):
+                f = cmd[i + 1].lower()
+                flow = {'h': serial.XON, 's': serial.XOFF, 'n': False}.get(f, False)
+            i += 1
+
+        try:
+            self.serial_conn = serial.Serial(
+                port=port,
+                baudrate=int(baudrate),
+                bytesize={5: serial.FIVEBITS, 6: serial.SIXBITS, 7: serial.SEVENBITS, 8: serial.EIGHTBITS}.get(databits, serial.EIGHTBITS),
+                parity=parity,
+                stopbits={1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}.get(stopbits, serial.STOPBITS_ONE),
+                xonxoff=(flow == serial.XOFF),
+                rtscts=(flow == serial.XON),
+                timeout=0.1
+            )
+            self.serial_running = True
+            self.connection_type = 'serial'
+
+            # Start read thread
+            self.serial_read_thread = threading.Thread(target=self._pyserial_read_loop, daemon=True)
+            self.serial_read_thread.start()
+
+            self.terminal.append_output(f"Connected to {port} @ {baudrate} baud\n\n")
+            return True
+        except Exception as e:
+            self.terminal.append_output(f"[ERROR] Failed to open serial port: {e}\n")
+            return False
+
+    def _pyserial_read_loop(self):
+        """Background thread that reads from serial port and emits to terminal."""
+        while self.serial_running and self.serial_conn and self.serial_conn.is_open:
+            try:
+                data = self.serial_conn.read(1024)
+                if data:
+                    text = data.decode('utf-8', errors='replace')
+                    # Use signal for thread-safe GUI update
+                    self.ssh_output_received.emit(text)
+            except Exception:
+                break
+        self.serial_running = False
 
     def start_debug_mode(self):
         """Start terminal in debug mode with simulated Cisco router output"""
@@ -12999,11 +13075,13 @@ Router#_\r
         self.terminal.append_output(cisco_output)
 
     def send_to_process(self, text):
-        """Send input to the active connection (picocom, SSH, or Telnet)"""
+        """Send input to the active connection (picocom/pyserial, SSH, or Telnet)"""
         if self.connection_type == 'ssh':
             self.send_to_ssh(text)
         elif self.connection_type == 'telnet':
             self.send_to_telnet(text)
+        elif sys.platform == 'win32' and self.serial_conn and self.serial_conn.is_open:
+            self.serial_conn.write(text.encode())
         elif self.process and self.process.state() == QProcess.ProcessState.Running:
             self.process.write(text.encode())
 
@@ -13263,6 +13341,14 @@ Router#_\r
             self.disconnect_ssh()
         elif self.connection_type == 'telnet':
             self.disconnect_telnet()
+        elif sys.platform == 'win32' and self.serial_conn:
+            # Close pyserial connection on Windows
+            self.serial_running = False
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
         elif self.process and self.process.state() == QProcess.ProcessState.Running:
             # Send Ctrl+A Ctrl+X to exit picocom gracefully
             self.process.write(b'\x01\x18')
@@ -13289,6 +13375,8 @@ Router#_\r
             is_connected = self.ssh_running
         elif self.connection_type == 'telnet':
             is_connected = self.telnet_running
+        elif sys.platform == 'win32' and self.serial_conn:
+            is_connected = self.serial_conn.is_open
         elif self.process:
             is_connected = self.process.state() == QProcess.ProcessState.Running
 
@@ -27139,17 +27227,18 @@ class SerialTerminalGUI(QMainWindow):
             # Will reset when terminal is closed
             return
 
-        # Check if picocom is installed
-        try:
-            subprocess.run(['which', 'picocom'], check=True, capture_output=True)
-        except subprocess.CalledProcessError:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "picocom is not installed.\n\n"
-                "Install with:\nsudo pacman -S picocom"
-            )
-            return
+        # Check if picocom is installed (Linux only)
+        if sys.platform != 'win32':
+            try:
+                subprocess.run(['which', 'picocom'], check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "picocom is not installed.\n\n"
+                    "Install with:\nsudo pacman -S picocom"
+                )
+                return
 
         # Build command
         cmd = self.build_picocom_command()
