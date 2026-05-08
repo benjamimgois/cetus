@@ -584,16 +584,22 @@ class FlatComboButton(QPushButton):
 
 
 class ConfigManager:
-    """Manage application settings using XDG Base Directory specification"""
+    """Manage application settings using XDG Base Directory on Linux and APPDATA on Windows"""
 
     def __init__(self) -> None:
-        # Get XDG config directory (defaults to ~/.config)
-        xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
-        if not xdg_config_home:
-            xdg_config_home = os.path.join(Path.home(), '.config')
+        if sys.platform == 'win32':
+            appdata = os.environ.get('APPDATA')
+            if not appdata:
+                appdata = os.path.join(Path.home(), 'AppData', 'Roaming')
+            self.config_dir = os.path.join(appdata, 'Cetus')
+        else:
+            # Get XDG config directory (defaults to ~/.config)
+            xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
+            if not xdg_config_home:
+                xdg_config_home = os.path.join(Path.home(), '.config')
+            self.config_dir = os.path.join(xdg_config_home, 'cetus')
 
         # Create cetus config directory
-        self.config_dir = os.path.join(xdg_config_home, 'cetus')
         os.makedirs(self.config_dir, exist_ok=True)
 
         # Config file path
@@ -4176,11 +4182,17 @@ class MtrWorker(QThread):
             if process.returncode != 0 and stderr_out and not self._stop_flag:
                 low = stderr_out.lower()
                 if 'permission' in low or 'not permitted' in low:
-                    self.mtr_error.emit(
-                        "MTR requires elevated privileges for ICMP.\n\n"
-                        "Run Cetus with: sudo python3 cetus\n"
-                        "Or install mtr with setuid bit: sudo chmod u+s /usr/bin/mtr"
-                    )
+                    if sys.platform == 'win32':
+                        self.mtr_error.emit(
+                            "MTR requires elevated privileges for ICMP on Windows.\n\n"
+                            "Run Cetus as Administrator."
+                        )
+                    else:
+                        self.mtr_error.emit(
+                            "MTR requires elevated privileges for ICMP.\n\n"
+                            "Run Cetus with: sudo python3 cetus\n"
+                            "Or install mtr with setuid bit: sudo chmod u+s /usr/bin/mtr"
+                        )
                     return
                 elif stderr_out.strip():
                     self.mtr_error.emit(f"MTR error: {stderr_out.strip()}")
@@ -4234,7 +4246,11 @@ class PingWorker(QThread):
                 import os as _os
                 _env = dict(_os.environ)
                 _env['LC_ALL'] = 'C'
-                cmd = ['ping', '-c', '1', '-W', str(self.timeout), self.target]
+                if sys.platform == 'win32':
+                    timeout_ms = max(1, int(self.timeout * 1000))
+                    cmd = ['ping', '-n', '1', '-w', str(timeout_ms), self.target]
+                else:
+                    cmd = ['ping', '-c', '1', '-W', str(self.timeout), self.target]
                 result = subprocess.run(cmd, capture_output=True, text=True,
                                         timeout=self.timeout + 2, env=_env)
                 sent += 1
@@ -4761,10 +4777,16 @@ class _SimplePingWorker(QThread):
     def run(self):
         import subprocess as _sp
         try:
-            proc = _sp.run(
-                ['ping', '-c', '4', '-W', '2', self._host],
-                capture_output=True, text=True, timeout=20
-            )
+            if sys.platform == 'win32':
+                proc = _sp.run(
+                    ['ping', '-n', '4', '-w', '2000', self._host],
+                    capture_output=True, text=True, timeout=20
+                )
+            else:
+                proc = _sp.run(
+                    ['ping', '-c', '4', '-W', '2', self._host],
+                    capture_output=True, text=True, timeout=20
+                )
             for line in proc.stdout.splitlines():
                 # Linux: rtt min/avg/max/mdev = 1.2/5.6/9.0/0.3 ms
                 if ('rtt' in line or 'round-trip' in line) and '/' in line:
@@ -8795,6 +8817,11 @@ class TerminalDialog(QWidget):
 
     def get_icon_path(self, icon_name, subdir='icons'):
         """Get the path to an icon for different installation types"""
+        # Check for PyInstaller / PyOxidizer / cx_Freeze bundle
+        if getattr(sys, '_MEIPASS', None):
+            bundle_path = os.path.join(sys._MEIPASS, f'assets/{subdir}/{icon_name}')
+            if os.path.exists(bundle_path):
+                return bundle_path
         # Check for Flatpak
         flatpak_path = f'/app/share/io.github.benjamimgois.cetus/{subdir}/{icon_name}'
         if os.path.exists(flatpak_path):
@@ -24070,6 +24097,11 @@ class SerialTerminalGUI(QMainWindow):
         assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
         if os.path.exists(assets_path):
             return assets_path
+        # Check for PyInstaller / PyOxidizer / cx_Freeze bundle
+        if getattr(sys, '_MEIPASS', None):
+            bundle_path = os.path.join(sys._MEIPASS, f'assets/icons/{icon_name}')
+            if os.path.exists(bundle_path):
+                return bundle_path
         # Check for Flatpak
         flatpak_path = f'/app/share/io.github.benjamimgois.cetus/icons/{icon_name}'
         if os.path.exists(flatpak_path):
@@ -24667,18 +24699,24 @@ class SerialTerminalGUI(QMainWindow):
             self.connect_btn.setIcon(QIcon())
 
     def update_port_list(self):
-        """Update the list of available ports"""
+        """Update the list of available ports (cross-platform)"""
         self.port.clear()
 
-        port_type = next((t for t, b in self._port_type_btns.items() if b.isChecked()), 'USB')
-
-        # Use glob to search for ports based on type
-        if port_type == 'Serial':
-            pattern = '/dev/ttyS*'
-        else:  # USB
-            pattern = '/dev/ttyUSB*'
-
-        ports = sorted(glob.glob(pattern))
+        if sys.platform == 'win32':
+            # On Windows, use QSerialPortInfo to list COM ports
+            try:
+                from PyQt6.QtSerialPort import QSerialPortInfo
+                ports = [info.portName() for info in QSerialPortInfo.availablePorts()]
+            except Exception:
+                ports = []
+        else:
+            port_type = next((t for t, b in self._port_type_btns.items() if b.isChecked()), 'USB')
+            # Use glob to search for ports based on type
+            if port_type == 'Serial':
+                pattern = '/dev/ttyS*'
+            else:  # USB
+                pattern = '/dev/ttyUSB*'
+            ports = sorted(glob.glob(pattern))
 
         if ports:
             self.port.addItems(ports)
@@ -24787,17 +24825,20 @@ class SerialTerminalGUI(QMainWindow):
                 QMessageBox.warning(self, "Warning", "Invalid TFTP directory")
                 return
 
-            password, ok = QInputDialog.getText(
-                self, "Sudo Password Required",
-                "TFTP port 69 requires root privileges.\nPlease enter your sudo password:",
-                QLineEdit.EchoMode.Password
-            )
-            if not ok or not password:
-                return
-
-            # Build command to run TFTP server with sudo
+            # Build command to run TFTP server
             script_path = os.path.abspath(__file__)
-            cmd = ['sudo', '-S', sys.executable, script_path, '--tftp-server', ip, '69', directory]
+            if sys.platform == 'win32':
+                # Windows: no sudo needed; run directly
+                cmd = [sys.executable, script_path, '--tftp-server', ip, '69', directory]
+            else:
+                password, ok = QInputDialog.getText(
+                    self, "Sudo Password Required",
+                    "TFTP port 69 requires root privileges.\nPlease enter your sudo password:",
+                    QLineEdit.EchoMode.Password
+                )
+                if not ok or not password:
+                    return
+                cmd = ['sudo', '-S', sys.executable, script_path, '--tftp-server', ip, '69', directory]
 
             try:
                 # Redirect TFTP server output to terminal for debugging
@@ -24811,11 +24852,12 @@ class SerialTerminalGUI(QMainWindow):
                     stderr=None,  # Inherit parent's stderr (terminal)
                     text=False
                 )
-                # Send password
-                self.tftp_process.stdin.write((password + '\n').encode())
-                self.tftp_process.stdin.flush()
-                self.tftp_process.stdin.close()  # Close stdin after sending password
-                password = None  # Clear from memory
+                # Send password (Linux only)
+                if sys.platform != 'win32' and 'password' in locals() and password:
+                    self.tftp_process.stdin.write((password + '\n').encode())
+                    self.tftp_process.stdin.flush()
+                    self.tftp_process.stdin.close()  # Close stdin after sending password
+                    password = None  # Clear from memory
 
                 # Wait a moment to check if server started
                 import time
