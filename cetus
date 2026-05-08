@@ -6964,6 +6964,19 @@ class WiFiScanWorker(QThread):
         import subprocess, re
         if interface:
             return interface
+        if sys.platform == 'win32':
+            try:
+                r = subprocess.run(['netsh', 'wlan', 'show', 'interfaces'],
+                                   capture_output=True, text=True, timeout=3)
+                for line in r.stdout.splitlines():
+                    line = line.strip()
+                    if line.lower().startswith('name'):
+                        parts = line.split(':', 1)
+                        if len(parts) >= 2:
+                            return parts[1].strip()
+            except Exception:
+                pass
+            return ''
         try:
             r = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=3)
             ifaces = re.findall(r'Interface\s+(\S+)', r.stdout)
@@ -6977,7 +6990,7 @@ class WiFiScanWorker(QThread):
     def _get_driver_name(interface):
         """Return the kernel driver name for the given interface, or empty string."""
         import os
-        if not interface:
+        if not interface or sys.platform == 'win32':
             return ''
         try:
             driver_link = f'/sys/class/net/{interface}/device/driver'
@@ -21883,23 +21896,40 @@ class SerialTerminalGUI(QMainWindow):
         import subprocess
         self.wifi_iface_combo.clear()
         self.wifi_iface_combo.addItem("(auto)")
-        try:
-            result = subprocess.run(
-                ['nmcli', '-t', '-f', 'DEVICE,TYPE', 'device'],
-                capture_output=True, text=True, timeout=5
-            )
-            for line in result.stdout.splitlines():
-                parts = line.split(':')
-                if len(parts) >= 2 and parts[1].strip() == 'wifi':
-                    self.wifi_iface_combo.addItem(parts[0].strip())
-        except Exception:
-            # Fallback: read /sys/class/net
+        if sys.platform == 'win32':
             try:
-                for iface in sorted(os.listdir('/sys/class/net')):
-                    if os.path.exists(f'/sys/class/net/{iface}/wireless'):
-                        self.wifi_iface_combo.addItem(iface)
+                import subprocess
+                result = subprocess.run(
+                    ['netsh', 'wlan', 'show', 'interfaces'],
+                    capture_output=True, text=True, timeout=5
+                )
+                for line in result.stdout.splitlines():
+                    line = line.strip()
+                    if line.lower().startswith('name'):
+                        parts = line.split(':', 1)
+                        if len(parts) >= 2:
+                            iface = parts[1].strip()
+                            self.wifi_iface_combo.addItem(iface)
             except Exception:
                 pass
+        else:
+            try:
+                result = subprocess.run(
+                    ['nmcli', '-t', '-f', 'DEVICE,TYPE', 'device'],
+                    capture_output=True, text=True, timeout=5
+                )
+                for line in result.stdout.splitlines():
+                    parts = line.split(':')
+                    if len(parts) >= 2 and parts[1].strip() == 'wifi':
+                        self.wifi_iface_combo.addItem(parts[0].strip())
+            except Exception:
+                # Fallback: read /sys/class/net
+                try:
+                    for iface in sorted(os.listdir('/sys/class/net')):
+                        if os.path.exists(f'/sys/class/net/{iface}/wireless'):
+                            self.wifi_iface_combo.addItem(iface)
+                except Exception:
+                    pass
 
     def _start_wifi_scan(self, _auto=False):
         """Start a WiFi scan. If called by the user (not auto-refresh) while a survey
