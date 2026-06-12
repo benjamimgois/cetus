@@ -19,6 +19,7 @@ import csv
 import re
 import math
 import platform
+import stat
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional, Callable
 try:
@@ -6808,40 +6809,79 @@ class FileTransferWorker(QThread):
     progress = pyqtSignal(int, int, int)   # percent, bytes_done, bytes_total
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, direction, protocol, conn_data, local_path, remote_path, parent=None):
+    def __init__(self, direction, protocol, conn_data, item_list, parent=None):
         super().__init__(parent)
         self._dir = direction   # 'upload' or 'download'
         self._protocol = protocol
         self._conn = conn_data
-        self._local = local_path
-        self._remote = remote_path
+        self._items = item_list   # list of (local_path, remote_path)
         self._total = 0
-        self._done = 0
-
-    def _progress_cb(self, done, total):
-        if total:
-            self.progress.emit(int(done * 100 / total), int(done), int(total))
 
     def run(self):
         try:
-            if self._protocol == 'SSH':
-                sftp = self._conn['sftp']
+            total_bytes = 0
+            file_sizes = []
+            for local, remote in self._items:
+                size = 0
                 if self._dir == 'upload':
-                    sftp.put(self._local, self._remote, callback=self._progress_cb)
+                    try:
+                        size = os.path.getsize(local) if os.path.exists(local) else 0
+                    except OSError:
+                        size = 0
                 else:
-                    sftp.get(self._remote, self._local, callback=self._progress_cb)
-            elif self._protocol == 'FTP':
-                ftp = self._conn['ftp']
-                if self._dir == 'upload':
-                    with open(self._local, 'rb') as f:
-                        ftp.storbinary(f'STOR {os.path.basename(self._remote)}', f)
-                else:
-                    with open(self._local, 'wb') as f:
-                        ftp.retrbinary(f'RETR {self._remote}', f.write)
-            self.progress.emit(100, 0, 0)
-            self.finished.emit(True, "Transfer complete")
+                    try:
+                        if self._protocol == 'SSH':
+                            size = self._conn['sftp'].stat(remote).st_size
+                    except Exception:
+                        size = 0
+                file_sizes.append(size)
+                total_bytes += size
+            self._total = total_bytes
+            cumulative_done = 0
+
+            for i, (local, remote) in enumerate(self._items):
+                local_dir = os.path.dirname(local)
+                if self._protocol == 'SSH':
+                    sftp = self._conn['sftp']
+                    if self._dir == 'upload':
+                        remote_dir = os.path.dirname(remote)
+                        self._sftp_mkdir_p(sftp, remote_dir)
+                        off = cumulative_done
+                        sftp.put(local, remote, callback=lambda d, t, _off=off: (
+                            self.progress.emit(int((_off + d) * 100 / self._total) if self._total else 0, int(_off + d), int(self._total))
+                        ))
+                    else:
+                        os.makedirs(local_dir, exist_ok=True)
+                        off = cumulative_done
+                        sftp.get(remote, local, callback=lambda d, t, _off=off: (
+                            self.progress.emit(int((_off + d) * 100 / self._total) if self._total else 0, int(_off + d), int(self._total))
+                        ))
+                elif self._protocol == 'FTP':
+                    os.makedirs(local_dir, exist_ok=True)
+                    ftp = self._conn['ftp']
+                    if self._dir == 'upload':
+                        with open(local, 'rb') as f:
+                            ftp.storbinary(f'STOR {os.path.basename(remote)}', f)
+                    else:
+                        with open(local, 'wb') as f:
+                            ftp.retrbinary(f'RETR {remote}', f.write)
+                cumulative_done += file_sizes[i]
+
+            count = len(self._items)
+            msg = f"{count} file{'s' if count != 1 else ''} transferred"
+            self.progress.emit(100, self._total, self._total)
+            self.finished.emit(True, msg)
         except Exception as e:
             self.finished.emit(False, str(e))
+
+    def _sftp_mkdir_p(self, sftp, remote_dir):
+        if not remote_dir or remote_dir == '/':
+            return
+        try:
+            sftp.stat(remote_dir)
+        except FileNotFoundError:
+            self._sftp_mkdir_p(sftp, os.path.dirname(remote_dir))
+            sftp.mkdir(remote_dir)
 
 
 class TcpdumpWorker(QThread):
@@ -18065,6 +18105,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_local_tree.setColumnWidth(2, 110)
         self._ft_local_tree.setStyleSheet(local_tree_style)
         self._ft_local_tree.setAlternatingRowColors(True)
+        self._ft_local_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._ft_local_tree.itemDoubleClicked.connect(self._ft_local_double_clicked)
         self._ft_local_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._ft_local_tree.customContextMenuRequested.connect(self._ft_local_context_menu)
@@ -18153,6 +18194,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_remote_tree.setColumnWidth(2, 110)
         self._ft_remote_tree.setStyleSheet(remote_tree_style)
         self._ft_remote_tree.setAlternatingRowColors(True)
+        self._ft_remote_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._ft_remote_tree.itemDoubleClicked.connect(self._ft_remote_double_clicked)
         self._ft_remote_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._ft_remote_tree.customContextMenuRequested.connect(self._ft_remote_context_menu)
@@ -26313,15 +26355,31 @@ class SerialTerminalGUI(QMainWindow):
         items = self._ft_local_tree.selectedItems()
         if not items:
             return
-        item = items[0]
-        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        if is_dir:
-            QMessageBox.information(self, "Info", "Directory upload not supported. Select a file.")
+        transfer_list = []
+        for item in items:
+            name = item.text(0)
+            if name == '..':
+                continue
+            local_path = item.data(0, Qt.ItemDataRole.UserRole)
+            is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            remote_path = self._ft_remote_path.rstrip('/') + '/' + name
+            if is_dir:
+                if self._ft_protocol != 'SSH':
+                    QMessageBox.information(self, "Info",
+                        f"Directory upload only supported via SSH/SFTP.\nSkipping '{name}'.")
+                    continue
+                parent_dir = os.path.dirname(local_path)
+                for root, _dirs, files in os.walk(local_path):
+                    for f in files:
+                        lf = os.path.join(root, f)
+                        rel = os.path.relpath(lf, parent_dir)
+                        rf = self._ft_remote_path.rstrip('/') + '/' + rel
+                        transfer_list.append((lf, rf))
+            else:
+                transfer_list.append((local_path, remote_path))
+        if not transfer_list:
             return
-        local_path = item.data(0, Qt.ItemDataRole.UserRole)
-        filename = os.path.basename(local_path)
-        remote_path = self._ft_remote_path.rstrip('/') + '/' + filename
-        self._ft_start_transfer('upload', local_path, remote_path, filename)
+        self._ft_start_transfer('upload', transfer_list)
 
     def _ft_download(self):
         if not self._ft_conn:
@@ -26329,28 +26387,62 @@ class SerialTerminalGUI(QMainWindow):
         items = self._ft_remote_tree.selectedItems()
         if not items:
             return
-        item = items[0]
-        is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        if is_dir:
-            QMessageBox.information(self, "Info", "Directory download not supported. Select a file.")
+        transfer_list = []
+        for item in items:
+            name = item.text(0)
+            if name == '..':
+                continue
+            remote_path = item.data(0, Qt.ItemDataRole.UserRole)
+            is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            local_path = os.path.join(self._ft_local_path, name)
+            if is_dir:
+                if self._ft_protocol != 'SSH':
+                    QMessageBox.information(self, "Info",
+                        f"Directory download only supported via SSH/SFTP.\nSkipping '{name}'.")
+                    continue
+                sftp = self._ft_conn.get('sftp')
+                if not sftp:
+                    continue
+                try:
+                    remote_files = self._sftp_walk_files(sftp, remote_path)
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Could not list remote directory: {e}")
+                    continue
+                parent_dir = os.path.dirname(remote_path)
+                for rf in remote_files:
+                    rel = os.path.relpath(rf, parent_dir)
+                    lf = os.path.join(self._ft_local_path, rel)
+                    transfer_list.append((lf, rf))
+            else:
+                transfer_list.append((local_path, remote_path))
+        if not transfer_list:
             return
-        remote_path = item.data(0, Qt.ItemDataRole.UserRole)
-        filename = os.path.basename(remote_path)
-        local_path = os.path.join(self._ft_local_path, filename)
-        self._ft_start_transfer('download', local_path, remote_path, filename)
+        self._ft_start_transfer('download', transfer_list)
 
-    def _ft_start_transfer(self, direction, local_path, remote_path, filename):
+    def _sftp_walk_files(self, sftp, remote_dir):
+        files = []
+        for entry in sftp.listdir_attr(remote_dir):
+            entry_path = remote_dir.rstrip('/') + '/' + entry.filename
+            if stat.S_ISDIR(entry.st_mode):
+                files.extend(self._sftp_walk_files(sftp, entry_path))
+            else:
+                files.append(entry_path)
+        return files
+
+    def _ft_start_transfer(self, direction, item_list):
         import time
         self.tftp_btn.setEnabled(False)
+        count = len(item_list)
         verb = "Uploading" if direction == 'upload' else "Downloading"
-        self._ft_status_label.setText(f"{verb} {filename}...")
+        file_word = "file" if count == 1 else "files"
+        self._ft_status_label.setText(f"{verb} {count} {file_word}...")
         self._ft_status_label.setStyleSheet("color: #555555; font-size: 9pt;")
         self._ft_progress_bar.setValue(0)
         self._ft_progress_bar.setVisible(True)
         self._ft_progress_info.setText("")
         self._ft_progress_info.setVisible(True)
         self._ft_transfer_start = time.time()
-        self._ft_transfer_worker = FileTransferWorker(direction, self._ft_protocol, self._ft_conn, local_path, remote_path)
+        self._ft_transfer_worker = FileTransferWorker(direction, self._ft_protocol, self._ft_conn, item_list)
         self._ft_transfer_worker.progress.connect(self._ft_on_transfer_progress)
         self._ft_transfer_worker.finished.connect(self._ft_on_transfer_done)
         self._ft_transfer_worker.start()
@@ -26409,8 +26501,7 @@ class SerialTerminalGUI(QMainWindow):
         if item:
             is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
             path = item.data(0, Qt.ItemDataRole.UserRole)
-            if not is_dir:
-                dl_act = menu.addAction("Download")
+            dl_act = menu.addAction("Download")
             rename_act = menu.addAction("Rename")
             delete_act = menu.addAction("Delete")
             menu.addSeparator()
@@ -26478,10 +26569,12 @@ class SerialTerminalGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not delete: {e}")
 
-        elif not is_dir and action == dl_act:
-            filename = os.path.basename(path)
-            local_path = os.path.join(self._ft_local_path, filename)
-            self._ft_start_transfer('download', local_path, path, filename)
+        elif action == dl_act:
+            self._ft_remote_tree.setCurrentItem(item)
+            for si in self._ft_remote_tree.selectedItems():
+                si.setSelected(False)
+            item.setSelected(True)
+            self._ft_download()
 
     def _ft_local_context_menu(self, pos):
         item = self._ft_local_tree.itemAt(pos)
@@ -26496,7 +26589,7 @@ class SerialTerminalGUI(QMainWindow):
             is_dir = item.data(0, Qt.ItemDataRole.UserRole + 1)
             name = os.path.basename(path) if path else ''
             if name and name != '..':
-                if self._ft_conn and not is_dir:
+                if self._ft_conn:
                     upload_act = menu.addAction("Upload")
                 rename_act = menu.addAction("Rename")
                 delete_act = menu.addAction("Delete")
@@ -26525,8 +26618,11 @@ class SerialTerminalGUI(QMainWindow):
             return
 
         if upload_act and action == upload_act:
-            remote_path = self._ft_remote_path.rstrip('/') + '/' + name
-            self._ft_start_transfer('upload', path, remote_path, name)
+            self._ft_local_tree.setCurrentItem(item)
+            for si in self._ft_local_tree.selectedItems():
+                si.setSelected(False)
+            item.setSelected(True)
+            self._ft_upload()
 
         elif rename_act and action == rename_act:
             new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=name)
