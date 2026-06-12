@@ -993,6 +993,10 @@ class TerminalWidget(QTextEdit):
         self._in_unhandled_escape = False
         self._escape_discard_buffer = ""
 
+        # Debug: capture last 500KB of raw terminal feed for diagnosis
+        self._feed_log = []
+        self._feed_log_size = 0
+
         # Refresh timer for rendering
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.render_screen)
@@ -1241,6 +1245,9 @@ class TerminalWidget(QTextEdit):
                 if text_sel:
                     QApplication.clipboard().setText(text_sel.replace('\u2029', '\n'))
                 return
+            elif key == Qt.Key.Key_D:
+                self._dump_feed_log()
+                return
 
         # Handle Ctrl combinations
         if modifiers & Qt.KeyboardModifier.ControlModifier:
@@ -1443,6 +1450,15 @@ class TerminalWidget(QTextEdit):
         self._render_line_cache_cols = 0
         self._render_needed = True
 
+    def _dump_feed_log(self, path="/tmp/cetus_feed_debug.log"):
+        """Save the last ~500KB of raw terminal feed for debugging."""
+        try:
+            with open(path, "w", encoding="utf-8", errors="replace") as f:
+                f.write("".join(self._feed_log))
+            print(f"[CETUS DEBUG] Feed log saved to {path}")
+        except Exception as e:
+            print(f"[CETUS DEBUG] Failed to save feed log: {e}")
+
     def feed_from_worker(self, text):
         """Feed raw SSH/Telnet bytes to pyte — called from worker thread, NOT main thread.
 
@@ -1453,6 +1469,13 @@ class TerminalWidget(QTextEdit):
         if self._DBG:
             self._dbg_feed_calls += 1
             t0 = _t.perf_counter()
+
+        # Debug: accumulate raw feed for diagnosis
+        self._feed_log.append(text)
+        self._feed_log_size += len(text)
+        MAX_LOG = 500000
+        while self._feed_log_size > MAX_LOG and self._feed_log:
+            self._feed_log_size -= len(self._feed_log.pop(0))
 
         text = self._strip_unhandled_sequences(text)
 
