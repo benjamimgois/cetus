@@ -1472,28 +1472,28 @@ class TerminalWidget(QTextEdit):
                 self._exit_alt_screen()
 
         if text:
-            # Cap feed size so the lock is held for at most ~22ms per call.
-            # pyte is pure-Python (~735 KB/s measured). 16KB ≈ 22ms → lock free
-            # ~78ms per 100ms render window, enough for render_screen to acquire.
-            # Content beyond the last 16KB scrolls off the 5000-line history anyway.
-            MAX_FEED_BYTES = 8192  # 8 KB ≈ 11ms of pyte time → lock free ~89ms/100ms
+            # Cap feed size so the lock is held for at most ~90ms per call.
+            # pyte is pure-Python (~735 KB/s measured). 64KB ≈ 87ms → still fine
+            # for a 20fps render loop. 8KB was too small for TUI frames (OpenCode,
+            # htop, vim) which redraw the entire screen and can easily exceed 8KB.
+            # When truncated, the ESC[2J / ESC[H at the start of the frame gets
+            # lost, causing the new frame to overlay the old one → garbled display.
+            MAX_FEED_BYTES = 65536  # 64 KB
             if len(text) > MAX_FEED_BYTES:
                 text = text[-MAX_FEED_BYTES:]
-                # TUI apps (htop, vim, …) redraw using cursor positioning, not newlines.
-                # A full htop frame on a 220-col terminal can exceed 8 KB, so the screen
-                # clear (ESC[2J) and cursor-home (ESC[H) that start the frame end up in
-                # the discarded prefix.  Without them pyte overlays the new frame on the
-                # old one → garbled display.  Try to align to a frame-start marker first.
+                # TUI apps redraw using cursor positioning, not newlines.
+                # Align to the first frame-start marker in the truncated chunk.
+                # The old 1024-byte window was too small for large frames.
                 aligned = False
                 for _marker in ('\x1b[2J', '\x1b[H', '\x1b[1;1H', '\x1b[?1049h', '\x1b[?1047h'):
                     _idx = text.find(_marker)
-                    if 0 < _idx < 1024:
+                    if _idx >= 0:
                         text = text[_idx:]
                         aligned = True
                         break
                 if not aligned:
                     nl = text.find('\n')  # fallback: align to line boundary
-                    if 0 < nl < 512:
+                    if nl >= 0:
                         text = text[nl + 1:]
 
             if self._DBG:
