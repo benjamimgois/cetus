@@ -1428,8 +1428,15 @@ class TerminalWidget(QTextEdit):
         """Save current buffer and switch to a clean alternate screen."""
         self._saved_screen_state = self._save_screen_state()
         self._in_alt_screen = True
-        # Clear the visible buffer so the TUI starts fresh
-        self.screen.resize(self.screen.lines, self.screen.columns)
+        # pyte resize() does nothing when dimensions are unchanged,
+        # so manually clear every cell to default_char so the TUI
+        # starts from a blank slate (OpenCode and many TUIs don't
+        # send ESC[2J after ESC[?1049h, they assume the alt screen is
+        # already empty).
+        for y in range(self.screen.lines):
+            line = self.screen.buffer[y]
+            for x in range(self.screen.columns):
+                line[x] = self.screen.default_char
         # Reset history queues so TUI output doesn't pollute scrollback
         self.screen.history.top.clear()
         self.screen.history.bottom.clear()
