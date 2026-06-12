@@ -986,6 +986,7 @@ class TerminalWidget(QTextEdit):
         self._in_scrollback_mode = False  # True when user is browsing history
         self._search_active = False  # True when search is active, freezes display updates
         self._in_alt_screen = False  # True when in alternate screen mode (nano, vim, htop…)
+        self._saved_screen_state = None  # Saved buffer+cursor when entering alt screen
         self._line_height_px: float = 0.0  # Exact px line-height to fill viewport with no gaps
 
         # State for stripping escape sequences not handled by pyte (DCS, SOS, PM, APC)
@@ -1397,6 +1398,51 @@ class TerminalWidget(QTextEdit):
         self._cursor_visible = not self._cursor_visible
         self._cursor_overlay.update()
 
+    def _save_screen_state(self):
+        """Save the current pyte buffer and cursor for alternate screen restore."""
+        state = []
+        for y in range(self.screen.lines):
+            line = []
+            for x in range(self.screen.columns):
+                line.append(self.screen.buffer[y][x])
+            state.append(line)
+        return state, (self.screen.cursor.x, self.screen.cursor.y)
+
+    def _restore_screen_state(self, saved):
+        """Restore pyte buffer and cursor from a saved state."""
+        saved_lines, (cursor_x, cursor_y) = saved
+        for y, line in enumerate(saved_lines):
+            for x, char in enumerate(line):
+                self.screen.buffer[y][x] = char
+        self.screen.cursor.x = cursor_x
+        self.screen.cursor.y = cursor_y
+
+    def _enter_alt_screen(self):
+        """Save current buffer and switch to a clean alternate screen."""
+        self._saved_screen_state = self._save_screen_state()
+        self._in_alt_screen = True
+        # Clear the visible buffer so the TUI starts fresh
+        self.screen.resize(self.screen.lines, self.screen.columns)
+        # Reset history queues so TUI output doesn't pollute scrollback
+        self.screen.history.top.clear()
+        self.screen.history.bottom.clear()
+        self.screen._reset_history()
+        self._scrollback_lines.clear()
+        self._scrollback_cache = ""
+        self._scrollback_dirty = False
+        self._render_line_cache.clear()
+        self._render_line_cache_cols = 0
+
+    def _exit_alt_screen(self):
+        """Restore the saved buffer and exit alternate screen."""
+        self._in_alt_screen = False
+        if self._saved_screen_state:
+            self._restore_screen_state(self._saved_screen_state)
+            self._saved_screen_state = None
+        self._render_line_cache.clear()
+        self._render_line_cache_cols = 0
+        self._render_needed = True
+
     def feed_from_worker(self, text):
         """Feed raw SSH/Telnet bytes to pyte — called from worker thread, NOT main thread.
 
@@ -1416,10 +1462,14 @@ class TerminalWidget(QTextEdit):
 
         # Detect alternate-screen mode (full-screen TUIs: nano, vim, htop …)
         # ESC[?1049h → enter alt screen   ESC[?1049l → leave alt screen
-        if '\x1b[?1049h' in text:
-            self._in_alt_screen = True
-        if '\x1b[?1049l' in text:
-            self._in_alt_screen = False
+        # ESC[?1047h → enter alt screen (legacy)  ESC[?1047l → leave alt screen (legacy)
+        # ESC[?1048h → save cursor         ESC[?1048l → restore cursor
+        if '\x1b[?1049h' in text or '\x1b[?1047h' in text:
+            with self._pyte_lock:
+                self._enter_alt_screen()
+        if '\x1b[?1049l' in text or '\x1b[?1047l' in text:
+            with self._pyte_lock:
+                self._exit_alt_screen()
 
         if text:
             # Cap feed size so the lock is held for at most ~22ms per call.
@@ -1435,7 +1485,7 @@ class TerminalWidget(QTextEdit):
                 # the discarded prefix.  Without them pyte overlays the new frame on the
                 # old one → garbled display.  Try to align to a frame-start marker first.
                 aligned = False
-                for _marker in ('\x1b[2J', '\x1b[H', '\x1b[1;1H', '\x1b[?1049h'):
+                for _marker in ('\x1b[2J', '\x1b[H', '\x1b[1;1H', '\x1b[?1049h', '\x1b[?1047h'):
                     _idx = text.find(_marker)
                     if 0 < _idx < 1024:
                         text = text[_idx:]
@@ -1462,10 +1512,12 @@ class TerminalWidget(QTextEdit):
         """Feed text to pyte terminal emulator (main-thread path, e.g. local echo)."""
         text = self._strip_unhandled_sequences(text)
         if text:
-            if '\x1b[?1049h' in text:
-                self._in_alt_screen = True
-            if '\x1b[?1049l' in text:
-                self._in_alt_screen = False
+            if '\x1b[?1049h' in text or '\x1b[?1047h' in text:
+                with self._pyte_lock:
+                    self._enter_alt_screen()
+            if '\x1b[?1049l' in text or '\x1b[?1047l' in text:
+                with self._pyte_lock:
+                    self._exit_alt_screen()
             with self._pyte_lock:
                 self.stream.feed(text)
             self._render_needed = True
@@ -2306,18 +2358,21 @@ class TerminalWidget(QTextEdit):
             # Drain history lines with a strict time budget (5ms).
             # _render_line costs ~0.4ms/line, so ≈12 lines per tick at 10fps.
             # A line-count cap (80) caused 33ms drain time even when idle.
-            DRAIN_BUDGET_S = 0.005  # 5ms budget per render tick
-            _t_drain_start = _t.perf_counter()
-            while self.screen.history.top:
-                if _t.perf_counter() - _t_drain_start >= DRAIN_BUDGET_S:
-                    break
-                history_line = self.screen.history.top.popleft()
-                rendered = self._render_line(history_line, self.screen.columns)
-                self._scrollback_lines.append(rendered)
-                self._scrollback_dirty = True
-                # Do NOT set _render_needed here: history drain only updates the
-                # scrollback buffer, not the visible screen. Setting it caused
-                # spurious setHtml calls every 100ms even when the terminal was idle.
+            # Skip draining while in alternate screen: TUI apps (nano, vim) do
+            # not produce scrollback and the history.top may contain stale lines.
+            if not self._in_alt_screen:
+                DRAIN_BUDGET_S = 0.005  # 5ms budget per render tick
+                _t_drain_start = _t.perf_counter()
+                while self.screen.history.top:
+                    if _t.perf_counter() - _t_drain_start >= DRAIN_BUDGET_S:
+                        break
+                    history_line = self.screen.history.top.popleft()
+                    rendered = self._render_line(history_line, self.screen.columns)
+                    self._scrollback_lines.append(rendered)
+                    self._scrollback_dirty = True
+                    # Do NOT set _render_needed here: history drain only updates the
+                    # scrollback buffer, not the visible screen. Setting it caused
+                    # spurious setHtml calls every 100ms even when the terminal was idle.
 
             _t_history_done = _t.perf_counter() if self._DBG else 0
 
