@@ -1120,7 +1120,7 @@ class TerminalWidget(QTextEdit):
             for y in range(self.screen.lines):
                 screen_lines.append(self._render_line(self.screen.buffer[y], self.screen.columns))
 
-        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.2"
+        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.0"
         pre_open = f'<pre style="margin: 0; padding: 0; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
         if self._scrollback_cache:
             full_html = pre_open + self._scrollback_cache + '\n' + '\n'.join(screen_lines) + '</pre>'
@@ -2499,7 +2499,7 @@ class TerminalWidget(QTextEdit):
             """)
             self._applied_root_mode = self._root_mode
 
-        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.2"
+        _lh = f"{self._line_height_px:.4f}px" if self._line_height_px > 0 else "1.0"
         _fg = '#ff4444' if self._root_mode else '#e0e0e0'
         pre_open = f'<pre style="margin: 0; padding: 0; color: {_fg}; line-height: {_lh}; user-select: text; -webkit-user-select: text;">'
         new_html = pre_open + '\n'.join(screen_lines) + '</pre>'
