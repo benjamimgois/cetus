@@ -26173,13 +26173,21 @@ class SerialTerminalGUI(QMainWindow):
         self._ft_status_label.setStyleSheet("color: #4CAF50; font-size: 9pt; font-weight: bold;")
         self.tftp_btn.setEnabled(True)
         self.tftp_btn.setText("DISCONNECT")
-        self._ft_remote_path = '/'
-        self._ft_remote_path_label.setText('/')
-        self._ft_remote_history = ['/']
+        remote_home = '/'
+        try:
+            if self._ft_protocol == 'SSH' and 'sftp' in conn_data:
+                remote_home = conn_data['sftp'].normalize('.')
+            elif self._ft_protocol == 'FTP' and 'ftp' in conn_data:
+                remote_home = conn_data['ftp'].pwd()
+        except Exception:
+            remote_home = '/'
+        self._ft_remote_path = remote_home
+        self._ft_remote_path_label.setText(remote_home)
+        self._ft_remote_history = [remote_home]
         self._ft_remote_history_idx = 0
         self._ft_remote_back_btn.setEnabled(False)
         self._ft_remote_fwd_btn.setEnabled(False)
-        self._ft_refresh_remote('/')
+        self._ft_refresh_remote(remote_home)
         self._ft_refresh_local()
         self._ft_status_timer.start(1000)
 
