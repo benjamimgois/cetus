@@ -970,6 +970,7 @@ class TerminalWidget(QTextEdit):
         # Initialize pyte terminal emulator with scrollback history
         self.screen = pyte.HistoryScreen(columns, lines, history=5000)
         self.stream = pyte.Stream(self.screen)
+        self.stream.use_utf8 = False  # Enable charset switching for DEC Special Graphics (nano, etc.)
 
         # Lock protecting all pyte state (screen/stream) from concurrent access.
         # The SSH/Telnet worker thread feeds pyte directly; the main thread renders.
