@@ -12,7 +12,7 @@ Cetus is a **desktop GUI application for Linux** that provides an easy, modern i
 - **GUI Framework**: PyQt6 (Qt6)
 - **License**: GPL-3.0
 - **Repository**: https://github.com/benjamimgois/opengrid
-- **Current Version**: 1.7
+- **Current Version**: 1.8
 
 ---
 
@@ -224,7 +224,7 @@ python3 scripts/bundle-monolith.py
 cd scripts
 chmod +x make-deb.sh
 ./make-deb.sh
-sudo dpkg -i ../cetus_1.6-1_all.deb
+sudo dpkg -i ../cetus_1.8-1_all.deb
 ```
 
 ### 5.4 Build AppImage

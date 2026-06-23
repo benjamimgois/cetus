@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.7"
+VERSION="1.8"
 PKGNAME="cetus"
 BUILD_DIR="/tmp/${PKGNAME}-build"
 

@@ -889,7 +889,7 @@ class NmapDiscoverWorker(QThread):
                 ctx.verify_mode    = ssl.CERT_NONE
                 s = ctx.wrap_socket(s, server_hostname=self.host)
             s.sendall((f'GET / HTTP/1.1\r\nHost: {self.host}\r\n'
-                        'User-Agent: Cetus/1.7\r\nConnection: close\r\n\r\n').encode())
+                        'User-Agent: Cetus/1.8\r\nConnection: close\r\n\r\n').encode())
             s.settimeout(4)
             resp = b''
             try:

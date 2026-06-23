@@ -1,3 +1,12 @@
+cetus (1.8-1) jammy; urgency=medium
+
+  * Modularize monolithic cetus file into cetuslib/ package
+  * Add scripts/bundle-monolith.py to generate dist/cetus for distribution
+  * Update Debian and AppImage builds to bundle dist/cetus
+  * Keep root cetus launcher and python -m cetuslib entrypoints working
+
+ -- Benjamim Gois <benjamimgois@example.com>  Tue, 23 Jun 2026 12:00:00 -0300
+
 cetus (1.6-1) jammy; urgency=medium
 
   * New File Transfer tab: SSH/SFTP, SMB, FTP and TFTP protocols (client + server modes)

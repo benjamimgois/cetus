@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.6"
+VERSION="1.8"
 PKGNAME="cetus"
 
 echo "=== Cetus Debian Package Builder ==="

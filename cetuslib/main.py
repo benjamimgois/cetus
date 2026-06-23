@@ -775,7 +775,7 @@ class SerialTerminalGUI(QMainWindow):
         title_col.setSpacing(2)
         app_name = QLabel("Cetus")
         app_name.setStyleSheet("color: #ffffff; font-size: 20pt; font-weight: bold; background: transparent;")
-        version_lbl = QLabel("v1.7  ·  Network Management Toolkit")
+        version_lbl = QLabel("v1.8  ·  Network Management Toolkit")
         version_lbl.setStyleSheet("color: #8888aa; font-size: 9pt; background: transparent;")
         title_col.addStretch()
         title_col.addWidget(app_name)

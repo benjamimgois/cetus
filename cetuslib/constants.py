@@ -2,5 +2,5 @@
 
 __all__ = ['VERSION', 'VERSION_LABEL']
 
-VERSION = "1.7"
-VERSION_LABEL = "1.7"
+VERSION = "1.8"
+VERSION_LABEL = "1.8"

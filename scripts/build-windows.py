@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Configuration
 APP_NAME = "Cetus"
-APP_VERSION = "1.7"
+APP_VERSION = "1.8"
 SCRIPT_NAME = "cetus"
 ICON_NAME = "assets/icons/cetus-256.png"
 

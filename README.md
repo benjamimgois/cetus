@@ -173,7 +173,7 @@ npm install -g fast-cli
 
 2. Install the package:
 ```bash
-sudo dpkg -i cetus_1.6-1_all.deb
+sudo dpkg -i cetus_1.8-1_all.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
@@ -198,7 +198,7 @@ chmod +x make-deb.sh
 
 3. Install the generated package:
 ```bash
-sudo dpkg -i ../cetus_1.6-1_all.deb
+sudo dpkg -i ../cetus_1.8-1_all.deb
 ```
 
 ### Arch Linux / Manjaro (from AUR)
@@ -215,7 +215,7 @@ paru -S cetus
 
 2. Install:
 ```bash
-sudo pacman -U cetus-1.6-1-any.pkg.tar.zst
+sudo pacman -U cetus-1.8-1-any.pkg.tar.zst
 ```
 
 ### Flatpak

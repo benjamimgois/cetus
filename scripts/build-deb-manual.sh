@@ -4,7 +4,7 @@
 
 set -e
 
-VERSION="1.6"
+VERSION="1.8"
 RELEASE="1"
 PKGNAME="cetus"
 ARCH="all"

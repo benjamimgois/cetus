@@ -52,6 +52,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.8" date="2026-06-23">
+      <description>
+        <p>Modular architecture and distribution bundler</p>
+        <ul>
+          <li>Split monolithic cetus into cetuslib/ thematic modules</li>
+          <li>Add scripts/bundle-monolith.py to regenerate dist/cetus</li>
+          <li>Update Debian and AppImage packaging to use bundled dist/cetus</li>
+          <li>Maintain root cetus launcher and python -m cetuslib entrypoints</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6" date="2026-03-13">
       <description>
         <p>File Transfer tab, Serial quick connect overhaul, tab reorder, and About dialog</p>
