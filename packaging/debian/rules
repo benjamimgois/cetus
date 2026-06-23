@@ -3,9 +3,12 @@
 %:
 	dh $@
 
+override_dh_auto_build:
+	python3 scripts/bundle-monolith.py
+
 override_dh_auto_install:
-	# Install main script
-	install -Dm755 cetus debian/cetus/usr/bin/cetus
+	# Install bundled monolith
+	install -Dm755 dist/cetus debian/cetus/usr/bin/cetus
 
 	# Install SVG icon (scalable)
 	install -Dm644 assets/icons/cetus_icon.svg debian/cetus/usr/share/icons/hicolor/scalable/apps/cetus.svg

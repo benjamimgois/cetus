@@ -28,6 +28,10 @@ if ! command -v dpkg-deb &> /dev/null; then
     exit 1
 fi
 
+# Bundle the modular source into a single executable
+echo "Bundling cetuslib into dist/cetus..."
+python3 scripts/bundle-monolith.py
+
 # Clean previous build
 echo "Cleaning build directory..."
 rm -rf build-deb
@@ -46,7 +50,7 @@ mkdir -p "${BUILD_DIR}/usr/share/doc/cetus"
 echo "Copying application files..."
 
 # Main executable
-cp cetus "${BUILD_DIR}/usr/bin/"
+cp dist/cetus "${BUILD_DIR}/usr/bin/"
 chmod 755 "${BUILD_DIR}/usr/bin/cetus"
 
 # Desktop file

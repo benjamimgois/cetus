@@ -18,36 +18,42 @@ Cetus is a **desktop GUI application for Linux** that provides an easy, modern i
 
 ## 2. Architecture Overview
 
-### 2.1 Single-File Monolith
+### 2.1 Modular Source, Single-File Distribution
 
-The entire application logic lives in a single executable Python file:
+The source code is split into a Python package for maintainability, but a single-file executable is still produced for distribution:
 
-- **`cetus`** (≈27k lines) — Main application entrypoint and all modules.
-
-This is by design for easy distribution (AppImage, .deb, AUR). All classes, workers, widgets, and protocol handlers are defined in this file.
+- **`cetuslib/`** — Modular source package:
+  - `config.py`, `constants.py`, `utils.py`
+  - `terminal.py` — terminal widgets
+  - `workers.py` — background workers
+  - `network.py` — network/graph widgets
+  - `ui/` — reusable UI components
+  - `main.py` — `SerialTerminalGUI` and `main()`
+- **`cetus`** (launcher) — Thin root entrypoint that imports `cetuslib.main.main()`.
+- **`dist/cetus`** — Generated monolithic executable (via `scripts/bundle-monolith.py`) used for AppImage, `.deb`, and AUR.
 
 ### 2.2 Key Classes
 
-| Class | Line (approx) | Responsibility |
-|-------|--------------|----------------|
-| `SerialTerminalGUI` | ~13472 | Main window (QMainWindow). Hosts tabs, menu bar, and global state. |
-| `TerminalWidget` | ~931 | VT100/ANSI terminal emulator using `pyte`. Supports scrollback, search, syntax highlighting, autocomplete, and cursor overlay. |
-| `TerminalDialog` | ~9862 | Dialog window embedding a `TerminalWidget` for serial/SSH/Telnet sessions. |
-| `TerminalTabbedWindow` | ~13026 | Detachable tabbed terminal window for multi-session management. |
-| `ConfigManager` | ~584 | JSON-based settings persistence (XDG Base Directory). Handles serial/SSH profiles, SNMP community history, and quick notes. |
-| `ScanWorker` | ~2501 | IP scanner worker (ICMP/TCP/UDP/ARP). |
-| `ConnectionWorker` | ~3097 | SSH/Telnet connection worker using `paramiko` / `telnetlib`. |
-| `TracerouteWorker` | ~3176 | Traceroute execution worker. |
-| `MtrWorker` | ~4004 | MTR continuous traceroute worker. |
-| `Iperf3Worker` | ~4325 | iPerf3 throughput test worker. |
-| `SpeedTestWorker` | ~4580 | Internet speed test worker (fast.com / iPerf3). |
-| `WifiChannelChart` | ~5522 | Custom QWidget rendering channel usage with Gaussian curves. |
-| `WifiHeatmapWidget` | ~6418 | Wi-Fi signal strength heatmap visualization. |
-| `FileConnectWorker` | ~6624 | SFTP connection worker. |
-| `FileListWorker` | ~6658 | SFTP file listing worker. |
-| `FileTransferWorker` | ~6692 | SFTP upload/download worker. |
-| `NmapDiscoverWorker` | ~3466 | Nmap OS/service discovery worker. |
-| `VendorConfigTemplateDialog` | ~8651 | Dialog with vendor-specific command reference and config templates. |
+| Class | Module | Responsibility |
+|-------|--------|----------------|
+| `SerialTerminalGUI` | `cetuslib/main.py` | Main window (QMainWindow). Hosts tabs, menu bar, and global state. |
+| `TerminalWidget` | `cetuslib/terminal.py` | VT100/ANSI terminal emulator using `pyte`. Supports scrollback, search, syntax highlighting, autocomplete, and cursor overlay. |
+| `TerminalDialog` | `cetuslib/terminal.py` | Dialog window embedding a `TerminalWidget` for serial/SSH/Telnet sessions. |
+| `TerminalTabbedWindow` | `cetuslib/terminal.py` | Detachable tabbed terminal window for multi-session management. |
+| `ConfigManager` | `cetuslib/config.py` | JSON-based settings persistence (XDG Base Directory). Handles serial/SSH profiles, SNMP community history, and quick notes. |
+| `ScanWorker` | `cetuslib/workers.py` | IP scanner worker (ICMP/TCP/UDP/ARP). |
+| `ConnectionWorker` | `cetuslib/workers.py` | SSH/Telnet connection worker using `paramiko` / `telnetlib`. |
+| `TracerouteWorker` | `cetuslib/workers.py` | Traceroute execution worker. |
+| `MtrWorker` | `cetuslib/workers.py` | MTR continuous traceroute worker. |
+| `Iperf3Worker` | `cetuslib/workers.py` | iPerf3 throughput test worker. |
+| `SpeedTestWorker` | `cetuslib/workers.py` | Internet speed test worker (fast.com / iPerf3). |
+| `WifiChannelChart` | `cetuslib/network.py` | Custom QWidget rendering channel usage with Gaussian curves. |
+| `WifiHeatmapWidget` | `cetuslib/network.py` | Wi-Fi signal strength heatmap visualization. |
+| `FileConnectWorker` | `cetuslib/workers.py` | SFTP connection worker. |
+| `FileListWorker` | `cetuslib/workers.py` | SFTP file listing worker. |
+| `FileTransferWorker` | `cetuslib/workers.py` | SFTP upload/download worker. |
+| `NmapDiscoverWorker` | `cetuslib/workers.py` | Nmap OS/service discovery worker. |
+| `VendorConfigTemplateDialog` | `cetuslib/main.py` | Dialog with vendor-specific command reference and config templates. |
 
 ### 2.3 Threading Model
 
@@ -103,6 +109,7 @@ Many features spawn external processes. The app expects these binaries in `$PATH
 
 | Script | Purpose |
 |--------|---------|
+| `scripts/bundle-monolith.py` | Generate `dist/cetus` from `cetuslib/` modules |
 | `scripts/make-deb.sh` | Build Debian `.deb` package |
 | `scripts/build-deb-manual.sh` | Manual deb build |
 | `scripts/make-release.sh` | Generate release tarball |
@@ -121,18 +128,39 @@ Additional packaging:
 
 ```
 cetus/
-├── cetus                  ← Main application (Python executable, ~27k lines)
+├── cetus                  ← Main application launcher (imports cetuslib)
 ├── cetus.desktop          ← Linux .desktop launcher
-├── appinfo                   ← AppStream / app metadata
-├── README.md                 ← Human-facing documentation
-├── LICENSE                   ← GPL-3.0
+├── appinfo                ← AppStream / app metadata
+├── README.md              ← Human-facing documentation
+├── LICENSE                ← GPL-3.0
+│
+├── cetuslib/              ← Modular source package
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── config.py
+│   ├── constants.py
+│   ├── utils.py
+│   ├── terminal.py
+│   ├── workers.py
+│   ├── network.py
+│   ├── main.py
+│   ├── legacy.py          ← TFTP early-exit stub
+│   └── ui/
+│       ├── __init__.py
+│       ├── dialogs.py
+│       ├── profiles.py
+│       └── widgets.py
+│
+├── dist/
+│   └── cetus              ← Generated monolithic executable
 │
 ├── assets/
-│   ├── icons/                ← SVG icons (cetus_icon.svg, etc.)
-│   └── remmina/              ← Remmina integration assets
+│   ├── icons/             ← SVG icons (cetus_icon.svg, etc.)
+│   └── remmina/           ← Remmina integration assets
 │
-├── scripts/                  ← Build and packaging scripts
+├── scripts/               ← Build and packaging scripts
 │   ├── make-deb.sh
+│   ├── bundle-monolith.py
 │   ├── make-release.sh
 │   ├── make-anylinux-appimage.sh
 │   └── install.sh
@@ -141,15 +169,15 @@ cetus/
 │   └── flatpak/
 │       └── io.github.benjamimgois.cetus.yml
 │
-├── debian/                   ← Debian package metadata
-├── build-anylinux/           ← AppImage build artifacts
+├── debian/                ← Debian package metadata
+├── build-anylinux/        ← AppImage build artifacts
 ├── docs/
-│   ├── INTERFACE.md          ← UI layout guide
-│   ├── NEXT-STEPS.md         ← Release checklist
-│   ├── AUR-INSTRUCTIONS.md   ← AUR packaging guide
+│   ├── INTERFACE.md       ← UI layout guide
+│   ├── NEXT-STEPS.md      ← Release checklist
+│   ├── AUR-INSTRUCTIONS.md ← AUR packaging guide
 │   └── README-AUR.md
 │
-└── .github/                  ← GitHub workflows/templates
+└── .github/               ← GitHub workflows/templates
 ```
 
 ---
@@ -175,11 +203,19 @@ python3 cetus
 
 ### 5.2 Development Mode
 
-Because it's a single file, no build step is required. Just edit `cetus` and rerun.
+Edit modules under `cetuslib/` and run the launcher directly. No bundler step is needed during development.
 
 ```bash
+# Run from source
+./cetus
+# or
+python3 -m cetuslib
+
 # Syntax check after editing
-python3 -m py_compile cetus
+python3 -m py_compile cetuslib/main.py cetuslib/terminal.py cetuslib/workers.py
+
+# Regenerate the distribution monolith
+python3 scripts/bundle-monolith.py
 ```
 
 ### 5.3 Build Debian Package
@@ -241,7 +277,7 @@ chmod +x make-anylinux-appimage.sh
 
 ## 7. Known Issues & Limitations
 
-- **Monolithic file**: `cetus` is very large (27k lines). Refactoring into modules is desirable but must preserve single-file distribution compatibility.
+- **Monolithic file**: `dist/cetus` is generated from `cetuslib/`. Edit `cetuslib/` and regenerate the bundle; do not edit `dist/cetus` directly.
 - **Password storage**: SSH profile passwords are base64-encoded, not encrypted.
 - **Thread safety**: Some workers may still emit signals under high load that race with UI updates. Always use `QMetaObject.invokeMethod` for direct widget mutations from threads.
 - **Telnet deprecation**: `telnetlib` is deprecated in Python 3.13+; the app uses `standard-telnetlib` as a fallback.
@@ -275,7 +311,7 @@ chmod +x make-anylinux-appimage.sh
 
 1. Add `from typing import Any, Optional, Callable` near the top imports.
 2. Annotate method signatures: `def method(self, arg: str) -> dict[str, Any]:`.
-3. Run `python3 -m py_compile cetus` to verify syntax.
+3. Run `python3 -m py_compile cetuslib/main.py` to verify syntax.
 
 ---
 
@@ -283,9 +319,9 @@ chmod +x make-anylinux-appimage.sh
 
 When cutting a new release:
 
-1. Update `VERSION` and `VERSION_LABEL` constants at the top of `cetus`.
+1. Update `VERSION` and `VERSION_LABEL` in `cetuslib/constants.py`.
 2. Update version in `PKGBUILD`, `debian/changelog`, and `appinfo`.
-3. Run `python3 -m py_compile cetus`.
+3. Run `python3 -m py_compile cetuslib/main.py` and regenerate `dist/cetus` with `python3 scripts/bundle-monolith.py`.
 4. Build packages: `.deb`, AppImage, Flatpak.
 5. Test on clean VMs (Debian, Arch, Fedora).
 6. Tag release on GitHub and upload artifacts.

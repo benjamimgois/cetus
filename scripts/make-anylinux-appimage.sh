@@ -15,7 +15,7 @@ set -eux
 ARCH="$(uname -m)"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # repo root
 
-VERSION="$(grep -oP '(?<=^VERSION = \")[^\"]+' "$SCRIPT_DIR/cetus" || echo "1.0")"
+VERSION="$(grep -oP '(?<=^VERSION = \")[^\"]+' "$SCRIPT_DIR/cetuslib/constants.py" || echo "1.0")"
 OUTNAME="Cetus-${ARCH}.AppImage"
 
 QUICK_SHARUN_URL="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
@@ -64,6 +64,10 @@ else
     echo "  All Python deps OK"
 fi
 
+
+# ── 1b. Bundle the modular source into a single executable ────────────────────
+echo "[1b/7] Bundling cetuslib into dist/cetus..."
+python3 "$SCRIPT_DIR/scripts/bundle-monolith.py"
 
 # ── 2. Prepare build directory ────────────────────────────────────────────────
 echo "[2/7] Preparing build directory..."
@@ -157,7 +161,7 @@ mkdir -p "$PREFIX/usr/share/applications"
 mkdir -p "$PREFIX/usr/share/icons/hicolor/256x256/apps"
 
 cp "$BUILD_DIR/cetus-bin"              "$PREFIX/usr/bin/cetus"
-cp "$SCRIPT_DIR/cetus"                 "$PREFIX/usr/share/cetus/cetus"
+cp "$SCRIPT_DIR/dist/cetus"            "$PREFIX/usr/share/cetus/cetus"
 cp "$SCRIPT_DIR/assets/icons/"*.svg      "$PREFIX/usr/share/cetus/assets/icons/"
 cp "$SCRIPT_DIR/assets/vendors/"*.svg    "$PREFIX/usr/share/cetus/assets/vendors/"
 cp "$SCRIPT_DIR/cetus.desktop"         "$PREFIX/usr/share/applications/cetus.desktop"
@@ -252,7 +256,7 @@ _bundle_exe() {
 echo "  Copying app data into AppDir..."
 install -dm755 "$APPDIR/usr/share/cetus/assets/icons"
 install -dm755 "$APPDIR/usr/share/cetus/assets/vendors"
-cp "$SCRIPT_DIR/cetus"                "$APPDIR/usr/share/cetus/cetus"
+cp "$SCRIPT_DIR/dist/cetus"           "$APPDIR/usr/share/cetus/cetus"
 cp "$SCRIPT_DIR/assets/icons/"*.svg     "$APPDIR/usr/share/cetus/assets/icons/"
 cp "$SCRIPT_DIR/assets/icons/"*.png     "$APPDIR/usr/share/cetus/assets/icons/" 2>/dev/null || true
 cp "$SCRIPT_DIR/assets/vendors/"*.svg   "$APPDIR/usr/share/cetus/assets/vendors/"

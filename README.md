@@ -272,7 +272,7 @@ chmod +x cetus
 ```bash
 ./cetus
 # or
-python3 cetus
+python3 -m cetuslib
 ```
 
 ### Serial Connection

@@ -24,6 +24,7 @@ mkdir -p "${BUILD_DIR}/${PKGNAME}-${VERSION}"
 # Copy necessary files
 echo "Copying files..."
 cp cetus "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp -r cetuslib "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r assets "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp cetus.desktop "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
