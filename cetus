@@ -628,6 +628,8 @@ class ConfigManager:
             'ssh_rc_collapsed': False,
             # Serial profiles
             'serial_profiles': '[]',
+            # Terminal preference for Linux/native devices
+            'terminal_mode': 'auto',
             # Vuln scanner
             'vuln_community_history': '[]',
             # Theme settings
@@ -675,7 +677,7 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_ssh_profile(self, name: str, host: str, port: str, username: str, auth_method: str, key_path: str = '', protocol: str = 'SSH', vendor: str = 'Default', group: str = 'Default', password: str = '') -> None:
+    def save_ssh_profile(self, name: str, host: str, port: str, username: str, auth_method: str, key_path: str = '', protocol: str = 'SSH', vendor: str = 'Default', group: str = 'Default', password: str = '', terminal_mode: str = 'auto') -> None:
         """Save an SSH connection profile"""
         profiles = self.get_ssh_profiles()
         entry = {
@@ -683,6 +685,7 @@ class ConfigManager:
             'username': username, 'auth_method': auth_method,
             'key_path': key_path, 'protocol': protocol,
             'vendor': vendor, 'group': group,
+            'terminal_mode': terminal_mode,
         }
         if password:
             import base64
@@ -741,14 +744,15 @@ class ConfigManager:
         except json.JSONDecodeError:
             return []
 
-    def save_serial_profile(self, name: str, port: str, baudrate: str, databits: str, parity: str, stopbits: str, flow: str, vendor: str = 'Default', group: str = 'Default') -> None:
+    def save_serial_profile(self, name: str, port: str, baudrate: str, databits: str, parity: str, stopbits: str, flow: str, vendor: str = 'Default', group: str = 'Default', terminal_mode: str = 'auto') -> None:
         """Save a serial connection profile"""
         profiles = self.get_serial_profiles()
         entry = {
             'name': name, 'port': port, 'baudrate': baudrate,
             'databits': databits, 'parity': parity,
             'stopbits': stopbits, 'flow': flow,
-            'vendor': vendor, 'group': group
+            'vendor': vendor, 'group': group,
+            'terminal_mode': terminal_mode,
         }
         for i, p in enumerate(profiles):
             if p.get('name') == name:
@@ -1146,7 +1150,7 @@ class TerminalWidget(QTextEdit):
         super().mouseReleaseEvent(event)
         cursor = self.textCursor()
         if cursor.hasSelection():
-            QApplication.clipboard().setText(cursor.selectedText())
+            QApplication.clipboard().setText(cursor.selectedText().replace('\u2029', '\n'))
             # Show a brief tooltip near the cursor to confirm the copy
             QToolTip.showText(self.mapToGlobal(event.pos()), 'Copied to clipboard', self, QRect(), 800)
 
@@ -14998,6 +15002,7 @@ class SerialTerminalGUI(QMainWindow):
         self._smb_srv_service = 'smb'
         self._pending_profile_name = None
         self._pending_vendor = None
+        self._pending_terminal_mode = None
         self.config = ConfigManager()
 
         self.geo_flag_worker = GeoFlagWorker()
@@ -15550,7 +15555,8 @@ class SerialTerminalGUI(QMainWindow):
                 username=p['username'], auth_method=p['auth_method'],
                 key_path=p['key_path'], protocol=p['protocol'],
                 vendor='Default', group=p['group'],
-                password=p['password']
+                password=p['password'],
+                terminal_mode=p.get('terminal_mode', 'auto')
             )
 
         if hasattr(self, 'refresh_ssh_profiles'):
@@ -24446,6 +24452,7 @@ class SerialTerminalGUI(QMainWindow):
         # Store original name/group so the Save dialog pre-fills them
         self._editing_profile_name  = profile.get('name', '')
         self._editing_profile_group = profile.get('group', 'Default')
+        self._pending_terminal_mode = profile.get('terminal_mode', 'auto')
 
         # Scroll the form into view
         self.ssh_host.setFocus()
@@ -27057,6 +27064,71 @@ class SerialTerminalGUI(QMainWindow):
         # Keep reference so thread isn't GC'd
         self._rdp_monitor = monitor
 
+    def _native_terminal_emulators(self):
+        """Return ordered list of supported native terminal emulators."""
+        return [
+            'konsole',
+            'gnome-terminal',
+            'xfce4-terminal',
+            'terminator',
+            'alacritty',
+            'kitty',
+            'xterm',
+        ]
+
+    def _find_native_terminal(self):
+        """Find the first available native terminal emulator in PATH."""
+        for emulator in self._native_terminal_emulators():
+            if shutil.which(emulator):
+                return emulator
+        return None
+
+    def _build_native_terminal_command(self, emulator, command_list):
+        """Build the argument list for launching a command in a native terminal."""
+        if emulator == 'gnome-terminal':
+            return [emulator, '--'] + list(command_list)
+        if emulator in ('konsole', 'xfce4-terminal', 'terminator', 'alacritty', 'kitty', 'xterm'):
+            return [emulator, '-e'] + list(command_list)
+        # Unknown emulator: try the common -e flag as a reasonable default
+        return [emulator, '-e'] + list(command_list)
+
+    def _launch_native_terminal(self, command_list):
+        """Launch command_list in the system's native terminal emulator.
+
+        Returns True on success, False otherwise. Falls back to a warning
+        message when no supported emulator is installed.
+        """
+        emulator = self._find_native_terminal()
+        if not emulator:
+            QMessageBox.warning(
+                self, "Native Terminal Not Found",
+                "No supported native terminal emulator was found on PATH.\n\n"
+                "Supported: konsole, gnome-terminal, xfce4-terminal, "
+                "terminator, alacritty, kitty, xterm.\n\n"
+                "Falling back to the Cetus custom terminal."
+            )
+            return False
+
+        args = self._build_native_terminal_command(emulator, command_list)
+        # startDetached returns immediately and lets the terminal outlive Cetus.
+        if not QProcess.startDetached(args[0], args[1:]):
+            QMessageBox.warning(
+                self, "Native Terminal Error",
+                f"Could not start native terminal '{emulator}'.\n\n"
+                "Falling back to the Cetus custom terminal."
+            )
+            return False
+        return True
+
+    def _should_use_native_terminal(self, vendor, terminal_mode):
+        """Return True when the session should be opened in a native terminal."""
+        if terminal_mode == 'native':
+            return True
+        if terminal_mode == 'custom':
+            return False
+        # auto: use native only for Linux vendor
+        return vendor and vendor.lower() == 'linux'
+
     def browse_ssh_key(self):
         """Open file dialog to select SSH private key"""
         key_file, _ = QFileDialog.getOpenFileName(
@@ -27158,7 +27230,8 @@ class SerialTerminalGUI(QMainWindow):
                         profile.get('baudrate', '9600'), profile.get('databits', '8'),
                         profile.get('parity', 'None'), profile.get('stopbits', '1'),
                         profile.get('flow', 'None'), new_vendor,
-                        profile.get('group', 'Default')
+                        profile.get('group', 'Default'),
+                        profile.get('terminal_mode', 'auto')
                     )
                     tree_item.setData(0, Qt.ItemDataRole.UserRole, profile)
             else:
@@ -27171,7 +27244,9 @@ class SerialTerminalGUI(QMainWindow):
                         profile['name'], profile['host'], profile.get('port', '22'),
                         profile.get('username', ''), profile.get('auth_method', 'password'),
                         profile.get('key_path', ''), profile.get('protocol', 'SSH'),
-                        new_vendor, profile.get('group', 'Default')
+                        new_vendor, profile.get('group', 'Default'),
+                        profile.get('password', ''),
+                        profile.get('terminal_mode', 'auto')
                     )
                     tree_item.setData(0, Qt.ItemDataRole.UserRole, profile)
 
@@ -27278,6 +27353,7 @@ class SerialTerminalGUI(QMainWindow):
         self._ssh_protocol_btn_clicked(protocol)
 
         self._pending_vendor = profile.get('vendor', 'Default')
+        self._pending_terminal_mode = profile.get('terminal_mode', 'auto')
 
         QApplication.processEvents()
         QTimer.singleShot(100, self.connect_ssh)
@@ -27323,6 +27399,7 @@ class SerialTerminalGUI(QMainWindow):
             self._ssh_protocol_btn_clicked(protocol)
 
             self._pending_vendor = profile.get('vendor', 'Default')
+            self._pending_terminal_mode = profile.get('terminal_mode', 'auto')
 
             QApplication.processEvents()
             self.connect_ssh()
@@ -27373,7 +27450,9 @@ class SerialTerminalGUI(QMainWindow):
                     profile['name'], profile['host'], profile.get('port', '22'),
                     profile.get('username', ''), profile.get('auth_method', 'password'),
                     profile.get('key_path', ''), profile.get('protocol', 'SSH'),
-                    profile.get('vendor', 'Default'), new_name
+                    profile.get('vendor', 'Default'), new_name,
+                    profile.get('password', ''),
+                    profile.get('terminal_mode', 'auto')
                 )
 
         # Update header text preserving arrow
@@ -27518,6 +27597,21 @@ class SerialTerminalGUI(QMainWindow):
             vendor_combo.setCurrentIndex(idx)
         form.addRow("Vendor:", vendor_combo)
 
+        terminal_mode_combo = QComboBox()
+        terminal_mode_combo.setMinimumWidth(180)
+        terminal_mode_combo.addItems(['Auto', 'Native', 'Custom'])
+        # Pre-select terminal mode from the profile being edited, if any
+        _terminal_mode = 'Auto'
+        if _editing_name:
+            for _p in self.config.get_ssh_profiles():
+                if _p.get('name') == _editing_name:
+                    _mode = _p.get('terminal_mode', 'auto').capitalize()
+                    if terminal_mode_combo.findText(_mode) >= 0:
+                        _terminal_mode = _mode
+                    break
+        terminal_mode_combo.setCurrentText(_terminal_mode)
+        form.addRow("Terminal mode:", terminal_mode_combo)
+
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(dlg.accept)
@@ -27535,6 +27629,7 @@ class SerialTerminalGUI(QMainWindow):
         if not group or group == _NEW_GROUP_ITEM:
             group = 'Default'
         vendor = vendor_combo.currentText()
+        terminal_mode = terminal_mode_combo.currentText().lower()
 
         auth_method = 'key' if self.use_ssh_key.isChecked() else 'password'
         protocol = self.ssh_current_protocol
@@ -27543,7 +27638,8 @@ class SerialTerminalGUI(QMainWindow):
             name, host, self.ssh_port.text(),
             self.ssh_username.text(), auth_method,
             self.ssh_key_path.text() if auth_method == 'key' else '',
-            protocol, group=group, password=saved_pw, vendor=vendor
+            protocol, group=group, password=saved_pw, vendor=vendor,
+            terminal_mode=terminal_mode
         )
         self._editing_profile_name  = ''
         self._editing_profile_group = ''
@@ -27660,6 +27756,7 @@ class SerialTerminalGUI(QMainWindow):
             self._pending_vendor = btn.property('vendor') if btn else 'Default'
         else:
             self._pending_vendor = 'Default'
+        self._pending_terminal_mode = profile.get('terminal_mode', 'auto')
         QApplication.processEvents()
         QTimer.singleShot(100, self.connect)
 
@@ -27692,10 +27789,17 @@ class SerialTerminalGUI(QMainWindow):
             return
         group = group.strip() or 'Default'
 
+        terminal_mode, ok = QInputDialog.getItem(
+            self, "Terminal Mode", "Terminal mode:", ["Auto", "Native", "Custom"], 0, False)
+        if not ok:
+            return
+        terminal_mode = terminal_mode.lower()
+
         db, par, sb = self._parse_serial_config()
         self.config.save_serial_profile(
             name, port, self.baudrate.currentText(),
-            db, par, sb, self.flow.currentText(), group=group
+            db, par, sb, self.flow.currentText(), group=group,
+            terminal_mode=terminal_mode
         )
         self.refresh_serial_profiles()
         QMessageBox.information(self, "Saved", f"Profile '{name}' saved in group '{group}'")
@@ -27747,7 +27851,8 @@ class SerialTerminalGUI(QMainWindow):
                     profile['name'], profile.get('port', ''),
                     profile.get('baudrate', '9600'), profile.get('databits', '8'),
                     profile.get('parity', 'None'), profile.get('stopbits', '1'),
-                    profile.get('flow', 'None'), profile.get('vendor', 'Default'), new_name
+                    profile.get('flow', 'None'), profile.get('vendor', 'Default'), new_name,
+                    profile.get('terminal_mode', 'auto')
                 )
         arrow = '▼' if group_item.isExpanded() else '▶'
         group_item.setText(0, f"  {arrow}   {new_name.upper()}")
@@ -27825,15 +27930,6 @@ class SerialTerminalGUI(QMainWindow):
 
         port = port or "22"
 
-        # SSH connection requires paramiko
-        if self.ssh_current_protocol == "SSH" and not SSH_AVAILABLE:
-            QMessageBox.critical(
-                self, "Error",
-                "paramiko library is not installed.\n\n"
-                "Install with: pip install paramiko"
-            )
-            return
-
         # Username is required for SSH, optional for Telnet
         if self.ssh_current_protocol == "SSH" and not username:
             QMessageBox.warning(self, "Warning", "Enter username for SSH connection")
@@ -27850,67 +27946,99 @@ class SerialTerminalGUI(QMainWindow):
                 return
             key_path = os.path.expanduser(key_path)
             password = None
-        else:
-            # Password authentication (already read above)
+
+        # Native terminal path for Linux / explicit preference
+        _vendor = getattr(self, '_pending_vendor', None)
+        _terminal_mode = getattr(self, '_pending_terminal_mode', None) or 'auto'
+        if self._should_use_native_terminal(_vendor, _terminal_mode):
+            if self.ssh_current_protocol == "Telnet":
+                cmd = ['telnet', host]
+                if port != '23':
+                    cmd.append(port)
+            else:  # SSH
+                ssh_cmd = ['ssh', '-p', str(port)]
+                if key_path:
+                    ssh_cmd.extend(['-i', key_path])
+                ssh_cmd.append(f'{username}@{host}')
+                cmd = ssh_cmd
+
+            self._update_ssh_connect_btn()
+            if self._launch_native_terminal(cmd):
+                self._pending_profile_name = None
+                self._pending_vendor = None
+                self._pending_terminal_mode = None
+                return
+            # On failure, fall back to the custom terminal below
+
+        # SSH connection requires paramiko for the custom terminal
+        if self.ssh_current_protocol == "SSH" and not SSH_AVAILABLE:
+            QMessageBox.critical(
+                self, "Error",
+                "paramiko library is not installed.\n\n"
+                "Install with: pip install paramiko"
+            )
+            return
+
+        # Password authentication for custom terminal
+        if not self.use_ssh_key.isChecked() and not password:
+            # Prompt for password with option to save it
+            _pw_dlg = QDialog(self)
+            _pw_dlg.setWindowTitle("SSH Password")
+            _pw_dlg.setMinimumWidth(320)
+            _pw_dlg.setStyleSheet("""
+                QDialog   { background-color: #1e1e1e; color: #e0e0e0; }
+                QLabel    { color: #e0e0e0; }
+                QLineEdit { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;
+                            border-radius: 5px; padding: 4px 8px; }
+                QDialogButtonBox QPushButton {
+                    background: #2d2d2d; color: #e0e0e0;
+                    border: 1px solid #555; border-radius: 5px;
+                    padding: 5px 16px; min-width: 70px; }
+                QDialogButtonBox QPushButton:hover   { background: #3a3a3a; }
+                QDialogButtonBox QPushButton:pressed { background: #222; }
+            """)
+            _pw_layout = QVBoxLayout(_pw_dlg)
+            _pw_layout.setContentsMargins(16, 16, 16, 12)
+            _pw_layout.setSpacing(10)
+            _pw_layout.addWidget(QLabel(f"Password for {username}@{host}:"))
+            _pw_input = QLineEdit()
+            _pw_input.setEchoMode(QLineEdit.EchoMode.Password)
+            _pw_layout.addWidget(_pw_input)
+            _save_cb = QCheckBox("Save password")
+            _save_cb.setStyleSheet(
+                "QCheckBox { background: transparent; color: #e0e0e0; }"
+                "QCheckBox::indicator { background: #2d2d2d; border: 1px solid #666; border-radius: 3px; }"
+                "QCheckBox::indicator:checked { background: #4CAF50; border-color: #4CAF50; }"
+            )
+            _pw_layout.addWidget(_save_cb)
+            _btns = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            _btns.accepted.connect(_pw_dlg.accept)
+            _btns.rejected.connect(_pw_dlg.reject)
+            _pw_layout.addWidget(_btns)
+
+            if _pw_dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            password = _pw_input.text()
             if not password:
-                # Prompt for password with option to save it
-                _pw_dlg = QDialog(self)
-                _pw_dlg.setWindowTitle("SSH Password")
-                _pw_dlg.setMinimumWidth(320)
-                _pw_dlg.setStyleSheet("""
-                    QDialog   { background-color: #1e1e1e; color: #e0e0e0; }
-                    QLabel    { color: #e0e0e0; }
-                    QLineEdit { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;
-                                border-radius: 5px; padding: 4px 8px; }
-                    QDialogButtonBox QPushButton {
-                        background: #2d2d2d; color: #e0e0e0;
-                        border: 1px solid #555; border-radius: 5px;
-                        padding: 5px 16px; min-width: 70px; }
-                    QDialogButtonBox QPushButton:hover   { background: #3a3a3a; }
-                    QDialogButtonBox QPushButton:pressed { background: #222; }
-                """)
-                _pw_layout = QVBoxLayout(_pw_dlg)
-                _pw_layout.setContentsMargins(16, 16, 16, 12)
-                _pw_layout.setSpacing(10)
-                _pw_layout.addWidget(QLabel(f"Password for {username}@{host}:"))
-                _pw_input = QLineEdit()
-                _pw_input.setEchoMode(QLineEdit.EchoMode.Password)
-                _pw_layout.addWidget(_pw_input)
-                _save_cb = QCheckBox("Save password")
-                _save_cb.setStyleSheet(
-                    "QCheckBox { background: transparent; color: #e0e0e0; }"
-                    "QCheckBox::indicator { background: #2d2d2d; border: 1px solid #666; border-radius: 3px; }"
-                    "QCheckBox::indicator:checked { background: #4CAF50; border-color: #4CAF50; }"
-                )
-                _pw_layout.addWidget(_save_cb)
-                _btns = QDialogButtonBox(
-                    QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-                _btns.accepted.connect(_pw_dlg.accept)
-                _btns.rejected.connect(_pw_dlg.reject)
-                _pw_layout.addWidget(_btns)
+                return
 
-                if _pw_dlg.exec() != QDialog.DialogCode.Accepted:
-                    return
-                password = _pw_input.text()
-                if not password:
-                    return
-
-                # Save password and username to profile if requested
-                if _save_cb.isChecked() and self._pending_profile_name:
-                    import base64
-                    profiles = self.config.get_ssh_profiles()
-                    for p in profiles:
-                        if p.get('name') == self._pending_profile_name:
-                            p['password'] = base64.b64encode(password.encode()).decode()
-                            p['username'] = username
-                            break
-                    import json
-                    self.config.set('ssh_profiles', json.dumps(profiles))
-                    self.ssh_password.setText(password)
-                    self.ssh_save_password.blockSignals(True)
-                    self.ssh_save_password.setChecked(True)
-                    self.ssh_save_password.blockSignals(False)
-                    self.refresh_ssh_profiles()
+            # Save password and username to profile if requested
+            if _save_cb.isChecked() and self._pending_profile_name:
+                import base64
+                profiles = self.config.get_ssh_profiles()
+                for p in profiles:
+                    if p.get('name') == self._pending_profile_name:
+                        p['password'] = base64.b64encode(password.encode()).decode()
+                        p['username'] = username
+                        break
+                import json
+                self.config.set('ssh_profiles', json.dumps(profiles))
+                self.ssh_password.setText(password)
+                self.ssh_save_password.blockSignals(True)
+                self.ssh_save_password.setChecked(True)
+                self.ssh_save_password.blockSignals(False)
+                self.refresh_ssh_profiles()
 
         # Show connecting state in the button itself
         self.ssh_connect_btn.setText("Connecting...")
@@ -27938,6 +28066,7 @@ class SerialTerminalGUI(QMainWindow):
         _vendor       = getattr(self, '_pending_vendor', None)
         self._pending_profile_name = None
         self._pending_vendor       = None
+        self._pending_terminal_mode = None
 
         worker = ConnectionWorker(
             connection_type,
@@ -28157,6 +28286,19 @@ class SerialTerminalGUI(QMainWindow):
             )
             return
 
+        # Native terminal path for Linux / explicit preference
+        _vendor = getattr(self, '_pending_vendor', None)
+        _terminal_mode = getattr(self, '_pending_terminal_mode', None) or 'auto'
+        if self._should_use_native_terminal(_vendor, _terminal_mode):
+            if self._launch_native_terminal(cmd):
+                self._pending_vendor = None
+                self._pending_terminal_mode = None
+                self.status_label.setText("Connected - Terminal opened")
+                self.status_label.setStyleSheet("color: #a6e3a1; font-size: 10pt;")
+                self.status_led.setStyleSheet("color: #a6e3a1; font-size: 14px;")
+                return
+            # On failure, fall back to the custom terminal below
+
         self.status_label.setText("Opening terminal...")
         self.status_label.setStyleSheet("color: #fab387; font-size: 10pt;")
         self.status_led.setStyleSheet("color: #fab387; font-size: 14px;")
@@ -28179,6 +28321,8 @@ class SerialTerminalGUI(QMainWindow):
             if hasattr(self, '_pending_vendor') and self._pending_vendor:
                 terminal_dialog.change_vendor(self._pending_vendor)
                 self._pending_vendor = None
+            if hasattr(self, '_pending_terminal_mode'):
+                self._pending_terminal_mode = None
 
             port_name = self.port.currentText() or 'Serial'
             tab_label = f"Serial: {port_name}"
