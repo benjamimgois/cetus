@@ -1,6 +1,30 @@
 #!/usr/bin/env python3
 """Cetus launcher — imports the modular package and starts the GUI."""
 
+import sys
+from pathlib import Path
+
+# Allow running from source tree or from a relocated install where cetuslib
+# lives next to this script or under /usr/share/cetus.
+if 'cetuslib' not in sys.modules:
+    try:
+        import cetuslib  # noqa: F401
+    except ImportError:
+        script_dir = Path(__file__).resolve().parent
+        for prefix in (
+            script_dir / 'cetuslib',
+            script_dir,
+            script_dir.parent / 'share' / 'cetus',
+            Path('/usr/share/cetus'),
+        ):
+            if (prefix / 'cetuslib').is_dir() and str(prefix) not in sys.path:
+                sys.path.insert(0, str(prefix))
+                try:
+                    import cetuslib  # noqa: F401
+                    break
+                except ImportError:
+                    pass
+
 from cetuslib.main import main
 
 if __name__ == '__main__':

@@ -31,6 +31,8 @@ cp README.md "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r docs "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp LICENSE "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 cp -r packaging "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp pyproject.toml "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
+cp PKGBUILD "${BUILD_DIR}/${PKGNAME}-${VERSION}/"
 
 # Create tarball
 echo "Creating tarball..."

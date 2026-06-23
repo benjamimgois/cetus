@@ -88,17 +88,31 @@ else
     echo "   IMPORTANT: Logout and login again to apply changes"
 fi
 
+# Install application
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+PREFIX="${PREFIX:-/usr/local}"
+
+echo "6. Installing Cetus to $PREFIX..."
+install -Dm755 "$PROJECT_ROOT/cetus" "$PREFIX/bin/cetus"
+mkdir -p "$PREFIX/share/cetus"
+cp -r "$PROJECT_ROOT/cetuslib" "$PREFIX/share/cetus/"
+
+echo "   ✓ cetus installed to $PREFIX/bin/cetus"
+echo "   ✓ cetuslib installed to $PREFIX/share/cetus/cetuslib"
+
 # Install .desktop file
-echo "6. Installing menu shortcut..."
+echo "7. Installing menu shortcut..."
 mkdir -p ~/.local/share/applications
-cp cetus.desktop ~/.local/share/applications/
+cp "$PROJECT_ROOT/cetus.desktop" ~/.local/share/applications/
 echo "   ✓ Shortcut installed at ~/.local/share/applications/"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "To run the application:"
-echo "  - From terminal: ./cetus"
+echo "  - From terminal: cetus"
 echo "  - From menu: Look for 'Cetus'"
 echo ""
 echo "IMPORTANT: If added to dialout group now,"

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cetus"
+version = "1.8"
+description = "Modern graphical interface for network device management"
+readme = "README.md"
+license = {text = "GPL-3.0"}
+requires-python = ">=3.8"
+dependencies = [
+    "pyte",
+    "paramiko",
+    "pysnmp",
+]
+
+[project.scripts]
+cetus = "cetuslib.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cetuslib*"]

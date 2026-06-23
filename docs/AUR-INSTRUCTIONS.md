@@ -16,18 +16,15 @@ This guide explains how to prepare and submit Cetus to the Arch User Repository 
 Create a tarball of the project:
 
 ```bash
-# Navigate to the parent directory
-cd /home/benjamim/Documentos
-
-# Create a versioned directory
-mkdir cetus-1.0
-cp cetus/{cetus,cetus.desktop,README.md,INTERFACE.md,LICENSE} cetus-1.0/
-
-# Create tarball
-tar -czf cetus-1.0.tar.gz cetus-1.0/
-
-# Clean up
-rm -rf cetus-1.0
+# Use the release script to generate a complete source tarball
+./scripts/make-release.sh
+# or manually:
+mkdir cetus-1.8
+cp -r cetus/cetus cetus/cetuslib cetus/assets cetus/cetus.desktop \
+      cetus/README.md cetus/docs cetus/LICENSE cetus/packaging \
+      cetus/pyproject.toml cetus/PKGBUILD cetus-1.8/
+tar -czf cetus-1.8.tar.gz cetus-1.8/
+rm -rf cetus-1.8
 ```
 
 ## Step 2: Host the Source Archive
@@ -46,10 +43,16 @@ You need to host the tarball somewhere publicly accessible. Options:
 
 Example GitHub URL:
 ```
-https://github.com/benjamimgois/opengrid/releases/download/v1.0/cetus-1.0.tar.gz
+https://github.com/benjamimgois/opengrid/releases/download/v1.8/cetus-1.8.tar.gz
 ```
 
 ## Step 3: Update PKGBUILD
+
+A PKGBUILD template is included in the repository. Copy it and adjust:
+
+```bash
+cp PKGBUILD aur-cetus/PKGBUILD
+```
 
 1. Update the maintainer information:
    ```bash
@@ -68,7 +71,7 @@ https://github.com/benjamimgois/opengrid/releases/download/v1.0/cetus-1.0.tar.gz
 
 4. Calculate the SHA256 checksum:
    ```bash
-   sha256sum cetus-1.0.tar.gz
+   sha256sum cetus-1.8.tar.gz
    ```
 
 5. Update `sha256sums` in PKGBUILD with the actual checksum:
@@ -80,9 +83,9 @@ https://github.com/benjamimgois/opengrid/releases/download/v1.0/cetus-1.0.tar.gz
 
 ```bash
 # Navigate to the directory with PKGBUILD
-cd /home/benjamim/Documentos/cetus
+cd aur-cetus
 
-# Build the package
+# Build and install the package
 makepkg -si
 
 # Test the installed package
@@ -123,7 +126,7 @@ git add PKGBUILD .SRCINFO
 
 ```bash
 # Commit
-git commit -m "Initial release of Cetus v1.0"
+git commit -m "Initial release of Cetus v1.8"
 
 # Push to AUR
 git push
@@ -150,7 +153,7 @@ When releasing a new version:
 6. Commit and push:
    ```bash
    git add PKGBUILD .SRCINFO
-   git commit -m "Update to v1.1"
+   git commit -m "Update to v1.8"
    git push
    ```
 
