@@ -44,4 +44,12 @@ package() {
     install -Dm644 cetus.desktop "$pkgdir/usr/share/applications/cetus.desktop"
     install -Dm644 assets/icons/cetus_icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/cetus.svg"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+    # Application assets expected at runtime
+    install -Dm644 assets/photo.png "$pkgdir/usr/share/cetus/photo.png"
+    install -dm755 "$pkgdir/usr/share/cetus/icons"
+    install -Dm644 assets/icons/*.svg "$pkgdir/usr/share/cetus/icons/"
+    install -Dm644 assets/icons/*.png "$pkgdir/usr/share/cetus/icons/" 2>/dev/null || true
+    install -dm755 "$pkgdir/usr/share/cetus/vendors"
+    install -Dm644 assets/vendors/*.svg "$pkgdir/usr/share/cetus/vendors/"
 }
