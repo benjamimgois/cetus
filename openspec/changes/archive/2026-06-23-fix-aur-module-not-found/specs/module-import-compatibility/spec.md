@@ -1,8 +1,4 @@
-# Purpose
-
-Define como o Cetus pode ser executado a partir do pacote `cetuslib/`, garantindo entrypoints híbridos e símbolos públicos explícitos.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Execução via pacote
 O sistema SHALL permitir executar o Cetus a partir do pacote `cetuslib/` sem depender do arquivo monolítico.

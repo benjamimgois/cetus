@@ -1,8 +1,4 @@
-# Purpose
-
-Define o gerador de arquivo monolítico `dist/cetus` a partir dos módulos `cetuslib/`, garantindo equivalência com a execução via pacote e integração nos scripts de packaging.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Gerar arquivo monolítico para distribuição
 O sistema SHALL fornecer um script capaz de concatenar os módulos do pacote `cetuslib/` em um único arquivo executável, preservando a ordem de dependências.
