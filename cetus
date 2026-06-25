@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Allow running from source tree or from a relocated install where cetuslib
-# lives next to this script or under /usr/share/cetus.
+# lives next to this script, under /usr/share/cetus, or in site-packages.
 if 'cetuslib' not in sys.modules:
     try:
         import cetuslib  # noqa: F401
@@ -16,6 +16,7 @@ if 'cetuslib' not in sys.modules:
             script_dir,
             script_dir.parent / 'share' / 'cetus',
             Path('/usr/share/cetus'),
+            Path('/usr/local/share/cetus'),
         ):
             if (prefix / 'cetuslib').is_dir() and str(prefix) not in sys.path:
                 sys.path.insert(0, str(prefix))
@@ -24,6 +25,22 @@ if 'cetuslib' not in sys.modules:
                     break
                 except ImportError:
                     pass
+        else:
+            # Last resort: search site-packages where the wheel installer
+            # places cetuslib when installed via AUR or pip.
+            try:
+                import site
+                for sp in site.getsitepackages():
+                    sp_path = Path(sp)
+                    if (sp_path / 'cetuslib').is_dir() and str(sp_path) not in sys.path:
+                        sys.path.insert(0, str(sp_path))
+                        try:
+                            import cetuslib  # noqa: F401
+                            break
+                        except ImportError:
+                            pass
+            except Exception:
+                pass
 
 from cetuslib.main import main
 
