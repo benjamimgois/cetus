@@ -6,7 +6,7 @@ pkgdesc="Modern graphical interface for network device management"
 arch=('any')
 url="https://github.com/benjamimgois/opengrid"
 license=('GPL3')
-makedepends=('python-build' 'python-installer')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 depends=(
     'python'
     'python-pyqt6'
