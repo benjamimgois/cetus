@@ -25,12 +25,12 @@ MODULE_ORDER = [
     'terminal.py',
     'workers.py',
     'automation_worker.py',
-    'automation.py',
     'network.py',
     'ui/__init__.py',
     'ui/dialogs.py',
     'ui/profiles.py',
     'ui/widgets.py',
+    'automation.py',
     'legacy.py',
     'main.py',
 ]

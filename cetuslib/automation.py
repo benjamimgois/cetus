@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
-    QComboBox, QPushButton, QPlainTextEdit, QLineEdit, QCheckBox, QSpinBox,
+    QPushButton, QPlainTextEdit, QLineEdit, QCheckBox, QSpinBox,
     QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QMessageBox, QFileDialog, QDialog, QAbstractItemView, QApplication,
 )
@@ -19,6 +19,7 @@ from cetuslib.automation_worker import (
     STATUS_ERROR, STATUS_TIMEOUT, STATUS_CANCELLED,
     parse_targets, AutomationManager,
 )
+from cetuslib.ui.widgets import FlatComboButton
 from cetuslib.vendors import VENDOR_MENU
 
 
@@ -41,7 +42,75 @@ _GROUP_STYLE = """
         margin-top: 6px; padding-top: 4px;
         background-color: #f9f9f9;
     }
-    QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #455A64; }
+    QGroupBox::title {
+        subcontrol-origin: margin; left: 10px;
+        color: #26A69A; background-color: #f9f9f9;
+    }
+"""
+
+# Widget styling matched to the other tabs (Traffic/iPerf): light-gray input
+# fields, flat combo buttons, white tables with a light header.
+_PAGE_STYLE = """
+    /* The app-wide dark theme styles QFrame (QLabel is a QFrame) with a dark
+       border and background; override it for the labels of this tab. */
+    QLabel {
+        background-color: transparent;
+        border: none;
+        color: #555555;
+        font-size: 9pt;
+    }
+    QPlainTextEdit {
+        background-color: #f5f5f5; color: #333333;
+        border: 1px solid #d0d0d0; border-radius: 6px;
+        padding: 4px; font-size: 9pt;
+    }
+    QPlainTextEdit:focus { border: 2px solid #26A69A; }
+    QLineEdit {
+        background-color: #f5f5f5; color: #333333;
+        border: 1px solid #d0d0d0; border-radius: 6px;
+        padding: 2px 8px; font-size: 9pt;
+    }
+    QLineEdit:focus { border: 2px solid #26A69A; }
+    QLineEdit:disabled { background-color: #eeeeee; color: #aaaaaa; }
+    QSpinBox, QDoubleSpinBox {
+        border: 1px solid #d0d0d0; border-radius: 6px;
+        padding: 2px 4px; background-color: #f5f5f5;
+        color: #333333; font-size: 9pt;
+    }
+    QSpinBox:focus, QDoubleSpinBox:focus { border: 2px solid #26A69A; }
+    QCheckBox {
+        background-color: transparent;
+        color: #333333; font-size: 9pt; spacing: 4px;
+    }
+    QCheckBox::indicator {
+        width: 14px; height: 14px;
+        border: 1px solid #c0c0c0; border-radius: 3px; background: #f5f5f5;
+    }
+    QCheckBox::indicator:checked { background-color: #26A69A; border-color: #26A69A; }
+    QTableWidget {
+        background-color: #ffffff;
+        border: 1px solid #d0d0d0; border-radius: 6px;
+        gridline-color: #e8e8e8;
+        font-size: 8pt; font-family: monospace;
+    }
+    QTableWidget::item { padding: 1px 4px; }
+    QTableWidget::item:selected { background-color: #26A69A; color: white; }
+    QHeaderView::section {
+        background-color: #f0f0f0; color: #333;
+        padding: 4px 6px; border: none;
+        border-right: 1px solid #e0e0e0;
+        border-bottom: 1px solid #d0d0d0;
+        font-weight: bold; font-size: 8pt;
+    }
+    QHeaderView::section:hover { background-color: #e0e0e0; }
+    QPushButton#automationRunBtn {
+        background-color: #26A69A; color: #ffffff;
+        border: none; border-radius: 8px;
+        padding: 8px 18px; font-weight: bold; font-size: 10pt;
+    }
+    QPushButton#automationRunBtn:hover { background-color: #1f8f85; }
+    QPushButton#automationRunBtn:pressed { background-color: #1a7a71; }
+    QPushButton#automationRunBtn:disabled { background-color: #b0cfc9; color: #f0f0f0; }
 """
 
 _LABEL_STYLE = "color: #555; font-size: 9pt; font-weight: normal;"
@@ -117,6 +186,10 @@ class AutomationTab(QWidget):
         self._total = 0
         self._done = 0
 
+        # Fixed light contents (see _PAGE_STYLE) — keeps the tab consistent
+        # with the other tabs under both the light and dark app themes.
+        self.setStyleSheet(_PAGE_STYLE)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
@@ -170,8 +243,11 @@ class AutomationTab(QWidget):
         group.setStyleSheet(_GROUP_STYLE)
         grid = QGridLayout(group)
         grid.setContentsMargins(8, 6, 8, 6)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        # Two label/field pairs per row: label (col 0/2), field (col 1/3)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
         user_label = QLabel('Username:')
         user_label.setStyleSheet(_LABEL_STYLE)
@@ -186,42 +262,40 @@ class AutomationTab(QWidget):
         grid.addWidget(pass_label, 0, 2)
         grid.addWidget(self.pass_edit, 0, 3)
 
-        self.remember_cb = QCheckBox('Remember')
-        self.remember_cb.setToolTip(
-            'Stores the username and password in the Cetus settings.\n'
-            'Warning: the password is stored base64-encoded (not encrypted).')
-        self.remember_cb.setStyleSheet("color: #555; font-size: 9pt;")
-        grid.addWidget(self.remember_cb, 1, 0)
-
         type_label = QLabel('Connection:')
         type_label.setStyleSheet(_LABEL_STYLE)
-        self.conn_combo = QComboBox()
+        self.conn_combo = FlatComboButton()
         self.conn_combo.addItems(['SSH', 'Telnet'])
-        grid.addWidget(type_label, 1, 1)
-        grid.addWidget(self.conn_combo, 1, 2)
+        self.conn_combo.currentTextChanged.connect(self._on_conn_type_changed)
+        grid.addWidget(type_label, 1, 0)
+        grid.addWidget(self.conn_combo, 1, 1)
 
         port_label = QLabel('Port:')
         port_label.setStyleSheet(_LABEL_STYLE)
         self.port_edit = QLineEdit('22')
         self.port_edit.setFixedWidth(70)
-        self.conn_combo.currentIndexChanged.connect(self._on_conn_type_changed)
-        grid.addWidget(port_label, 1, 3)
-        grid.addWidget(self.port_edit, 1, 4)
-        grid.setColumnStretch(4, 1)
+        grid.addWidget(port_label, 1, 2)
+        grid.addWidget(self.port_edit, 1, 3)
 
         vendor_label = QLabel('Vendor:')
         vendor_label.setStyleSheet(_LABEL_STYLE)
-        self.vendor_combo = QComboBox()
+        self.vendor_combo = FlatComboButton()
+        self._vendor_keys = {label: key for key, label in VENDOR_MENU}
         for _key, label in VENDOR_MENU:
             self.vendor_combo.addItem(label)
         grid.addWidget(vendor_label, 2, 0)
         grid.addWidget(self.vendor_combo, 2, 1)
-        grid.setColumnStretch(1, 1)
+
+        self.remember_cb = QCheckBox('Remember')
+        self.remember_cb.setToolTip(
+            'Stores the username and password in the Cetus settings.\n'
+            'Warning: the password is stored base64-encoded (not encrypted).')
+        grid.addWidget(self.remember_cb, 2, 2)
 
         vendor_hint = QLabel('Autodetect identifies the vendor from the prompt after login; select manually if unsure.')
         vendor_hint.setStyleSheet(_LABEL_STYLE)
         vendor_hint.setWordWrap(True)
-        grid.addWidget(vendor_hint, 2, 2, 1, 3)
+        grid.addWidget(vendor_hint, 3, 0, 1, 4)
         return group
 
     def _build_commands_group(self):
@@ -238,7 +312,13 @@ class AutomationTab(QWidget):
         self.commands_edit.textChanged.connect(self._update_run_enabled)
         v.addWidget(self.commands_edit)
 
-        timing_row = QHBoxLayout()
+        timing_grid = QGridLayout()
+        timing_grid.setContentsMargins(0, 0, 0, 0)
+        timing_grid.setHorizontalSpacing(12)
+        timing_grid.setVerticalSpacing(8)
+        timing_grid.setColumnStretch(1, 1)
+        timing_grid.setColumnStretch(3, 1)
+
         sleep_label = QLabel('Wait between commands:')
         sleep_label.setStyleSheet(_LABEL_STYLE)
         self.sleep_spin = QDoubleSpinBox()
@@ -249,8 +329,8 @@ class AutomationTab(QWidget):
         self.sleep_spin.setToolTip(
             'Minimum wait after the prompt of each command is detected.\n'
             'Prompt detection is the actual completion criterion.')
-        timing_row.addWidget(sleep_label)
-        timing_row.addWidget(self.sleep_spin)
+        timing_grid.addWidget(sleep_label, 0, 0)
+        timing_grid.addWidget(self.sleep_spin, 0, 1)
 
         timeout_label = QLabel('Timeout per command:')
         timeout_label.setStyleSheet(_LABEL_STYLE)
@@ -259,16 +339,15 @@ class AutomationTab(QWidget):
         self.timeout_spin.setValue(30)
         self.timeout_spin.setSuffix(' s')
         self.timeout_spin.setToolTip('Maximum time to wait for the prompt after each command.')
-        timing_row.addWidget(timeout_label)
-        timing_row.addWidget(self.timeout_spin)
+        timing_grid.addWidget(timeout_label, 0, 2)
+        timing_grid.addWidget(self.timeout_spin, 0, 3)
 
         mode_label = QLabel('Mode:')
         mode_label.setStyleSheet(_LABEL_STYLE)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem('Serial')
-        self.mode_combo.addItem('Parallel')
-        timing_row.addWidget(mode_label)
-        timing_row.addWidget(self.mode_combo)
+        self.mode_combo = FlatComboButton()
+        self.mode_combo.addItems(['Serial', 'Parallel'])
+        timing_grid.addWidget(mode_label, 1, 0)
+        timing_grid.addWidget(self.mode_combo, 1, 1)
 
         pool_label = QLabel('Simultaneous connections:')
         pool_label.setStyleSheet(_LABEL_STYLE)
@@ -276,12 +355,12 @@ class AutomationTab(QWidget):
         self.pool_spin.setRange(2, 20)
         self.pool_spin.setValue(5)
         self.pool_spin.setEnabled(False)
-        self.mode_combo.currentIndexChanged.connect(
-            lambda idx: self.pool_spin.setEnabled(idx == 1))
-        timing_row.addWidget(pool_label)
-        timing_row.addWidget(self.pool_spin)
-        timing_row.addStretch(1)
-        v.addLayout(timing_row)
+        self.mode_combo.currentTextChanged.connect(
+            lambda text: self.pool_spin.setEnabled(text == 'Parallel'))
+        timing_grid.addWidget(pool_label, 1, 2)
+        timing_grid.addWidget(self.pool_spin, 1, 3)
+
+        v.addLayout(timing_grid)
         return group
 
     def _build_results_group(self):
@@ -310,16 +389,19 @@ class AutomationTab(QWidget):
         return group
 
     def _build_bottom_bar(self):
-        row = QHBoxLayout()
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
         self._log_hint_label = QLabel('')
         self._log_hint_label.setStyleSheet(_LABEL_STYLE)
-        self.run_btn = QPushButton('▶  Run')
-        self.run_btn.setFixedHeight(34)
+        self.run_btn = QPushButton('▶  Execute')
+        self.run_btn.setObjectName('automationRunBtn')
+        self.run_btn.setMinimumHeight(38)
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self._on_run_clicked)
-        row.addWidget(self._log_hint_label, 1)
-        row.addWidget(self.run_btn)
-        return row
+        col.addWidget(self._log_hint_label)
+        col.addWidget(self.run_btn)
+        return col
 
     # ------------------------------------------------------------------ #
     # Credential persistence
@@ -349,8 +431,8 @@ class AutomationTab(QWidget):
     # ------------------------------------------------------------------ #
     # Run control
     # ------------------------------------------------------------------ #
-    def _on_conn_type_changed(self, index):
-        self.port_edit.setText('22' if index == 0 else '23')
+    def _on_conn_type_changed(self, text):
+        self.port_edit.setText('22' if text == 'SSH' else '23')
 
     def _collect_targets(self):
         """Expand targets; returns (ips, None) or (None, error_message)."""
@@ -398,16 +480,18 @@ class AutomationTab(QWidget):
 
         self._store_credentials()
 
+        conn_type = 'ssh' if self.conn_combo.currentText() == 'SSH' else 'telnet'
+        default_port = '22' if conn_type == 'ssh' else '23'
         settings = {
-            'conn_type': 'ssh' if self.conn_combo.currentIndex() == 0 else 'telnet',
-            'port': self.port_edit.text().strip() or ('22' if self.conn_combo.currentIndex() == 0 else '23'),
+            'conn_type': conn_type,
+            'port': self.port_edit.text().strip() or default_port,
             'username': self.user_edit.text().strip(),
             'password': self.pass_edit.text(),
-            'vendor_key': VENDOR_MENU[self.vendor_combo.currentIndex()][0],
+            'vendor_key': self._vendor_keys.get(self.vendor_combo.currentText(), 'autodetect'),
             'commands': commands,
             'min_gap': self.sleep_spin.value(),
             'cmd_timeout': self.timeout_spin.value(),
-            'parallel': self.mode_combo.currentIndex() == 1,
+            'parallel': self.mode_combo.currentText() == 'Parallel',
             'pool_size': self.pool_spin.value(),
         }
 
@@ -462,7 +546,7 @@ class AutomationTab(QWidget):
                   self.timeout_spin, self.mode_combo, self.pool_spin):
             w.setEnabled(enabled)
         if enabled:
-            self.pool_spin.setEnabled(self.mode_combo.currentIndex() == 1)
+            self.pool_spin.setEnabled(self.mode_combo.currentText() == 'Parallel')
             self._update_run_enabled()
 
     # ------------------------------------------------------------------ #
@@ -489,7 +573,7 @@ class AutomationTab(QWidget):
     def _on_run_finished(self, run_dir, duration):
         self._timer.stop()
         self._set_form_enabled(True)
-        self.run_btn.setText('▶  Run')
+        self.run_btn.setText('▶  Execute')
         self._log_hint_label.setText(
             f'Run finished in {duration:.1f} s — logs in {run_dir}')
 
@@ -499,7 +583,7 @@ class AutomationTab(QWidget):
 
     def _update_run_button(self):
         if self._manager is None:
-            self.run_btn.setText('▶  Run')
+            self.run_btn.setText('▶  Execute')
             return
         elapsed = int(time.monotonic() - self._run_started_at)
         mm, ss = divmod(elapsed, 60)

@@ -325,7 +325,7 @@ class SerialTerminalGUI(QMainWindow):
 
         tab_layout.addWidget(self.tftp_tab_btn)
 
-        # Automation tab button (index 9)
+        # Automation tab button (index 9) — verde-água, label below icon
         self.automation_tab_btn = QToolButton()
         self.automation_tab_btn.setText('Automation')
         self.automation_tab_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
@@ -334,7 +334,7 @@ class SerialTerminalGUI(QMainWindow):
         automation_icon = load_svg_icon(automation_icon_path, icon_size) if automation_icon_path else None
         if automation_icon:
             self.automation_tab_btn.setIcon(automation_icon)
-            self.automation_tab_btn.setIconSize(QSize(26, 26))
+            self.automation_tab_btn.setIconSize(QSize(30, 30))
         else:
             self.automation_tab_btn.setIcon(self.style().standardIcon(
                 self.style().StandardPixmap.SP_DialogApplyButton))
@@ -343,13 +343,13 @@ class SerialTerminalGUI(QMainWindow):
         self.automation_tab_btn.clicked.connect(lambda: self.switch_tab(9))
         _tool_btn_style = tab_btn_style.replace('QPushButton', 'QToolButton')
         self.automation_tab_btn.setStyleSheet(
-            _tool_btn_style.format(color='#795548') +
+            _tool_btn_style.format(color='#26A69A') +
             """
             QToolButton {
-                font-size: 6.5pt;
+                font-size: 7pt;
                 font-weight: normal;
-                padding: 1px 0px;
-                color: #b0bec5;
+                padding: 2px 0px;
+                color: #aaaaaa;
             }
             QToolButton:checked {
                 color: white;
