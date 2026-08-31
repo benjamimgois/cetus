@@ -56,6 +56,7 @@ except ImportError:
 
 from cetuslib.config import ConfigManager
 from cetuslib.constants import VERSION_LABEL
+from cetuslib.automation import AutomationTab
 from cetuslib.network import (
     IperfGraphWidget, SignalHistoryWidget, WifiChannelChart,
     WifiHeatmapWidget, RouteVisualizationWidget, LatencyGraphWidget, PingGraphWidget
@@ -324,6 +325,38 @@ class SerialTerminalGUI(QMainWindow):
 
         tab_layout.addWidget(self.tftp_tab_btn)
 
+        # Automation tab button (index 9)
+        self.automation_tab_btn = QToolButton()
+        self.automation_tab_btn.setText('Automation')
+        self.automation_tab_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.automation_tab_btn.setFixedSize(62, 62)
+        automation_icon_path = self.get_tab_icon_path('automation.svg')
+        automation_icon = load_svg_icon(automation_icon_path, icon_size) if automation_icon_path else None
+        if automation_icon:
+            self.automation_tab_btn.setIcon(automation_icon)
+            self.automation_tab_btn.setIconSize(QSize(26, 26))
+        else:
+            self.automation_tab_btn.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_DialogApplyButton))
+        self.automation_tab_btn.setToolTip("Automation\nMass command execution over SSH/Telnet")
+        self.automation_tab_btn.setCheckable(True)
+        self.automation_tab_btn.clicked.connect(lambda: self.switch_tab(9))
+        _tool_btn_style = tab_btn_style.replace('QPushButton', 'QToolButton')
+        self.automation_tab_btn.setStyleSheet(
+            _tool_btn_style.format(color='#795548') +
+            """
+            QToolButton {
+                font-size: 6.5pt;
+                font-weight: normal;
+                padding: 1px 0px;
+                color: #b0bec5;
+            }
+            QToolButton:checked {
+                color: white;
+            }
+            """)
+        tab_layout.addWidget(self.automation_tab_btn)
+
         tab_layout.addStretch()
 
         # Settings button (bottom of sidebar)
@@ -394,6 +427,10 @@ class SerialTerminalGUI(QMainWindow):
         self.traffic_page = self.create_traffic_monitor_page()
         self.content_stack.addWidget(self.traffic_page)
 
+        # Create Automation page (index 9)
+        self.automation_page = AutomationTab(self.config)
+        self.content_stack.addWidget(self.automation_page)
+
         # Add to main layout
         main_h_layout.addWidget(self.tab_widget)
         main_h_layout.addWidget(self.content_stack, 1)
@@ -415,8 +452,10 @@ class SerialTerminalGUI(QMainWindow):
         self.iperf_tab_btn.setChecked(index == 6)
         self.tftp_tab_btn.setChecked(index == 7)
         self.traffic_tab_btn.setChecked(index == 8)
+        self.automation_tab_btn.setChecked(index == 9)
         modes = {0: 'ssh', 1: 'serial', 2: 'ipscan', 3: 'snmp',
-                 4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp', 8: 'traffic'}
+                 4: 'traceroute', 5: 'wifi', 6: 'iperf', 7: 'tftp', 8: 'traffic',
+                 9: 'automation'}
         self.config.set('connection_mode', modes.get(index, 'ssh'))
 
     def _show_settings_menu(self):
@@ -1706,7 +1745,6 @@ class SerialTerminalGUI(QMainWindow):
                 border-right: 1px solid #e0e0e0;
                 border-bottom: 1px solid #d0d0d0;
                 font-weight: bold; font-size: 8pt;
-                cursor: pointer;
             }}
             QHeaderView::section:hover {{ background-color: #e0e0e0; }}
         """)
@@ -10141,6 +10179,12 @@ class SerialTerminalGUI(QMainWindow):
         assets_path = os.path.join(os.path.dirname(__file__), f'assets/icons/{icon_name}')
         if os.path.exists(assets_path):
             return assets_path
+        # Development checkout: assets live at the repository root, next to
+        # the cetuslib package directory.
+        repo_assets_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), f'assets/icons/{icon_name}')
+        if os.path.exists(repo_assets_path):
+            return repo_assets_path
         # Check for PyInstaller / PyOxidizer / cx_Freeze bundle
         if getattr(sys, '_MEIPASS', None):
             bundle_path = os.path.join(sys._MEIPASS, f'assets/icons/{icon_name}')

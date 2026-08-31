@@ -123,6 +123,17 @@ Easy and modern interface to manage network devices — Serial, SSH, Telnet, VNC
 - **Wi-Fi heatmap** for signal strength visualization
 - Audio feedback (beep alarm) for signal loss events
 
+### Automation
+- **Mass command execution** over SSH or Telnet against a list of network devices
+- Target list with single IPs, last-octet ranges (`192.168.15.1-45`) and full ranges (`10.0.0.5-10.0.0.7`)
+- **Multi-vendor support**: Huawei VRP, Cisco IOS, MikroTik RouterOS, Juniper JunOS plus a generic fallback — with automatic vendor detection from the device prompt
+- **Wait-for-prompt execution**: each command completes when the device prompt returns (not blind delays), with configurable inter-command wait and per-command timeout
+- **Automatic interactive replies** (e.g. `[Y/N]` confirmations, save prompts) per vendor
+- Serial or parallel execution (configurable connection pool)
+- Per-host result table with status (OK / error / timeout / cancelled), duration and color coding
+- **Per-host logs** saved automatically under `~/.local/share/cetus/automation/` with run metadata; double-click a row to inspect the captured output
+- Stop button with responsive session cancellation; optional credential remembering (stored base64-encoded — see note below)
+
 
 ## Requirements
 
@@ -320,6 +331,23 @@ python3 -m cetuslib
 
 - `Ctrl+A` `Ctrl+X` — Exit picocom
 - `Ctrl+A` `Ctrl+H` — Show all picocom commands
+
+### Automation (Automation tab)
+
+1. Click the **Automation** tab (lightning icon)
+2. Enter the target list — one entry per line: `192.168.15.1`, `192.168.15.1-45` or `10.0.0.5-10.0.0.7`
+3. Fill in the credentials, choose SSH or Telnet (port auto-fills to 22/23, still editable)
+4. Pick the vendor — leave **Autodetect** unless detection fails
+5. Type the commands, one per line (`#` lines are comments)
+6. Adjust the wait between commands (default 1 s) and the per-command timeout (default 30 s)
+7. Choose **Serial** (ordered, one device at a time) or **Parallel** (up to N simultaneous connections)
+8. Click **Run** — the button shows elapsed time and progress while running; click again to stop
+9. Double-click a result row to open the host log
+
+> **Security note:** checking **Remember** stores the username and password in
+> `~/.config/cetus/settings.json` encoded with base64 — this is **not**
+> encryption (the same limitation applies to saved SSH profiles). Leave the
+> box unchecked to keep credentials out of disk.
 
 
 ## Permissions
